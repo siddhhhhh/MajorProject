@@ -1,0 +1,451 @@
+{
+  "company": "Apple",
+  "analysis_timestamp": "2025-10-11T22:10:24.448909",
+  "claims": [
+    {
+      "claim_id": 1,
+      "actor": "Apple",
+      "claim_text": "Apple is carbon neutral across corporate operations",
+      "category": "Environmental",
+      "subcategory": "Carbon emissions",
+      "metric": "Carbon neutral",
+      "timeline": "current",
+      "claim_type": "Achievement",
+      "specificity_score": 10
+    }
+  ],
+  "evidence": [
+    {
+      "claim_id": 1,
+      "evidence": [
+        {
+          "source_id": "ev_000",
+          "source_name": "Greenpeace",
+          "source_type": "NGO",
+          "url": "https://www.theverge.com/2023/4/26/23697746/tesla-climate-pollution-carbon-footprint-supply-chain-report",
+          "date": "2025-10-11T12:58:37.802952",
+          "relevant_text": "Apr 26, 2023 \u00b7 Tesla \u2019s carbon footprint is finally coming into focus, and it\u2019s bigger than the company let on in the past The company divulged its supply chain emissions for the first time, and it\u2019s the ...",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "Vector Database (Historical)",
+          "retrieval_timestamp": "2025-10-11T22:11:00.048040"
+        },
+        {
+          "source_id": "ev_001",
+          "source_name": "coca-colahellenic.com",
+          "source_type": "Web Source",
+          "url": "https://www.coca-colahellenic.com/en/investor-relations/our-proposition/esg",
+          "date": "2025-10-11T13:11:40.203170",
+          "relevant_text": "ESG . Environment , Social and Governance . Coca - Cola HBC has been recognised by the double-A rating from CDP on climate and water in 2024. We have added a new Sustainability Statement to align with the Corporate Sustainability Reporting Directive (CSRD) requirements.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "Vector Database (Historical)",
+          "retrieval_timestamp": "2025-10-11T22:11:00.141361"
+        },
+        {
+          "source_id": "ev_002",
+          "source_name": "mckinsey.com",
+          "source_type": "Web Source",
+          "url": "https://www.mckinsey.com/mgi/our-research/beyond-esg-from-checklists-to-capabilities",
+          "date": "2025-10-11T13:12:25.106357",
+          "relevant_text": "Sep 16, 2025 \u00b7 At a glance After a decade of expansion, ESG as a framework to measure a company\u2019s societal impact is undergoing a rethink. At the median, large companies manage 100 environmental , social, and governance ( ESG ) KPIs. Today, the rapid proliferation of ESG metrics and ongoing disagree",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "Vector Database (Historical)",
+          "retrieval_timestamp": "2025-10-11T22:11:00.249055"
+        },
+        {
+          "source_id": "ev_003",
+          "source_name": "carboncredits.com",
+          "source_type": "Web Source",
+          "url": "https://carboncredits.com/teslas-avoided-emissions-are-up-to-49-overstated-a-study-claims/",
+          "date": "2025-10-11T11:59:04.277916",
+          "relevant_text": "March 21, 2025 - A report claims Tesla 's avoided emissions may be overstated by up to 49%. Could this impact its carbon credit sales and industry credibility?",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "Vector Database (Historical)",
+          "retrieval_timestamp": "2025-10-11T22:11:00.352785"
+        },
+        {
+          "source_id": "ev_004",
+          "source_name": "carboncredits.com",
+          "source_type": "Web Source",
+          "url": "https://carboncredits.com/teslas-avoided-emissions-are-up-to-49-overstated-a-study-claims/",
+          "date": "2025-10-11T11:59:04.277916",
+          "relevant_text": "March 21, 2025 - A report claims Tesla 's avoided emissions may be overstated by up to 49%. Could this impact its carbon credit sales and industry credibility?",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "Vector Database (Historical)",
+          "retrieval_timestamp": "2025-10-11T22:11:00.459077"
+        },
+        {
+          "source_id": "ev_005",
+          "source_name": "assets-global.website-files.com",
+          "source_type": "Web Source",
+          "url": "https://assets-global.website-files.com/63636849ae1597cd8e2a0f8e/63ce4de69503662010f3a660_Apple_Pollution+Emissions.pdf",
+          "date": "2025-10-11T22:10:59.679158",
+          "relevant_text": "Environmental Social Governance Report . Apple \u2019s 2022 ESG Report . Pollution prevention and emissions. Introduction Environment Our People Suppliers Customers Communities Governance Appendix.",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 0,
+          "data_source_api": "DuckDuckGo - Web Fallback",
+          "retrieval_timestamp": "2025-10-11T22:11:00.554368"
+        },
+        {
+          "source_id": "ev_006",
+          "source_name": "esgtoday.com",
+          "source_type": "Web Source",
+          "url": "https://www.esgtoday.com/apple-reduces-carbon-footprint-of-new-iphone-by-30/",
+          "date": "2025-10-11T22:10:59.679158",
+          "relevant_text": "Other key iPhone 16 environmental sustainability features highlighted in the report include the use of 100% fiber-based, supporting Apple \u2019s goal to remove plastics from packaging by 2025, and of 100% recycled or responsibly sourced wood fibers...",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 0,
+          "data_source_api": "DuckDuckGo - Web Fallback",
+          "retrieval_timestamp": "2025-10-11T22:11:00.652944"
+        },
+        {
+          "source_id": "ev_007",
+          "source_name": "permutable.ai",
+          "source_type": "Web Source",
+          "url": "https://permutable.ai/6-key-takeaways-from-the-apple-esg-report/",
+          "date": "2025-10-11T22:10:59.679158",
+          "relevant_text": "Apple \u2019s Environmental Performance .As we make our way through 2024, Apple \u2019s latest ESG report demonstrates significant strides in environmental sustainability , while also highlighting areas for continued improvement.",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 0,
+          "data_source_api": "DuckDuckGo - Web Fallback",
+          "retrieval_timestamp": "2025-10-11T22:11:00.812023"
+        },
+        {
+          "source_id": "ev_008",
+          "source_name": "linkedin.com",
+          "source_type": "Web Source",
+          "url": "https://www.linkedin.com/feed/update/urn:li:activity:7107697505290616832/",
+          "date": "2025-10-11T22:10:59.679158",
+          "relevant_text": "Blackrock owns about 7% of Apple . Apple is working on improving their ESG rating and had recently received a bump up.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "DuckDuckGo - Web Fallback",
+          "retrieval_timestamp": "2025-10-11T22:11:00.903537"
+        },
+        {
+          "source_id": "ev_009",
+          "source_name": "medium.com",
+          "source_type": "Web Source",
+          "url": "https://medium.com/antaeus-ar/apple-unlocks-future-of-sustainability-reporting-in-latest-video-46487639b070",
+          "date": "2025-10-11T22:10:59.679158",
+          "relevant_text": "To learn more about Apple \u2019s sustainability commitments, check out their 2022 environmental progress report .",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 0,
+          "data_source_api": "DuckDuckGo - Web Fallback",
+          "retrieval_timestamp": "2025-10-11T22:11:01.019665"
+        },
+        {
+          "source_id": "ev_010",
+          "source_name": "Amnesty International",
+          "source_type": "NGO",
+          "url": "https://www.bing.com/aclick?ld=e85cMju0w0NHBObOThWF_SsjVUCUz2hnDe95U_r0B9Sd0P_oXWQZTxmTIUkB_afzZJMeT7L3WSsWpQ_qKyQrt3ia-oKjyQZqKqMxF2PU_ZgEyOUXFZasm1rfGp6l-_s8r8vNstXl7VFgli-9bAqbXo2RloMeHeLz5MApFVecPehMsJ-VG07VEr_AOBfKuonssKvl1aAA&u=aHR0cHMlM2ElMmYlMmZhZC5kb3VibGVjbGljay5uZXQlMmZzZWFyY2hhZHMlMmZsaW5rJTJmY2xpY2slM2ZsaWQlM2Q0MzcwMDA4MTMxNTY1NzQyMCUyNmRzX3Nfa3dnaWQlM2Q1ODcwMDAwODgzMjk1MzYxNSUyNmRzX2FfY2lkJTNkNjU3MDU3NzIzJTI2ZHNfYV9jYWlkJTNkMjIwODA0NjQ3NzglMjZkc19hX2FnaWQlM2QxNzI2NDI2NTQ5NDklMjZkc19hX2xpZCUzZGt3ZC0xNTExNDAzODQ2OTQxJTI2JTI2ZHNfZV9hZGlkJTNkODI2Njk5MTY2Mjg5NzMlMjZkc19lX3RhcmdldF9pZCUzZGt3ZC04MjY3MDg4NTQ2NTEyMiUzYWxvYy0xNjYzJTI2JTI2ZHNfZV9uZXR3b3JrJTNkbyUyNmRzX3VybF92JTNkMiUyNmRzX2Rlc3RfdXJsJTNkaHR0cHMlM2ElMmYlMmZsYW5kaW5ncy5pZS5lZHUlMmZiYWNobGFuZC11bmktYmFjaGVsb3ItZW52aXJvbm1lbnRhbC1zY2llbmNlcy1hbmQtc3VzdGFpbmFiaWxpdHktY3JvJTNmZ2NsaWQlM2RjZDRkMWJkMDBiNWQxYmNkN2ViNzczM2E4M2QxMjg1NiUyNmdjbHNyYyUzZDNwLmRzJTI2JTI2bXNjbGtpZCUzZGNkNGQxYmQwMGI1ZDFiY2Q3ZWI3NzMzYTgzZDEyODU2&rlid=cd4d1bd00b5d1bcd7eb7733a83d12856",
+          "date": "2025-10-11T22:10:43.719975",
+          "relevant_text": "Apply Now Combine Natural Sciences Applied to Environmental Challenges, Economic and Legal Sciences. Develop Individual Analytical Skills, and Play a Strategic Role in Industries. Outstanding Faculty \u00b7 Top Ranked Employability \u00b7 In English or Spanish \u00b7 +80 Student Nationalities",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "Amnesty International - NGO",
+          "retrieval_timestamp": "2025-10-11T22:11:01.123162"
+        },
+        {
+          "source_id": "ev_011",
+          "source_name": "Amnesty International",
+          "source_type": "NGO",
+          "url": "https://www.apple.com/environment/",
+          "date": "2025-10-11T22:10:43.719975",
+          "relevant_text": "Apple 2030 is our plan to bring our net emissions to zero through recycled materials, renewable electricity, and lower-carbon transportation.",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 0,
+          "data_source_api": "Amnesty International - NGO",
+          "retrieval_timestamp": "2025-10-11T22:11:01.205346"
+        },
+        {
+          "source_id": "ev_012",
+          "source_name": "Greenpeace",
+          "source_type": "NGO",
+          "url": "https://www.greenpeace.org/eastasia/press/68025/apple-releases-latest-sustainability-report/",
+          "date": "2025-10-11T22:10:41.587385",
+          "relevant_text": "Apple's sustainability report claims that 'long-standing energy policies and infrastructure that incentivize the use of fossil fuels like coal or gas can make it difficult to bring new renewable energy online in certain regions.' This statement obscures the key role that corporations play in the expansion of electricity generation capacity.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "Greenpeace - NGO",
+          "retrieval_timestamp": "2025-10-11T22:11:01.332683"
+        },
+        {
+          "source_id": "ev_013",
+          "source_name": "Greenpeace",
+          "source_type": "NGO",
+          "url": "https://www.greenpeace.org/static/planet4-usa-stateless/2024/12/e75a98f2-gge2017_apple.pdf",
+          "date": "2025-10-11T22:10:41.587385",
+          "relevant_text": "Apple Since taking the reins as Apple's CEO, Tim Cook has made protecting the environment a prominent piece of the company's identity. Under Cook, Apple not only recognizes unequivocally that climate change is a real problem, but has publicly committed Apple to power its data centers and other operations with 100% renewable energy to address it. Apple became the first company to extend ...",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 0,
+          "data_source_api": "Greenpeace - NGO",
+          "retrieval_timestamp": "2025-10-11T22:11:01.426277"
+        }
+      ],
+      "evidence_gap": false,
+      "quality_metrics": {
+        "evidence_gap": false,
+        "independent_sources": 14,
+        "premium_sources": 5,
+        "avg_freshness_days": 0.0,
+        "source_diversity": 2,
+        "diversity_score": 40,
+        "coverage_score": 16.7,
+        "total_sources": 14,
+        "source_type_breakdown": {
+          "NGO": 5,
+          "Web Source": 9
+        },
+        "api_source_breakdown": {
+          "Vector Database (Historical)": 5,
+          "DuckDuckGo - Web Fallback": 5,
+          "Amnesty International - NGO": 2,
+          "Greenpeace - NGO": 2
+        }
+      },
+      "source_breakdown": {
+        "Vector Database (Historical)": 5,
+        "DuckDuckGo - Web Fallback": 5,
+        "Amnesty International - NGO": 2,
+        "Greenpeace - NGO": 2
+      },
+      "retrieval_timestamp": "2025-10-11T22:11:03.200895"
+    }
+  ],
+  "contradiction_analysis": [
+    {
+      "claim_id": 1,
+      "overall_verdict": "Unverifiable",
+      "verification_confidence": 5,
+      "specific_contradictions": [
+        {
+          "aspect": "Timeline of Carbon Neutrality Goal",
+          "claim_states": "Apple *is* carbon neutral across corporate operations (implying a current, achieved state).",
+          "evidence_shows": "Amnesty International quotes Apple's plan: 'Apple 2030 is our plan to bring our net emissions to zero...' This describes a future goal, not a current state, implying the target has not yet been fully met.",
+          "severity": "Moderate"
+        }
+      ],
+      "supportive_evidence": [
+        "Greenpeace notes that under CEO Tim Cook, Apple has made protecting the environment a prominent piece of the company's identity, which aligns with the intent of the claim."
+      ],
+      "key_issues": [
+        "The vast majority of the provided evidence is irrelevant to the claim, focusing on other companies like Tesla and Coca-Cola, or general ESG topics.",
+        "No evidence provided contains specific data, metrics, or third-party verification to confirm or deny Apple's carbon neutrality for its corporate operations.",
+        "The claim is about the present ('is'), while the most relevant piece of evidence points to a future target ('2030'), creating a temporal mismatch that undermines the claim.",
+        "The evidence lacks a clear definition of what 'corporate operations' includes, which is critical context for verifying such a specific claim."
+      ],
+      "evidence_counts": {
+        "supporting": 6,
+        "contradicting": 0,
+        "neutral": 8
+      }
+    }
+  ],
+  "credibility_analysis": {
+    "source_credibility_analyses": [
+      {
+        "source_id": "ev_000",
+        "source_name": "Greenpeace",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.theverge.com/2023/4/26/23697746/tesla-climate-pollution-carbon-footprint-supply-chain-report"
+      },
+      {
+        "source_id": "ev_001",
+        "source_name": "coca-colahellenic.com",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.coca-colahellenic.com/en/investor-relations/our-proposition/esg"
+      },
+      {
+        "source_id": "ev_002",
+        "source_name": "mckinsey.com",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.mckinsey.com/mgi/our-research/beyond-esg-from-checklists-to-capabilities"
+      },
+      {
+        "source_id": "ev_003",
+        "source_name": "carboncredits.com",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://carboncredits.com/teslas-avoided-emissions-are-up-to-49-overstated-a-study-claims/"
+      },
+      {
+        "source_id": "ev_004",
+        "source_name": "carboncredits.com",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://carboncredits.com/teslas-avoided-emissions-are-up-to-49-overstated-a-study-claims/"
+      },
+      {
+        "source_id": "ev_005",
+        "source_name": "assets-global.website-files.com",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://assets-global.website-files.com/63636849ae1597cd8e2a0f8e/63ce4de69503662010f3a660_Apple_Pollution+Emissions.pdf"
+      },
+      {
+        "source_id": "ev_006",
+        "source_name": "esgtoday.com",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.esgtoday.com/apple-reduces-carbon-footprint-of-new-iphone-by-30/"
+      },
+      {
+        "source_id": "ev_007",
+        "source_name": "permutable.ai",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://permutable.ai/6-key-takeaways-from-the-apple-esg-report/"
+      },
+      {
+        "source_id": "ev_008",
+        "source_name": "linkedin.com",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.linkedin.com/feed/update/urn:li:activity:7107697505290616832/"
+      },
+      {
+        "source_id": "ev_009",
+        "source_name": "medium.com",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://medium.com/antaeus-ar/apple-unlocks-future-of-sustainability-reporting-in-latest-video-46487639b070"
+      },
+      {
+        "source_id": "ev_010",
+        "source_name": "Amnesty International",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.bing.com/aclick?ld=e85cMju0w0NHBObOThWF_SsjVUCUz2hnDe95U_r0B9Sd0P_oXWQZTxmTIUkB_afzZJMeT7L3WSsWpQ_qKyQrt3ia-oKjyQZqKqMxF2PU_ZgEyOUXFZasm1rfGp6l-_s8r8vNstXl7VFgli-9bAqbXo2RloMeHeLz5MApFVecPehMsJ-VG07VEr_AOBfKuonssKvl1aAA&u=aHR0cHMlM2ElMmYlMmZhZC5kb3VibGVjbGljay5uZXQlMmZzZWFyY2hhZHMlMmZsaW5rJTJmY2xpY2slM2ZsaWQlM2Q0MzcwMDA4MTMxNTY1NzQyMCUyNmRzX3Nfa3dnaWQlM2Q1ODcwMDAwODgzMjk1MzYxNSUyNmRzX2FfY2lkJTNkNjU3MDU3NzIzJTI2ZHNfYV9jYWlkJTNkMjIwODA0NjQ3NzglMjZkc19hX2FnaWQlM2QxNzI2NDI2NTQ5NDklMjZkc19hX2xpZCUzZGt3ZC0xNTExNDAzODQ2OTQxJTI2JTI2ZHNfZV9hZGlkJTNkODI2Njk5MTY2Mjg5NzMlMjZkc19lX3RhcmdldF9pZCUzZGt3ZC04MjY3MDg4NTQ2NTEyMiUzYWxvYy0xNjYzJTI2JTI2ZHNfZV9uZXR3b3JrJTNkbyUyNmRzX3VybF92JTNkMiUyNmRzX2Rlc3RfdXJsJTNkaHR0cHMlM2ElMmYlMmZsYW5kaW5ncy5pZS5lZHUlMmZiYWNobGFuZC11bmktYmFjaGVsb3ItZW52aXJvbm1lbnRhbC1zY2llbmNlcy1hbmQtc3VzdGFpbmFiaWxpdHktY3JvJTNmZ2NsaWQlM2RjZDRkMWJkMDBiNWQxYmNkN2ViNzczM2E4M2QxMjg1NiUyNmdjbHNyYyUzZDNwLmRzJTI2JTI2bXNjbGtpZCUzZGNkNGQxYmQwMGI1ZDFiY2Q3ZWI3NzMzYTgzZDEyODU2&rlid=cd4d1bd00b5d1bcd7eb7733a83d12856"
+      },
+      {
+        "source_id": "ev_011",
+        "source_name": "Amnesty International",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.apple.com/environment/"
+      },
+      {
+        "source_id": "ev_012",
+        "source_name": "Greenpeace",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.greenpeace.org/eastasia/press/68025/apple-releases-latest-sustainability-report/"
+      },
+      {
+        "source_id": "ev_013",
+        "source_name": "Greenpeace",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.greenpeace.org/static/planet4-usa-stateless/2024/12/e75a98f2-gge2017_apple.pdf"
+      }
+    ],
+    "aggregate_metrics": {
+      "average_credibility": 0.6928571428571427,
+      "high_credibility_count": 5,
+      "medium_credibility_count": 9,
+      "low_credibility_count": 0,
+      "total_sources": 14
+    }
+  },
+  "overall_assessment": {
+    "risk_level": "LOW",
+    "risk_score": 20,
+    "claims_analyzed": 1,
+    "claims_verified": 0,
+    "claims_contradicted": 0,
+    "average_source_credibility": 0.69,
+    "recommendation": "\u2705 LOW RISK: Claims generally supported by credible evidence. Continue monitoring."
+  }
+}

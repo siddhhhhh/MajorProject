@@ -1,0 +1,203 @@
+{
+  "claim": {
+    "claim_id": 1,
+    "actor": "Tesla",
+    "claim_text": "45% reduction in water usage at Gigafactory Texas compared to 2022 baseline.",
+    "category": "Environmental",
+    "subcategory": "Water management",
+    "metric": "45% reduction",
+    "timeline": "Reported in 2024",
+    "claim_type": "Achievement",
+    "specificity_score": 10
+  },
+  "evidence_result": {
+    "claim_id": 1,
+    "evidence": [
+      {
+        "source_id": "ev_000",
+        "source_name": "tesla-mag.com",
+        "source_type": "Web Source",
+        "url": "https://www.tesla-mag.com/en/tesla-uses-less-water-per-vehicle-than-industry-average/",
+        "date": "2025-10-11T12:19:45.102089",
+        "relevant_text": "Apr 26, 2023 \u00b7 Tesla \u2019 s new gigafactories in Germany and Texas use less water to produce each car than the industry average, according to a report. In addition, these factories also produce batteries, which other manufacturers do not.",
+        "relationship_to_claim": "Supports",
+        "data_freshness_days": 0,
+        "data_source_api": "Vector Database (Historical)",
+        "retrieval_timestamp": "2025-10-11T12:58:54.709716"
+      },
+      {
+        "source_id": "ev_001",
+        "source_name": "tesery.com",
+        "source_type": "Web Source",
+        "url": "https://www.tesery.com/blogs/news/tesla-giga-berlin-surprises-with-water-consumption-efficiency",
+        "date": "2025-10-11T12:19:45.102089",
+        "relevant_text": "Sep 29, 2025 \u00b7 Tesla ' s Giga Berlin has recorded a total water consumption of 456,953 cubic meters in 2024 , equating to approximately 2.16 cubic meters per vehicle produced. This figure encompasses both industrial and sanitary water use and is notably lower than the industry average of 3.50 cubic ",
+        "relationship_to_claim": "Neutral",
+        "data_freshness_days": 0,
+        "data_source_api": "Vector Database (Historical)",
+        "retrieval_timestamp": "2025-10-11T12:58:54.820465"
+      },
+      {
+        "source_id": "ev_002",
+        "source_name": "autoevolution.com",
+        "source_type": "Web Source",
+        "url": "https://www.autoevolution.com/news/tesla-explains-how-it-achieves-record-breaking-water-economy-at-giga-berlin-213982.html",
+        "date": "2025-10-11T12:19:45.102089",
+        "relevant_text": "Apr 25, 2023 \u00b7 Tesla shows in its Impact Report 2022 that Giga Berlin is the most efficient factory in the world based on the water consumed per vehicle. Here is how Tesla managed to achieve this feat.",
+        "relationship_to_claim": "Neutral",
+        "data_freshness_days": 0,
+        "data_source_api": "Vector Database (Historical)",
+        "retrieval_timestamp": "2025-10-11T12:58:54.932755"
+      },
+      {
+        "source_id": "ev_003",
+        "source_name": "teslarati.com",
+        "source_type": "Web Source",
+        "url": "https://www.teslarati.com/tesla-giga-berlin-sets-record-straight-water-consumption/",
+        "date": "2025-10-11T12:19:45.102089",
+        "relevant_text": "Mar 25, 2024 \u00b7 The Tesla employee highlighted that Giga Berlin recycles almost all of its dirty water from car production. By doing this, Tesla is able to use far less water than originally planned.",
+        "relationship_to_claim": "Neutral",
+        "data_freshness_days": 0,
+        "data_source_api": "Vector Database (Historical)",
+        "retrieval_timestamp": "2025-10-11T12:58:55.025273"
+      },
+      {
+        "source_id": "ev_004",
+        "source_name": "ilovetesla.com",
+        "source_type": "Web Source",
+        "url": "https://ilovetesla.com/tesla-spotlights-water-recycling-initiatives-at-gigafactory-berlin/",
+        "date": "2025-10-11T12:19:45.102089",
+        "relevant_text": "In a bid to address environmental concerns and demonstrate its commitment to sustainable practices, Tesla has recently shone a spotlight on its water recycling initiatives at Gigafactory Berlin.",
+        "relationship_to_claim": "Neutral",
+        "data_freshness_days": 0,
+        "data_source_api": "Vector Database (Historical)",
+        "retrieval_timestamp": "2025-10-11T12:58:55.150334"
+      },
+      {
+        "source_id": "ev_005",
+        "source_name": "Amnesty International",
+        "source_type": "NGO",
+        "url": "https://www.marketbeat.com/stocks/NASDAQ/TSLA/sustainability/",
+        "date": "2025-10-11T12:58:39.759337",
+        "relevant_text": "3 days ago \u00b7 View the latest Tesla ESG rating and score at MarketBeat. Compare society, knowledge, health, environment, and sustainability scores for TSLA.",
+        "relationship_to_claim": "Neutral",
+        "data_freshness_days": 0,
+        "data_source_api": "Amnesty International - NGO",
+        "retrieval_timestamp": "2025-10-11T12:58:55.256349"
+      },
+      {
+        "source_id": "ev_006",
+        "source_name": "Greenpeace",
+        "source_type": "NGO",
+        "url": "https://finance.yahoo.com/quote/TSLA/sustainability/?fr=sycsrp_catchall",
+        "date": "2025-10-11T12:58:37.802952",
+        "relevant_text": "See Tesla, Inc. (TSLA ) Environment, Social and Governance Ratings to help you in your stock buying decisions.",
+        "relationship_to_claim": "Neutral",
+        "data_freshness_days": 0,
+        "data_source_api": "Greenpeace - NGO",
+        "retrieval_timestamp": "2025-10-11T12:58:55.407042"
+      },
+      {
+        "source_id": "ev_007",
+        "source_name": "Greenpeace",
+        "source_type": "NGO",
+        "url": "https://www.theverge.com/2023/4/26/23697746/tesla-climate-pollution-carbon-footprint-supply-chain-report",
+        "date": "2025-10-11T12:58:37.802952",
+        "relevant_text": "Apr 26, 2023 \u00b7 Tesla \u2019s carbon footprint is finally coming into focus, and it\u2019s bigger than the company let on in the past The company divulged its supply chain emissions for the first time, and it\u2019s the ...",
+        "relationship_to_claim": "Neutral",
+        "data_freshness_days": 0,
+        "data_source_api": "Greenpeace - NGO",
+        "retrieval_timestamp": "2025-10-11T12:58:55.497517"
+      },
+      {
+        "source_id": "ev_008",
+        "source_name": "ArXiv",
+        "source_type": "Academic",
+        "url": "http://arxiv.org/abs/2510.08553v1",
+        "date": "2025-10-09T17:58:01+00:00",
+        "relevant_text": "Vision-and-Language Navigation (VLN) requires agents to follow natural\nlanguage instructions through environments, with memory-persistent variants\ndemanding progressive improvement through accumulated experience. Existing\napproaches for memory-persistent VLN face critical limitations: they lack\neffe",
+        "relationship_to_claim": "Neutral",
+        "data_freshness_days": 1,
+        "data_source_api": "ArXiv - Preprints",
+        "retrieval_timestamp": "2025-10-11T12:58:55.589531"
+      },
+      {
+        "source_id": "ev_009",
+        "source_name": "ArXiv",
+        "source_type": "Academic",
+        "url": "http://arxiv.org/abs/2510.08551v1",
+        "date": "2025-10-09T17:57:38+00:00",
+        "relevant_text": "On-the-fly 3D reconstruction from monocular image sequences is a\nlong-standing challenge in computer vision, critical for applications such as\nreal-to-sim, AR/VR, and robotics. Existing methods face a major tradeoff:\nper-scene optimization yields high fidelity but is computationally expensive,\nwhere",
+        "relationship_to_claim": "Neutral",
+        "data_freshness_days": 1,
+        "data_source_api": "ArXiv - Preprints",
+        "retrieval_timestamp": "2025-10-11T12:58:55.695526"
+      },
+      {
+        "source_id": "ev_010",
+        "source_name": "ArXiv",
+        "source_type": "Academic",
+        "url": "http://arxiv.org/abs/2510.08496v1",
+        "date": "2025-10-09T17:37:00+00:00",
+        "relevant_text": "Transportation Cyber-Physical Systems (TCPS) integrate physical elements,\nsuch as transportation infrastructure and vehicles, with cyber elements via\nadvanced communication technologies, allowing them to interact seamlessly. This\nintegration enhances the efficiency, safety, and sustainability of\ntra",
+        "relationship_to_claim": "Neutral",
+        "data_freshness_days": 1,
+        "data_source_api": "ArXiv - Preprints",
+        "retrieval_timestamp": "2025-10-11T12:58:55.773137"
+      },
+      {
+        "source_id": "ev_011",
+        "source_name": "ArXiv",
+        "source_type": "Academic",
+        "url": "http://arxiv.org/abs/2510.08410v1",
+        "date": "2025-10-09T16:29:34+00:00",
+        "relevant_text": "The origin of microbial cells required the emergence of metabolism, an\nautocatalytic network of roughly 400 enzymatically catalyzed chemical reactions\nthat synthesize the building blocks of life: amino acids, nucleotides and\ncofactors. Proposals for metabolic origin are theoretical in nature [1-9],\n",
+        "relationship_to_claim": "Neutral",
+        "data_freshness_days": 1,
+        "data_source_api": "ArXiv - Preprints",
+        "retrieval_timestamp": "2025-10-11T12:58:55.868587"
+      },
+      {
+        "source_id": "ev_012",
+        "source_name": "ArXiv",
+        "source_type": "Academic",
+        "url": "http://arxiv.org/abs/2510.08366v1",
+        "date": "2025-10-09T15:51:22+00:00",
+        "relevant_text": "As cities grapple with traffic congestion and service inequities, mobility\nhubs offer a scalable solution to align increasing travel demand with\nsustainability goals. However, evaluating their impacts remains challenging due\nto the lack of behavioral models that integrate large-scale travel patterns",
+        "relationship_to_claim": "Neutral",
+        "data_freshness_days": 1,
+        "data_source_api": "ArXiv - Preprints",
+        "retrieval_timestamp": "2025-10-11T12:58:55.998818"
+      }
+    ],
+    "evidence_gap": false,
+    "quality_metrics": {
+      "evidence_gap": false,
+      "independent_sources": 13,
+      "premium_sources": 8,
+      "avg_freshness_days": 0.4,
+      "source_diversity": 3,
+      "diversity_score": 60,
+      "coverage_score": 16.7,
+      "total_sources": 13,
+      "source_type_breakdown": {
+        "Web Source": 5,
+        "NGO": 3,
+        "Academic": 5
+      },
+      "api_source_breakdown": {
+        "Vector Database (Historical)": 5,
+        "Amnesty International - NGO": 1,
+        "Greenpeace - NGO": 2,
+        "ArXiv - Preprints": 5
+      }
+    },
+    "source_breakdown": {
+      "Vector Database (Historical)": 5,
+      "Amnesty International - NGO": 1,
+      "Greenpeace - NGO": 2,
+      "ArXiv - Preprints": 5
+    },
+    "retrieval_timestamp": "2025-10-11T12:58:57.033923"
+  }
+}
