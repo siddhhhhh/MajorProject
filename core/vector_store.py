@@ -6,16 +6,17 @@ import os
 
 class VectorStore:
     def __init__(self):
-        # Initialize persistent Chroma client
-        self.client = chromadb.PersistentClient(
-            path=settings.CHROMA_PERSIST_DIR
-        )
+        self.client = chromadb.Client()
+        self.collection_name = "esg_evidence"  # ADD THIS LINE
         
-        # Get or create collection
-        self.collection = self.client.get_or_create_collection(
-            name=settings.CHROMA_COLLECTION_NAME,
-            metadata={"description": "ESG evidence and reports"}
-        )
+        try:
+            self.collection = self.client.get_or_create_collection(
+                name=self.collection_name,  # Use the attribute
+                metadata={"description": "ESG evidence and claims storage"}
+            )
+        except Exception as e:
+            print(f"⚠️ ChromaDB initialization error: {e}")
+            self.collection = None
     
     def add_documents(self, documents: List[str], metadatas: List[Dict], 
                      ids: List[str]) -> None:
@@ -51,6 +52,23 @@ class VectorStore:
     def delete_collection(self) -> None:
         """Delete the collection"""
         self.client.delete_collection(name=settings.CHROMA_COLLECTION_NAME)
+
+    def clear_collection(self):
+        """Clear all cached data from vector DB"""
+        try:
+            # Delete the collection
+            self.client.delete_collection(name=self.collection_name)
+            
+            # Recreate it
+            self.collection = self.client.create_collection(
+                name=self.collection_name,
+                metadata={"description": "ESG evidence storage"}
+            )
+            
+            print(f"   ✅ Vector DB '{self.collection_name}' cleared and recreated")
+        except Exception as e:
+            print(f"   ⚠️ Vector DB clear error: {str(e)[:80]}")
+
 
 # Global instance
 vector_store = VectorStore()

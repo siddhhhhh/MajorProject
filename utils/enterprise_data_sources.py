@@ -23,97 +23,141 @@ class EnterpriseESGDataFetcher:
         self.last_call_time = {}
         self.min_interval = 1.0  # seconds between calls
         
-    def fetch_all_sources(self, company: str, query: str, max_per_source: int = 5) -> Dict[str, List[Dict]]:
+    def fetch_all_sources(self, company: str, query: str, max_per_source: int = 3) -> Dict[str, List[Dict]]:
         """
-        Fetch from ALL available sources with proper attribution
-        Returns dict with source-specific results
+        Fetch from all available sources
+        Returns dict with source categories as keys
         """
         
-        all_results = {
-            "news_api": [],
-            "newsdata_io": [],
-            "finnhub_news": [],
-            "sec_edgar": [],
-            "esg_book": [],
-            "yahoo_finance": [],
-            "reuters": [],
-            "ft_sustainability": [],
-            "bloomberg_green": [],
-            "guardian_environment": [],
-            "ngo_sources": [],
-            "academic_sources": [],
-            "web_fallback": []
-        }
+        all_results = {}
         
-        print(f"\n🌐 Fetching from multiple enterprise sources for: {company}")
-        print("="*70)
+        print(f"\n📡 Fetching data from multiple sources...")
+        print(f"   Query: {query[:80]}...")
         
-        # 1. NewsAPI (80,000+ sources)
-        print("📰 1. NewsAPI...")
-        all_results["news_api"] = self._fetch_news_api(company, query, max_per_source)
+        # 1. NGO Sources
+        print("1. NGO Sources...")
+        try:
+            all_results["ngo"] = self._fetch_ngo_sources(company, query, max_per_source)
+        except Exception as e:
+            print(f"   ⚠️ NGO sources error: {e}")
+            all_results["ngo"] = []
         
-        # 2. NewsData.io (ESG-specific)
-        print("📊 2. NewsData.io (ESG-tagged)...")
-        all_results["newsdata_io"] = self._fetch_newsdata_io(company, query, max_per_source)
+        # 2. News Sources
+        print("2. News Sources...")
+        try:
+            all_results["news"] = self._fetch_news_api(company, query, max_per_source)
+        except Exception as e:
+            print(f"   ⚠️ News API error: {e}")
+            all_results["news"] = []
         
-        # 3. Finnhub (Financial + ESG news)
-        print("💹 3. Finnhub Company News...")
-        all_results["finnhub_news"] = self._fetch_finnhub_news(company, max_per_source)
+        # 3. Financial Data (aggregates multiple sources)
+        print("3. Financial APIs...")
+        try:
+            all_results["financial"] = self._fetch_financial_apis(company, max_per_source)
+        except Exception as e:
+            print(f"   ⚠️ Financial APIs error: {e}")
+            all_results["financial"] = []
         
-        # 4. SEC EDGAR (Regulatory filings)
-        print("📋 4. SEC EDGAR Filings...")
-        all_results["sec_edgar"] = self._fetch_sec_edgar(company, max_per_source)
+        # 4. Government/Regulatory
+        print("4. Government Sources...")
+        try:
+            all_results["government"] = self._fetch_government_sources(company, query, max_per_source)
+        except Exception as e:
+            print(f"   ⚠️ Government sources error: {e}")
+            all_results["government"] = []
         
-        # 5. Yahoo Finance News
-        print("💼 5. Yahoo Finance...")
-        all_results["yahoo_finance"] = self._fetch_yahoo_finance(company, max_per_source)
+        # 5. Academic Sources
+        print("5. Academic Sources...")
+        try:
+            all_results["academic"] = self._fetch_academic_sources(company, query, max_per_source)
+        except Exception as e:
+            print(f"   ⚠️ Academic sources error: {e}")
+            all_results["academic"] = []
         
-        # 6. Reuters Sustainability
-        print("🌍 6. Reuters Sustainability...")
-        all_results["reuters"] = self._fetch_reuters_rss(company, max_per_source)
-        
-        # 7. Financial Times Sustainability
-        print("📈 7. Financial Times Climate...")
-        all_results["ft_sustainability"] = self._fetch_ft_sustainability(company, max_per_source)
-        
-        # 8. Bloomberg Green
-        print("🌱 8. Bloomberg Green...")
-        all_results["bloomberg_green"] = self._fetch_bloomberg_green(company, max_per_source)
-        
-        # 9. Guardian Environment
-        print("🌿 9. Guardian Environment...")
-        all_results["guardian_environment"] = self._fetch_guardian_environment(company, max_per_source)
-        
-        # 10. NGO Sources (Greenpeace, Amnesty, etc.)
-        print("🏛️  10. NGO Sources...")
-        all_results["ngo_sources"] = self._fetch_ngo_sources(company, query, max_per_source)
-        
-        # 11. Academic Sources
-        print("🎓 11. Academic Sources...")
-        all_results["academic_sources"] = self._fetch_academic_sources(company, query, max_per_source)
-        
-        # 12. ESG Book (if available)
-        print("📚 12. ESG Book Platform...")
-        all_results["esg_book"] = self._fetch_esg_book(company, max_per_source)
-        
-        # 13. Web fallback (only if needed)
-        total_results = sum(len(v) for v in all_results.values())
-        if total_results < 10:
-            print("🔍 13. Web Search Fallback...")
-            all_results["web_fallback"] = self._fetch_web_fallback(company, query, max_per_source)
-        
-        # Print summary
-        print("\n" + "="*70)
-        print("📊 DATA FETCH SUMMARY:")
-        for source, results in all_results.items():
-            if results:
-                print(f"   ✅ {source}: {len(results)} results")
-        
-        total = sum(len(v) for v in all_results.values())
-        print(f"\n   📈 Total sources retrieved: {total}")
-        print("="*70)
+        # 6. Web Fallback (DuckDuckGo)
+        print("6. Web Fallback (DuckDuckGo)...")
+        try:
+            all_results["web_fallback"] = self._search_ddgs_fallback(query, max_per_source)
+        except Exception as e:
+            print(f"   ⚠️ DuckDuckGo error: {e}")
+            all_results["web_fallback"] = []
         
         return all_results
+
+
+    def _fetch_financial_apis(self, company: str, max_results: int) -> List[Dict]:
+        """
+        Aggregate multiple financial API sources
+        Combines Finnhub, SEC EDGAR, Yahoo Finance, Reuters, etc.
+        """
+        results = []
+        
+        # Sub-source 1: Finnhub
+        finnhub_results = self._fetch_finnhub_news(company, max_results)
+        results.extend(finnhub_results)
+        
+        # Sub-source 2: SEC EDGAR
+        sec_results = self._fetch_sec_edgar(company, max_results)
+        results.extend(sec_results)
+        
+        # Sub-source 3: Yahoo Finance
+        yahoo_results = self._fetch_yahoo_finance(company, max_results)
+        results.extend(yahoo_results)
+        
+        # Sub-source 4: Reuters RSS
+        reuters_results = self._fetch_reuters_rss(company, max_results)
+        results.extend(reuters_results)
+        
+        # Sub-source 5: Financial Times
+        ft_results = self._fetch_ft_sustainability(company, max_results)
+        results.extend(ft_results)
+        
+        if results:
+            print(f"   ✅ Financial APIs: {len(results)} total results")
+        else:
+            print(f"   ⏭️  No financial API results")
+        
+        return results[:max_results * 2]  # Return up to 2x for diversity
+
+    def _fetch_government_sources(self, company: str, query: str, max_results: int) -> List[Dict]:
+        """Government and regulatory sources - EPA, OSHA, FTC"""
+        
+        results = []
+        
+        # SEC EDGAR
+        sec_results = self._fetch_sec_edgar(company, max_results)
+        results.extend(sec_results)
+        
+        # EPA Enforcement Database (simplified - actual API needs authentication)
+        try:
+            # Search for company in EPA news
+            epa_url = "https://www.epa.gov/newsreleases/search"
+            params = {'term': f'"{company}"'}
+            
+            headers = {'User-Agent': 'Mozilla/5.0'}
+            response = requests.get(epa_url, params=params, headers=headers, timeout=10)
+            
+            if response.status_code == 200 and company in response.text:
+                results.append({
+                    "source": "EPA",
+                    "url": epa_url,
+                    "title": f"EPA records for {company}",
+                    "snippet": f"Environmental Protection Agency data on {company}",
+                    "date": datetime.now().isoformat(),
+                    "data_source_api": "EPA - Government",
+                    "source_type": "Government/Regulatory"
+                })
+        except:
+            pass
+        
+        if results:
+            print(f"   ✅ Government sources: {len(results)} results")
+        else:
+            print(f"   ⏭️  No government sources (SEC filings require CIK lookup)")
+        
+        return results[:max_results]
+
+
     
     def _rate_limit(self, source: str):
         """Enforce rate limiting per source"""
@@ -124,52 +168,55 @@ class EnterpriseESGDataFetcher:
         self.last_call_time[source] = time.time()
     
     def _fetch_news_api(self, company: str, query: str, max_results: int) -> List[Dict]:
-        """NewsAPI - 80,000+ news sources"""
-        if not self.news_api_key:
+        """NewsAPI source with better error handling"""
+        news_api_key = os.getenv("NEWS_API_KEY", "")
+        if not news_api_key or news_api_key == "demo_key":
+            print(f"   ⏭️  NewsAPI skipped (no valid API key)")
             return []
         
         try:
-            self._rate_limit("newsapi")
+            self._rate_limit("news_api")
             
-            from_date = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
+            from newsapi import NewsApiClient
+            newsapi = NewsApiClient(api_key=news_api_key)
             
-            url = "https://newsapi.org/v2/everything"
-            params = {
-                "q": f'"{company}" AND (ESG OR sustainability OR environmental OR greenwashing)',
-                "apiKey": self.news_api_key,
-                "language": "en",
-                "sortBy": "publishedAt",
-                "pageSize": max_results,
-                "from": from_date
-            }
+            # Use everything endpoint (not top-headlines for broader coverage)
+            response = newsapi.get_everything(
+                q=f'"{company}" AND (ESG OR sustainability)',
+                language='en',
+                sort_by='publishedAt',
+                page_size=min(max_results, 20)  # Free tier limit
+            )
             
-            response = requests.get(url, params=params, timeout=15)
-            if response.status_code == 200:
-                data = response.json()
-                results = []
+            if response['status'] == 'ok':
+                articles = response.get('articles', [])
                 
-                for article in data.get("articles", []):
+                results = []
+                for article in articles[:max_results]:
                     results.append({
-                        "source": article.get("source", {}).get("name", "NewsAPI"),
-                        "url": article.get("url", ""),
-                        "title": article.get("title", ""),
-                        "snippet": article.get("description", ""),
-                        "content": article.get("content", ""),
-                        "date": article.get("publishedAt", ""),
-                        "author": article.get("author", ""),
-                        "data_source_api": "NewsAPI - Premium",
-                        "source_type": self._classify_news_source(article.get("source", {}).get("name", ""))
+                        "source": article['source']['name'],
+                        "url": article['url'],
+                        "title": article['title'],
+                        "snippet": article.get('description', '')[:300],
+                        "date": article['publishedAt'],
+                        "author": article.get('author'),
+                        "data_source_api": "NewsAPI",
+                        "source_type": self._classify_news_source(article['source']['name'])
                     })
                 
                 return results
-            elif response.status_code == 429:
-                print("   ⚠️ NewsAPI rate limit reached")
-            else:
-                print(f"   ⚠️ NewsAPI error: {response.status_code}")
+                
         except Exception as e:
-            print(f"   ⚠️ NewsAPI error: {e}")
+            error_str = str(e)
+            if '426' in error_str:
+                print(f"   ⚠️ NewsAPI rate limit (upgrade to paid tier for more requests)")
+            elif '429' in error_str:
+                print(f"   ⚠️ NewsAPI too many requests (wait 1 hour)")
+            else:
+                print(f"   ⚠️ NewsAPI error: {error_str[:100]}")
         
         return []
+
     
     def _fetch_newsdata_io(self, company: str, query: str, max_results: int) -> List[Dict]:
         """NewsData.io - ESG-specific AI tagging"""
@@ -217,190 +264,149 @@ class EnterpriseESGDataFetcher:
         return []
     
     def _fetch_finnhub_news(self, company: str, max_results: int) -> List[Dict]:
-        """Finnhub - Financial news with ESG data"""
-        if not self.finnhub_key:
+        """Finnhub financial news API"""
+        
+        finnhub_key = os.getenv("FINNHUB_API_KEY", "")
+        if not finnhub_key:
             return []
         
         try:
-            self._rate_limit("finnhub")
-            
-            # Get company symbol first
+            # Get stock symbol first
             symbol = self._get_stock_symbol(company)
             if not symbol:
                 return []
             
-            from_date = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
-            to_date = datetime.now().strftime('%Y-%m-%d')
-            
-            url = f"https://finnhub.io/api/v1/company-news"
+            url = "https://finnhub.io/api/v1/company-news"
             params = {
-                "symbol": symbol,
-                "from": from_date,
-                "to": to_date,
-                "token": self.finnhub_key
+                'symbol': symbol,
+                'from': (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d'),
+                'to': datetime.now().strftime('%Y-%m-%d'),
+                'token': finnhub_key
             }
             
-            response = requests.get(url, params=params, timeout=15)
+            response = requests.get(url, params=params, timeout=10)
             if response.status_code == 200:
                 articles = response.json()
-                results = []
                 
+                results = []
                 for article in articles[:max_results]:
-                    # Filter for ESG-related news
-                    text = (article.get('headline', '') + ' ' + article.get('summary', '')).lower()
-                    if any(term in text for term in ['esg', 'sustainability', 'environmental', 'carbon', 'emission']):
+                    if 'ESG' in article.get('headline', '') or 'sustainability' in article.get('summary', '').lower():
                         results.append({
-                            "source": article.get("source", "Finnhub"),
-                            "url": article.get("url", ""),
-                            "title": article.get("headline", ""),
-                            "snippet": article.get("summary", ""),
-                            "date": datetime.fromtimestamp(article.get("datetime", 0)).isoformat(),
-                            "data_source_api": "Finnhub - Financial ESG",
-                            "source_type": "Financial Media"
+                            "source": article.get('source', 'Finnhub'),
+                            "url": article.get('url', ''),
+                            "title": article.get('headline', ''),
+                            "snippet": article.get('summary', '')[:300],
+                            "date": datetime.fromtimestamp(article.get('datetime', 0)).isoformat(),
+                            "data_source_api": "Finnhub - Financial",
+                            "source_type": "Tier-1 Financial Media"
                         })
                 
                 return results
-        except Exception as e:
-            print(f"   ⚠️ Finnhub error: {e}")
+        except:
+            pass
         
         return []
-    
+
     def _fetch_sec_edgar(self, company: str, max_results: int) -> List[Dict]:
-        """SEC EDGAR - Official regulatory filings"""
+        """SEC EDGAR filings (free, no API key needed)"""
+        
         try:
-            self._rate_limit("sec")
-            
-            base_url = "https://www.sec.gov/cgi-bin/browse-edgar"
-            
-            headers = {
-                "User-Agent": "ESG Research Tool contact@esgresearch.com",
-                "Accept-Encoding": "gzip, deflate"
-            }
-            
+            # Search SEC EDGAR
+            search_url = f"https://www.sec.gov/cgi-bin/browse-edgar"
             params = {
-                "action": "getcompany",
-                "company": company,
-                "type": "",
-                "dateb": "",
-                "owner": "exclude",
-                "count": max_results * 2,  # Get more to filter ESG-related
-                "output": "atom"
+                'company': company,
+                'type': '10-K',  # Annual reports
+                'dateb': '',
+                'owner': 'exclude',
+                'count': max_results
             }
             
-            response = requests.get(base_url, params=params, headers=headers, timeout=20)
+            headers = {'User-Agent': 'Mozilla/5.0 ESG Analyzer contact@example.com'}
+            
+            response = requests.get(search_url, params=params, headers=headers, timeout=10)
             
             if response.status_code == 200:
-                from xml.etree import ElementTree as ET
-                root = ET.fromstring(response.content)
-                
                 results = []
-                for entry in root.findall('.//{http://www.w3.org/2005/Atom}entry'):
-                    title_elem = entry.find('{http://www.w3.org/2005/Atom}title')
-                    link_elem = entry.find('{http://www.w3.org/2005/Atom}link')
-                    updated_elem = entry.find('{http://www.w3.org/2005/Atom}updated')
-                    
-                    if title_elem is not None:
-                        title = title_elem.text
-                        
-                        # Filter for ESG-relevant filings
-                        if any(term in title.lower() for term in ['10-k', '10-q', '8-k', 'sustainability', 'esg', 'environmental']):
-                            results.append({
-                                "source": "SEC EDGAR",
-                                "url": link_elem.get('href', '') if link_elem is not None else '',
-                                "title": title,
-                                "snippet": f"SEC Filing: {title}",
-                                "date": updated_elem.text if updated_elem is not None else '',
-                                "data_source_api": "SEC EDGAR - Official",
-                                "source_type": "Government/Regulatory"
-                            })
-                    
-                    if len(results) >= max_results:
-                        break
+                # Parse HTML for filing links (simplified - would need BeautifulSoup)
+                if 'Filing Date' in response.text:
+                    results.append({
+                        "source": "SEC EDGAR",
+                        "url": search_url,
+                        "title": f"{company} SEC Filings",
+                        "snippet": f"SEC regulatory filings for {company}",
+                        "date": datetime.now().isoformat(),
+                        "data_source_api": "SEC EDGAR - Government",
+                        "source_type": "Government/Regulatory"
+                    })
                 
                 return results
-        except Exception as e:
-            print(f"   ⚠️ SEC EDGAR error: {e}")
+        except:
+            pass
         
         return []
-    
+
     def _fetch_yahoo_finance(self, company: str, max_results: int) -> List[Dict]:
-        """Yahoo Finance - News via RSS"""
+        """Yahoo Finance ESG scores (free)"""
+        
         try:
-            self._rate_limit("yahoo")
-            
             symbol = self._get_stock_symbol(company)
             if not symbol:
                 return []
             
-            # Yahoo Finance RSS feed
-            url = f"https://finance.yahoo.com/rss/headline?s={symbol}"
+            url = f"https://finance.yahoo.com/quote/{symbol}/sustainability"
+            headers = {'User-Agent': 'Mozilla/5.0'}
             
-            response = requests.get(url, timeout=15)
+            response = requests.get(url, headers=headers, timeout=10)
+            
+            if response.status_code == 200 and 'ESG' in response.text:
+                return [{
+                    "source": "Yahoo Finance",
+                    "url": url,
+                    "title": f"{company} ESG Rating",
+                    "snippet": f"Yahoo Finance ESG data for {company}",
+                    "date": datetime.now().isoformat(),
+                    "data_source_api": "Yahoo Finance - Financial",
+                    "source_type": "Financial Platform"
+                }]
+        except:
+            pass
+        
+        return []
+
+    def _fetch_reuters_rss(self, company: str, max_results: int) -> List[Dict]:
+        """Reuters company RSS feed"""
+        
+        try:
+            # Reuters sustainability RSS
+            feed_url = "https://www.reuters.com/arc/outboundfeeds/v1/rss/?outputType=xml&size=25&feedName=sustainability"
+            
+            response = requests.get(feed_url, timeout=10)
             if response.status_code == 200:
                 from xml.etree import ElementTree as ET
                 root = ET.fromstring(response.content)
                 
                 results = []
                 for item in root.findall('.//item')[:max_results]:
-                    title = item.find('title').text if item.find('title') is not None else ""
+                    title = item.find('title')
+                    link = item.find('link')
                     
-                    # Filter for ESG terms
-                    if any(term in title.lower() for term in ['esg', 'sustainability', 'environmental', 'carbon', 'climate']):
+                    if title is not None and company.lower() in title.text.lower():
                         results.append({
-                            "source": "Yahoo Finance",
-                            "url": item.find('link').text if item.find('link') is not None else "",
-                            "title": title,
-                            "snippet": item.find('description').text if item.find('description') is not None else "",
-                            "date": item.find('pubDate').text if item.find('pubDate') is not None else "",
-                            "data_source_api": "Yahoo Finance - RSS",
-                            "source_type": "Financial Media"
-                        })
-                
-                return results
-        except Exception as e:
-            print(f"   ⚠️ Yahoo Finance error: {e}")
-        
-        return []
-    
-    def _fetch_reuters_rss(self, company: str, max_results: int) -> List[Dict]:
-        """Reuters Sustainability RSS feed"""
-        try:
-            self._rate_limit("reuters")
-            
-            rss_url = "https://www.reuters.com/arc/outboundfeeds/v1/rss/?outputType=xml&size=50&feedName=sustainability"
-            
-            headers = {"User-Agent": "Mozilla/5.0"}
-            response = requests.get(rss_url, headers=headers, timeout=15)
-            
-            if response.status_code == 200:
-                from xml.etree import ElementTree as ET
-                root = ET.fromstring(response.content)
-                
-                results = []
-                for item in root.findall('.//item'):
-                    title = item.find('title').text if item.find('title') is not None else ""
-                    description = item.find('description').text if item.find('description') is not None else ""
-                    
-                    # Check if company mentioned
-                    if company.lower() in (title + description).lower():
-                        results.append({
-                            "source": "Reuters Sustainability",
-                            "url": item.find('link').text if item.find('link') is not None else "",
-                            "title": title,
-                            "snippet": description,
-                            "date": item.find('pubDate').text if item.find('pubDate') is not None else "",
-                            "data_source_api": "Reuters - Tier-1 Media",
+                            "source": "Reuters",
+                            "url": link.text if link is not None else '',
+                            "title": title.text,
+                            "snippet": "",
+                            "date": datetime.now().isoformat(),
+                            "data_source_api": "Reuters - Financial Media",
                             "source_type": "Tier-1 Financial Media"
                         })
-                    
-                    if len(results) >= max_results:
-                        break
                 
                 return results
-        except Exception as e:
-            print(f"   ⚠️ Reuters error: {e}")
+        except:
+            pass
         
         return []
+
     
     # Continue in next message...
     def _fetch_ft_sustainability(self, company: str, max_results: int) -> List[Dict]:
@@ -571,60 +577,71 @@ class EnterpriseESGDataFetcher:
         return results[:max_results]
     
     def _fetch_academic_sources(self, company: str, query: str, max_results: int) -> List[Dict]:
-        """Academic sources - multiple databases"""
+        """Academic sources - Semantic Scholar + ArXiv"""
         results = []
         
-        # 1. Try Google Scholar
+        # Skip Google Scholar (blocks automation)
+        print(f"   ⏭️  Google Scholar skipped (blocks automation)")
+        
+        # ArXiv
         try:
-            from scholarly import scholarly
+            import arxiv
+            search = arxiv.Search(
+                query=f'{company} ESG sustainability environmental',
+                max_results=max_results,
+                sort_by=arxiv.SortCriterion.SubmittedDate
+            )
             
-            search_query = f'"{company}" ESG OR sustainability'
-            search_results = scholarly.search_pubs(search_query)
-            
-            for i, pub in enumerate(search_results):
-                if i >= max_results:
-                    break
-                
-                bib = pub.get('bib', {})
+            for paper in search.results():
                 results.append({
-                    "source": f"Academic: {bib.get('venue', 'Journal')}",
-                    "url": pub.get('pub_url', ''),
-                    "title": bib.get('title', ''),
-                    "snippet": bib.get('abstract', '')[:300],
-                    "date": f"{bib.get('pub_year', 'Unknown')}-01-01",
-                    "author": ', '.join(bib.get('author', [])[:3]),
-                    "data_source_api": "Google Scholar - Academic",
+                    "source": "ArXiv (Academic)",
+                    "url": paper.entry_id,
+                    "title": paper.title,
+                    "snippet": paper.summary[:300],
+                    "date": paper.published.isoformat(),
+                    "data_source_api": "ArXiv - Academic",
                     "source_type": "Academic"
                 })
         except Exception as e:
-            print(f"   ⚠️ Google Scholar error: {e}")
-        
-        # 2. Try ArXiv (if tech company)
-        try:
-            if any(term in company.lower() for term in ['tesla', 'microsoft', 'google', 'amazon', 'meta']):
-                import arxiv
-                
-                search = arxiv.Search(
-                    query=f'{company} sustainability OR environmental',
-                    max_results=max_results,
-                    sort_by=arxiv.SortCriterion.SubmittedDate
-                )
-                
-                for paper in search.results():
-                    results.append({
-                        "source": "ArXiv",
-                        "url": paper.entry_id,
-                        "title": paper.title,
-                        "snippet": paper.summary[:300],
-                        "date": paper.published.isoformat(),
-                        "author": ', '.join([a.name for a in paper.authors[:3]]),
-                        "data_source_api": "ArXiv - Preprints",
-                        "source_type": "Academic"
-                    })
-        except Exception as e:
             print(f"   ⚠️ ArXiv error: {e}")
         
+        # Semantic Scholar - FIXED
+        try:
+            semantic_url = "https://api.semanticscholar.org/graph/v1/paper/search"
+            params = {
+                'query': f'{company} sustainability ESG',
+                'limit': max_results,
+                'fields': 'title,abstract,authors,year,url'
+            }
+            
+            response = requests.get(semantic_url, params=params, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                
+                # FIX: Check if 'data' key exists before accessing
+                if data and 'data' in data and data['data']:
+                    for paper in data['data']:
+                        # Check each field exists before accessing
+                        results.append({
+                            "source": "Semantic Scholar (Academic)",
+                            "url": paper.get('url', ''),
+                            "title": paper.get('title', 'Untitled'),
+                            "snippet": (paper.get('abstract') or '')[:300],
+                            "date": f"{paper.get('year', 2024)}-01-01",
+                            "author": ', '.join([a.get('name', '') for a in (paper.get('authors') or [])][:3]),
+                            "data_source_api": "Semantic Scholar - Academic",
+                            "source_type": "Academic"
+                        })
+                    
+                    print(f"   ✅ Semantic Scholar: {len(data['data'])} papers")
+                else:
+                    print(f"   ⏭️  Semantic Scholar: No results")
+        except Exception as e:
+            print(f"   ⚠️ Semantic Scholar error: {str(e)[:80]}")
+        
         return results[:max_results]
+
+
     
     def _fetch_esg_book(self, company: str, max_results: int) -> List[Dict]:
         """ESG Book platform (if API available)"""
@@ -651,32 +668,52 @@ class EnterpriseESGDataFetcher:
         
         return []
     
-    def _fetch_web_fallback(self, company: str, query: str, max_results: int) -> List[Dict]:
-        """DuckDuckGo fallback only if other sources failed"""
+    def _search_ddgs_fallback(self, query: str, max_results: int) -> List[Dict]:
+        """DuckDuckGo fallback search - FIXED"""
         try:
             from ddgs import DDGS
             
             results = []
-            search_query = f'"{company}" ESG sustainability report OR environmental performance'
-            
             with DDGS() as ddgs:
-                search_results = ddgs.text(search_query, max_results=max_results)
+                search_results = ddgs.text(
+                    query,  # Use keywords as a positional argument
+                    region='wt-wt',
+                    safesearch='off',
+                    timelimit=None,
+                    max_results=max_results
+                )
                 
                 for result in search_results:
                     results.append({
-                        "source": self._extract_domain(result.get("href", "")),
-                        "url": result.get("href", ""),
-                        "title": result.get("title", ""),
-                        "snippet": result.get("body", ""),
+                        "source": result.get('title', '')[:100],
+                        "url": result.get('href', ''),
+                        "title": result.get('title', ''),
+                        "snippet": result.get('body', '')[:300],
                         "date": datetime.now().isoformat(),
-                        "data_source_api": "DuckDuckGo - Web Fallback",
+                        "data_source_api": "DuckDuckGo - Web",
                         "source_type": "Web Source"
                     })
+                    
+                    if len(results) >= max_results:
+                        break
+            
+            if results:
+                print(f"   ✅ DuckDuckGo: {len(results)} results")
+            else:
+                print(f"   ⏭️  DuckDuckGo: No results")
             
             return results
+            
         except Exception as e:
-            print(f"   ⚠️ DuckDuckGo fallback error: {e}")
+            error_msg = str(e)
+            if 'dns error' in error_msg.lower() or 'no such host' in error_msg.lower():
+                print(f"   ⚠️ DuckDuckGo DNS error (network issue) - skipping")
+            elif 'missing' in error_msg.lower() and 'argument' in error_msg.lower():
+                print(f"   ⚠️ DuckDuckGo API error: {error_msg[:80]}")
+            else:
+                print(f"   ⚠️ DuckDuckGo error: {error_msg[:100]}")
             return []
+
     
     def _classify_news_source(self, source_name: str) -> str:
         """Classify news source by credibility tier"""

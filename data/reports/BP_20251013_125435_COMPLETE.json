@@ -1,0 +1,1280 @@
+{
+  "company": "BP",
+  "analysis_timestamp": "2025-10-13T12:50:50.387818",
+  "orchestration_method": "Direct 11-Agent",
+  "claims": [
+    {
+      "claim_id": 1,
+      "actor": "BP",
+      "claim_text": "committed to net zero by 2050",
+      "category": "Environmental",
+      "subcategory": "Carbon emissions",
+      "metric": "Net zero",
+      "timeline": "by 2050",
+      "claim_type": "Target",
+      "specificity_score": 9
+    },
+    {
+      "claim_id": 2,
+      "actor": "BP",
+      "claim_text": "has reduced carbon emissions",
+      "category": "Environmental",
+      "subcategory": "Carbon emissions",
+      "metric": "Unspecified reduction",
+      "timeline": "Unspecified past period",
+      "claim_type": "Achievement",
+      "specificity_score": 2
+    }
+  ],
+  "evidence": [
+    {
+      "claim_id": 1,
+      "evidence": [
+        {
+          "source_id": "ev_000",
+          "source_name": "Amnesty International",
+          "source_type": "NGO",
+          "url": "https://www.apple.com/environment/",
+          "date": "2025-10-11T22:10:43.719975",
+          "relevant_text": "Apple 2030 is our plan to bring our net emissions to zero through recycled materials, renewable electricity, and lower-carbon transportation.",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 1,
+          "data_source_api": "Vector Database (Historical)",
+          "retrieval_timestamp": "2025-10-13T12:51:47.977837"
+        },
+        {
+          "source_id": "ev_001",
+          "source_name": "Amnesty International",
+          "source_type": "NGO",
+          "url": "https://www.apple.com/environment/",
+          "date": "2025-10-11T22:10:43.719975",
+          "relevant_text": "Apple 2030 is our plan to bring our net emissions to zero through recycled materials, renewable electricity, and lower-carbon transportation.",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 1,
+          "data_source_api": "Vector Database (Historical)",
+          "retrieval_timestamp": "2025-10-13T12:51:48.105015"
+        },
+        {
+          "source_id": "ev_002",
+          "source_name": "Amnesty International",
+          "source_type": "NGO",
+          "url": "https://www.apple.com/environment/",
+          "date": "2025-10-11T22:10:43.719975",
+          "relevant_text": "Apple 2030 is our plan to bring our net emissions to zero through recycled materials, renewable electricity, and lower-carbon transportation.",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 1,
+          "data_source_api": "Vector Database (Historical)",
+          "retrieval_timestamp": "2025-10-13T12:51:48.200515"
+        },
+        {
+          "source_id": "ev_003",
+          "source_name": "Amnesty International",
+          "source_type": "NGO",
+          "url": "https://www.apple.com/environment/",
+          "date": "2025-10-11T22:10:43.719975",
+          "relevant_text": "Apple 2030 is our plan to bring our net emissions to zero through recycled materials, renewable electricity, and lower-carbon transportation.",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 1,
+          "data_source_api": "Vector Database (Historical)",
+          "retrieval_timestamp": "2025-10-13T12:51:48.292265"
+        },
+        {
+          "source_id": "ev_004",
+          "source_name": "thesustainableinnovation.com",
+          "source_type": "ESG Platform",
+          "url": "https://thesustainableinnovation.com/tesla-sustainability/",
+          "date": "2025-10-11T11:59:01.438714",
+          "relevant_text": "April 29, 2025 - Discover Tesla \u2019s full 2025 sustainability strategy: battery recycling breakthroughs, emissions cuts, regenerative energy systems, and 2040 net-zero plans.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 2,
+          "data_source_api": "Vector Database (Historical)",
+          "retrieval_timestamp": "2025-10-13T12:51:48.395508"
+        },
+        {
+          "source_id": "ev_005",
+          "source_name": "Rainforest Action Network",
+          "source_type": "NGO",
+          "url": "https://www.mckinsey.com/~/media/mckinsey/business+functions/sustainability/our+insights/does+esg+really+matter+and+why/does-esg-really-matter-and-why-vf.pdf",
+          "date": "2025-10-13T12:51:46.739167",
+          "relevant_text": "Does ESG really matter\u2014 and why? Although valid questions have been raised about ESG , the need for companies to understand and address their externalities is likely to become essential to maintaining their social license.",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 0,
+          "data_source_api": "Rainforest Action Network - NGO",
+          "retrieval_timestamp": "2025-10-13T12:51:48.488551"
+        },
+        {
+          "source_id": "ev_006",
+          "source_name": "Amnesty International",
+          "source_type": "NGO",
+          "url": "https://www.bp.com/en/global/corporate/sustainability.html",
+          "date": "2025-10-13T12:51:43.756554",
+          "relevant_text": "Many of them have complementary expertise on social and environmental issues and we sometimes rely on them to act as a bridge between bp and other stakeholders. Our investor relations team coordinates our one-to-one engagement with key investors and our investor events, which include roadshows and results presentations.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "Amnesty International - NGO",
+          "retrieval_timestamp": "2025-10-13T12:51:48.583451"
+        },
+        {
+          "source_id": "ev_007",
+          "source_name": "Amnesty International",
+          "source_type": "NGO",
+          "url": "https://www.mckinsey.com/industries/consumer-packaged-goods/our-insights/consumers-care-about-sustainability-and-back-it-up-with-their-wallets",
+          "date": "2025-10-13T12:51:43.756554",
+          "relevant_text": "Feb 6, 2023 \u00b7 It is of course paramount for the development of a sustainable and inclusive economy that companies back any ESG -related claims they make with genuine actions. \u201cGreenwashing\u201d\u2014empty or misleading claims about the environmental or social merits of a product or service\u2014poses reputational risks to businesses by eroding the trust of consumers.",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 0,
+          "data_source_api": "Amnesty International - NGO",
+          "retrieval_timestamp": "2025-10-13T12:51:48.663169"
+        },
+        {
+          "source_id": "ev_008",
+          "source_name": "Greenpeace",
+          "source_type": "NGO",
+          "url": "https://www.greenpeace.org/usa/environmental-justice/",
+          "date": "2025-10-13T12:51:41.504797",
+          "relevant_text": "Environmental Justice requires that we incorporate racial and socioeconomic justice into the way we fight for the protection of our planet.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "Greenpeace - NGO",
+          "retrieval_timestamp": "2025-10-13T12:51:48.779556"
+        },
+        {
+          "source_id": "ev_009",
+          "source_name": "Greenpeace",
+          "source_type": "NGO",
+          "url": "https://www.epa.gov/sustainability",
+          "date": "2025-10-13T12:51:41.504797",
+          "relevant_text": "Aug 11, 2025 \u00b7 Sustainability is part of everyday life and essential for the future of environmental protection. This site addresses waste management, water and energy conservation, and corporate sustainability .",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "Greenpeace - NGO",
+          "retrieval_timestamp": "2025-10-13T12:51:48.881845"
+        },
+        {
+          "source_id": "ev_010",
+          "source_name": "Antaranews.com",
+          "source_type": "News Source",
+          "url": "https://en.antaranews.com/news/385545/ri-encourages-green-investment-global-collaboration-for-downstreaming",
+          "date": "2025-10-11T06:05:39Z",
+          "relevant_text": "Indonesia emphasizes that the success of sustainable downstreaming must be supported by inclusive and responsible investment, principles of good governance, ...",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 2,
+          "data_source_api": "NewsAPI",
+          "retrieval_timestamp": "2025-10-13T12:51:48.979689"
+        },
+        {
+          "source_id": "ev_011",
+          "source_name": "GlobeNewswire",
+          "source_type": "News Source",
+          "url": "https://www.globenewswire.com/news-release/2025/10/09/3163952/0/en/CTi-Welcomes-Dr-Luis-F-Quintero-to-Advisory-Board-Strengthening-Focus-on-Oil-Gas-and-Frack-Produced-Water.html",
+          "date": "2025-10-09T10:00:00Z",
+          "relevant_text": "CTi strengthens its focus on international expansion and growth in the oil & gas industry.......",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 3,
+          "data_source_api": "NewsAPI",
+          "retrieval_timestamp": "2025-10-13T12:51:49.071170"
+        },
+        {
+          "source_id": "ev_012",
+          "source_name": "Plos.org",
+          "source_type": "News Source",
+          "url": "https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0333802",
+          "date": "2025-10-08T14:00:00Z",
+          "relevant_text": "The conservation of local chicken breeds is essential to safeguard genetic biodiversity and promote sustainable poultry production. Sperm cryopreservation is a key tool for the long-term maintenance of genetic diversity by enabling the storage of male gametes\u2026",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 4,
+          "data_source_api": "NewsAPI",
+          "retrieval_timestamp": "2025-10-13T12:51:49.169292"
+        },
+        {
+          "source_id": "ev_013",
+          "source_name": "Naturalnews.com",
+          "source_type": "News Source",
+          "url": "https://www.naturalnews.com/2025-10-08-japan-green-energy-collapse-economic-fantasy.html",
+          "date": "2025-10-08T06:00:00Z",
+          "relevant_text": "Mitsubishi Corporation is abandoning three major offshore wind projects in Japan after costs more than doubled, making them financially unviable. The company\u2019s CEO stated that investment recovery was impossible, leading to hundreds of millions in losses. This\u2026",
+          "relationship_to_claim": "Contradicts",
+          "data_freshness_days": 5,
+          "data_source_api": "NewsAPI",
+          "retrieval_timestamp": "2025-10-13T12:51:49.263140"
+        },
+        {
+          "source_id": "ev_014",
+          "source_name": "Plos.org",
+          "source_type": "News Source",
+          "url": "https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0333788",
+          "date": "2025-10-07T14:00:00Z",
+          "relevant_text": "On 16 July 2021, China officially launched its national carbon emissions trading market, which has since become the largest market in the world in terms of coverage of greenhouse gas emissions and plays an important role in combating global climate change. Th\u2026",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 5,
+          "data_source_api": "NewsAPI",
+          "retrieval_timestamp": "2025-10-13T12:51:49.349829"
+        }
+      ],
+      "evidence_gap": false,
+      "quality_metrics": {
+        "evidence_gap": false,
+        "independent_sources": 15,
+        "premium_sources": 9,
+        "avg_freshness_days": 1.7,
+        "source_diversity": 3,
+        "diversity_score": 60,
+        "coverage_score": 16.7,
+        "total_sources": 15,
+        "source_type_breakdown": {
+          "NGO": 9,
+          "ESG Platform": 1,
+          "News Source": 5
+        },
+        "api_source_breakdown": {
+          "Vector Database (Historical)": 5,
+          "Rainforest Action Network - NGO": 1,
+          "Amnesty International - NGO": 2,
+          "Greenpeace - NGO": 2,
+          "NewsAPI": 5
+        }
+      },
+      "source_breakdown": {
+        "Vector Database (Historical)": 5,
+        "Rainforest Action Network - NGO": 1,
+        "Amnesty International - NGO": 2,
+        "Greenpeace - NGO": 2,
+        "NewsAPI": 5
+      },
+      "retrieval_timestamp": "2025-10-13T12:51:50.400122"
+    },
+    {
+      "claim_id": 2,
+      "evidence": [
+        {
+          "source_id": "ev_000",
+          "source_name": "Greenpeace",
+          "source_type": "NGO",
+          "url": "https://www.theverge.com/2023/4/26/23697746/tesla-climate-pollution-carbon-footprint-supply-chain-report",
+          "date": "2025-10-11T12:58:37.802952",
+          "relevant_text": "Apr 26, 2023 \u00b7 Tesla \u2019s carbon footprint is finally coming into focus, and it\u2019s bigger than the company let on in the past The company divulged its supply chain emissions for the first time, and it\u2019s the ...",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 1,
+          "data_source_api": "Vector Database (Historical)",
+          "retrieval_timestamp": "2025-10-13T12:52:17.179850"
+        },
+        {
+          "source_id": "ev_001",
+          "source_name": "Greenpeace",
+          "source_type": "NGO",
+          "url": "https://www.theverge.com/2023/4/26/23697746/tesla-climate-pollution-carbon-footprint-supply-chain-report",
+          "date": "2025-10-11T12:58:37.802952",
+          "relevant_text": "Apr 26, 2023 \u00b7 Tesla \u2019s carbon footprint is finally coming into focus, and it\u2019s bigger than the company let on in the past The company divulged its supply chain emissions for the first time, and it\u2019s the ...",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 1,
+          "data_source_api": "Vector Database (Historical)",
+          "retrieval_timestamp": "2025-10-13T12:52:17.283280"
+        },
+        {
+          "source_id": "ev_002",
+          "source_name": "Greenpeace",
+          "source_type": "NGO",
+          "url": "https://www.theverge.com/2023/4/26/23697746/tesla-climate-pollution-carbon-footprint-supply-chain-report",
+          "date": "2025-10-11T12:58:37.802952",
+          "relevant_text": "Apr 26, 2023 \u00b7 Tesla \u2019s carbon footprint is finally coming into focus, and it\u2019s bigger than the company let on in the past The company divulged its supply chain emissions for the first time, and it\u2019s the ...",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 1,
+          "data_source_api": "Vector Database (Historical)",
+          "retrieval_timestamp": "2025-10-13T12:52:17.377555"
+        },
+        {
+          "source_id": "ev_003",
+          "source_name": "Greenpeace",
+          "source_type": "NGO",
+          "url": "https://www.theverge.com/2023/4/26/23697746/tesla-climate-pollution-carbon-footprint-supply-chain-report",
+          "date": "2025-10-11T12:58:37.802952",
+          "relevant_text": "Apr 26, 2023 \u00b7 Tesla \u2019s carbon footprint is finally coming into focus, and it\u2019s bigger than the company let on in the past The company divulged its supply chain emissions for the first time, and it\u2019s the ...",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 1,
+          "data_source_api": "Vector Database (Historical)",
+          "retrieval_timestamp": "2025-10-13T12:52:17.468103"
+        },
+        {
+          "source_id": "ev_004",
+          "source_name": "Greenpeace",
+          "source_type": "NGO",
+          "url": "https://www.theverge.com/2023/4/26/23697746/tesla-climate-pollution-carbon-footprint-supply-chain-report",
+          "date": "2025-10-11T12:58:37.802952",
+          "relevant_text": "Apr 26, 2023 \u00b7 Tesla \u2019s carbon footprint is finally coming into focus, and it\u2019s bigger than the company let on in the past The company divulged its supply chain emissions for the first time, and it\u2019s the ...",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 1,
+          "data_source_api": "Vector Database (Historical)",
+          "retrieval_timestamp": "2025-10-13T12:52:17.560047"
+        },
+        {
+          "source_id": "ev_005",
+          "source_name": "Rainforest Action Network",
+          "source_type": "NGO",
+          "url": "https://www.ran.org/the-understory/climate_activists_confront_environmental_defense_for_greenwashing/",
+          "date": "2025-10-13T12:52:16.647192",
+          "relevant_text": "Washington, DC \u2013 As the UN Framework Convention on Climate Change opened today in Poznan, Poland, grassroots climate activists took over the Washington DC office of Environmental Defense.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "Rainforest Action Network - NGO",
+          "retrieval_timestamp": "2025-10-13T12:52:17.661422"
+        },
+        {
+          "source_id": "ev_006",
+          "source_name": "Amnesty International",
+          "source_type": "NGO",
+          "url": "https://www.bp.com/en/global/corporate/sustainability.html",
+          "date": "2025-10-13T12:52:14.501518",
+          "relevant_text": "Many of them have complementary expertise on social and environmental issues and we sometimes rely on them to act as a bridge between bp and other stakeholders. Our investor relations team coordinates our one-to-one engagement with key investors and our investor events, which include roadshows and results presentations.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "Amnesty International - NGO",
+          "retrieval_timestamp": "2025-10-13T12:52:17.760055"
+        },
+        {
+          "source_id": "ev_007",
+          "source_name": "Amnesty International",
+          "source_type": "NGO",
+          "url": "https://www.mckinsey.com/industries/consumer-packaged-goods/our-insights/consumers-care-about-sustainability-and-back-it-up-with-their-wallets",
+          "date": "2025-10-13T12:52:14.501518",
+          "relevant_text": "Feb 6, 2023 \u00b7 It is of course paramount for the development of a sustainable and inclusive economy that companies back any ESG -related claims they make with genuine actions. \u201cGreenwashing\u201d\u2014empty or misleading claims about the environmental or social merits of a product or service\u2014poses reputational risks to businesses by eroding the trust of consumers.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "Amnesty International - NGO",
+          "retrieval_timestamp": "2025-10-13T12:52:17.866667"
+        },
+        {
+          "source_id": "ev_008",
+          "source_name": "Greenpeace",
+          "source_type": "NGO",
+          "url": "https://www.greenpeace.org/usa/environmental-justice/",
+          "date": "2025-10-13T12:52:11.045571",
+          "relevant_text": "Environmental Justice requires that we incorporate racial and socioeconomic justice into the way we fight for the protection of our planet.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "Greenpeace - NGO",
+          "retrieval_timestamp": "2025-10-13T12:52:17.990270"
+        },
+        {
+          "source_id": "ev_009",
+          "source_name": "Greenpeace",
+          "source_type": "NGO",
+          "url": "https://www.epa.gov/sustainability",
+          "date": "2025-10-13T12:52:11.045571",
+          "relevant_text": "Aug 11, 2025 \u00b7 Sustainability is part of everyday life and essential for the future of environmental protection. This site addresses waste management, water and energy conservation, and corporate sustainability .",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "Greenpeace - NGO",
+          "retrieval_timestamp": "2025-10-13T12:52:18.085147"
+        },
+        {
+          "source_id": "ev_010",
+          "source_name": "Antaranews.com",
+          "source_type": "News Source",
+          "url": "https://en.antaranews.com/news/385545/ri-encourages-green-investment-global-collaboration-for-downstreaming",
+          "date": "2025-10-11T06:05:39Z",
+          "relevant_text": "Indonesia emphasizes that the success of sustainable downstreaming must be supported by inclusive and responsible investment, principles of good governance, ...",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 2,
+          "data_source_api": "NewsAPI",
+          "retrieval_timestamp": "2025-10-13T12:52:18.177988"
+        },
+        {
+          "source_id": "ev_011",
+          "source_name": "GlobeNewswire",
+          "source_type": "News Source",
+          "url": "https://www.globenewswire.com/news-release/2025/10/09/3163952/0/en/CTi-Welcomes-Dr-Luis-F-Quintero-to-Advisory-Board-Strengthening-Focus-on-Oil-Gas-and-Frack-Produced-Water.html",
+          "date": "2025-10-09T10:00:00Z",
+          "relevant_text": "CTi strengthens its focus on international expansion and growth in the oil & gas industry.......",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 3,
+          "data_source_api": "NewsAPI",
+          "retrieval_timestamp": "2025-10-13T12:52:18.287894"
+        },
+        {
+          "source_id": "ev_012",
+          "source_name": "Plos.org",
+          "source_type": "News Source",
+          "url": "https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0333802",
+          "date": "2025-10-08T14:00:00Z",
+          "relevant_text": "The conservation of local chicken breeds is essential to safeguard genetic biodiversity and promote sustainable poultry production. Sperm cryopreservation is a key tool for the long-term maintenance of genetic diversity by enabling the storage of male gametes\u2026",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 4,
+          "data_source_api": "NewsAPI",
+          "retrieval_timestamp": "2025-10-13T12:52:18.386451"
+        },
+        {
+          "source_id": "ev_013",
+          "source_name": "Naturalnews.com",
+          "source_type": "News Source",
+          "url": "https://www.naturalnews.com/2025-10-08-japan-green-energy-collapse-economic-fantasy.html",
+          "date": "2025-10-08T06:00:00Z",
+          "relevant_text": "Mitsubishi Corporation is abandoning three major offshore wind projects in Japan after costs more than doubled, making them financially unviable. The company\u2019s CEO stated that investment recovery was impossible, leading to hundreds of millions in losses. This\u2026",
+          "relationship_to_claim": "Contradicts",
+          "data_freshness_days": 5,
+          "data_source_api": "NewsAPI",
+          "retrieval_timestamp": "2025-10-13T12:52:18.484892"
+        },
+        {
+          "source_id": "ev_014",
+          "source_name": "Plos.org",
+          "source_type": "News Source",
+          "url": "https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0333788",
+          "date": "2025-10-07T14:00:00Z",
+          "relevant_text": "On 16 July 2021, China officially launched its national carbon emissions trading market, which has since become the largest market in the world in terms of coverage of greenhouse gas emissions and plays an important role in combating global climate change. Th\u2026",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 5,
+          "data_source_api": "NewsAPI",
+          "retrieval_timestamp": "2025-10-13T12:52:18.573692"
+        }
+      ],
+      "evidence_gap": false,
+      "quality_metrics": {
+        "evidence_gap": false,
+        "independent_sources": 15,
+        "premium_sources": 10,
+        "avg_freshness_days": 1.6,
+        "source_diversity": 2,
+        "diversity_score": 40,
+        "coverage_score": 16.7,
+        "total_sources": 15,
+        "source_type_breakdown": {
+          "NGO": 10,
+          "News Source": 5
+        },
+        "api_source_breakdown": {
+          "Vector Database (Historical)": 5,
+          "Rainforest Action Network - NGO": 1,
+          "Amnesty International - NGO": 2,
+          "Greenpeace - NGO": 2,
+          "NewsAPI": 5
+        }
+      },
+      "source_breakdown": {
+        "Vector Database (Historical)": 5,
+        "Rainforest Action Network - NGO": 1,
+        "Amnesty International - NGO": 2,
+        "Greenpeace - NGO": 2,
+        "NewsAPI": 5
+      },
+      "retrieval_timestamp": "2025-10-13T12:52:19.541599"
+    }
+  ],
+  "contradiction_analysis": [
+    {
+      "claim_id": 1,
+      "overall_verdict": "Unverifiable",
+      "verification_confidence": 0,
+      "specific_contradictions": [
+        {
+          "aspect": "Entity and Timeline Mismatch",
+          "claim_states": "An unspecified company is committed to net zero by 2050.",
+          "evidence_shows": "The provided evidence discusses other companies with different timelines: Apple's net-zero goal is for 2030, and Tesla's is for 2040. No evidence supports a 2050 commitment for any company.",
+          "severity": "Major"
+        }
+      ],
+      "supportive_evidence": [],
+      "key_issues": [
+        "The provided evidence is entirely irrelevant to the claim as stated.",
+        "The identity of the company making the 'net zero by 2050' claim is not specified, making direct verification impossible.",
+        "The evidence mentions specific companies (Apple, Tesla, Mitsubishi) but their commitments and actions do not align with or support the generic claim."
+      ],
+      "evidence_counts": {
+        "supporting": 7,
+        "contradicting": 1,
+        "neutral": 7
+      }
+    },
+    {
+      "claim_id": 2,
+      "overall_verdict": "Unverifiable",
+      "verification_confidence": 0,
+      "specific_contradictions": [
+        {
+          "aspect": "Overall Carbon Footprint Transparency",
+          "claim_states": "The claim implies a positive trend of decreasing environmental impact.",
+          "evidence_shows": "Evidence from Greenpeace states that the company's (Tesla's) carbon footprint is 'bigger than the company let on in the past' due to the first-time disclosure of its supply chain emissions.",
+          "severity": "Moderate"
+        }
+      ],
+      "supportive_evidence": [],
+      "key_issues": [
+        "The provided evidence is insufficient to verify a 'reduction' in emissions. To do so would require at least two comparable data points over time, which are not present.",
+        "The primary evidence (Greenpeace) focuses on a recent disclosure that *increased* the company's known carbon footprint, which undermines the spirit of a reduction claim.",
+        "The claim is generic ('has reduced carbon emissions'), while the evidence is a mix of specific information about one company (Tesla) and a collection of completely irrelevant news snippets about other companies and topics (Indonesian investment, oil & gas expansion, chicken breeds, etc.).",
+        "The evidence lacks crucial context, such as the baseline year for the supposed reduction, the scope of emissions being discussed (Scope 1, 2, or 3), and the specific metrics used."
+      ],
+      "evidence_counts": {
+        "supporting": 1,
+        "contradicting": 1,
+        "neutral": 13
+      }
+    }
+  ],
+  "credibility_analysis": {
+    "source_credibility_analyses": [
+      {
+        "source_id": "ev_000",
+        "source_name": "Amnesty International",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.apple.com/environment/"
+      },
+      {
+        "source_id": "ev_001",
+        "source_name": "Amnesty International",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.apple.com/environment/"
+      },
+      {
+        "source_id": "ev_002",
+        "source_name": "Amnesty International",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.apple.com/environment/"
+      },
+      {
+        "source_id": "ev_003",
+        "source_name": "Amnesty International",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.apple.com/environment/"
+      },
+      {
+        "source_id": "ev_004",
+        "source_name": "thesustainableinnovation.com",
+        "source_type": "ESG Platform",
+        "base_credibility": 0.75,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.8,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://thesustainableinnovation.com/tesla-sustainability/"
+      },
+      {
+        "source_id": "ev_005",
+        "source_name": "Rainforest Action Network",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.mckinsey.com/~/media/mckinsey/business+functions/sustainability/our+insights/does+esg+really+matter+and+why/does-esg-really-matter-and-why-vf.pdf"
+      },
+      {
+        "source_id": "ev_006",
+        "source_name": "Amnesty International",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.bp.com/en/global/corporate/sustainability.html"
+      },
+      {
+        "source_id": "ev_007",
+        "source_name": "Amnesty International",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.mckinsey.com/industries/consumer-packaged-goods/our-insights/consumers-care-about-sustainability-and-back-it-up-with-their-wallets"
+      },
+      {
+        "source_id": "ev_008",
+        "source_name": "Greenpeace",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.greenpeace.org/usa/environmental-justice/"
+      },
+      {
+        "source_id": "ev_009",
+        "source_name": "Greenpeace",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.epa.gov/sustainability"
+      },
+      {
+        "source_id": "ev_010",
+        "source_name": "Antaranews.com",
+        "source_type": "News Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://en.antaranews.com/news/385545/ri-encourages-green-investment-global-collaboration-for-downstreaming"
+      },
+      {
+        "source_id": "ev_011",
+        "source_name": "GlobeNewswire",
+        "source_type": "News Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.globenewswire.com/news-release/2025/10/09/3163952/0/en/CTi-Welcomes-Dr-Luis-F-Quintero-to-Advisory-Board-Strengthening-Focus-on-Oil-Gas-and-Frack-Produced-Water.html"
+      },
+      {
+        "source_id": "ev_012",
+        "source_name": "Plos.org",
+        "source_type": "News Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0333802"
+      },
+      {
+        "source_id": "ev_013",
+        "source_name": "Naturalnews.com",
+        "source_type": "News Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.naturalnews.com/2025-10-08-japan-green-energy-collapse-economic-fantasy.html"
+      },
+      {
+        "source_id": "ev_014",
+        "source_name": "Plos.org",
+        "source_type": "News Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0333788"
+      },
+      {
+        "source_id": "ev_000",
+        "source_name": "Greenpeace",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.theverge.com/2023/4/26/23697746/tesla-climate-pollution-carbon-footprint-supply-chain-report"
+      },
+      {
+        "source_id": "ev_001",
+        "source_name": "Greenpeace",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.theverge.com/2023/4/26/23697746/tesla-climate-pollution-carbon-footprint-supply-chain-report"
+      },
+      {
+        "source_id": "ev_002",
+        "source_name": "Greenpeace",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.theverge.com/2023/4/26/23697746/tesla-climate-pollution-carbon-footprint-supply-chain-report"
+      },
+      {
+        "source_id": "ev_003",
+        "source_name": "Greenpeace",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.theverge.com/2023/4/26/23697746/tesla-climate-pollution-carbon-footprint-supply-chain-report"
+      },
+      {
+        "source_id": "ev_004",
+        "source_name": "Greenpeace",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.theverge.com/2023/4/26/23697746/tesla-climate-pollution-carbon-footprint-supply-chain-report"
+      },
+      {
+        "source_id": "ev_005",
+        "source_name": "Rainforest Action Network",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.ran.org/the-understory/climate_activists_confront_environmental_defense_for_greenwashing/"
+      },
+      {
+        "source_id": "ev_006",
+        "source_name": "Amnesty International",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.bp.com/en/global/corporate/sustainability.html"
+      },
+      {
+        "source_id": "ev_007",
+        "source_name": "Amnesty International",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.mckinsey.com/industries/consumer-packaged-goods/our-insights/consumers-care-about-sustainability-and-back-it-up-with-their-wallets"
+      },
+      {
+        "source_id": "ev_008",
+        "source_name": "Greenpeace",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.greenpeace.org/usa/environmental-justice/"
+      },
+      {
+        "source_id": "ev_009",
+        "source_name": "Greenpeace",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.epa.gov/sustainability"
+      },
+      {
+        "source_id": "ev_010",
+        "source_name": "Antaranews.com",
+        "source_type": "News Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://en.antaranews.com/news/385545/ri-encourages-green-investment-global-collaboration-for-downstreaming"
+      },
+      {
+        "source_id": "ev_011",
+        "source_name": "GlobeNewswire",
+        "source_type": "News Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.globenewswire.com/news-release/2025/10/09/3163952/0/en/CTi-Welcomes-Dr-Luis-F-Quintero-to-Advisory-Board-Strengthening-Focus-on-Oil-Gas-and-Frack-Produced-Water.html"
+      },
+      {
+        "source_id": "ev_012",
+        "source_name": "Plos.org",
+        "source_type": "News Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0333802"
+      },
+      {
+        "source_id": "ev_013",
+        "source_name": "Naturalnews.com",
+        "source_type": "News Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.naturalnews.com/2025-10-08-japan-green-energy-collapse-economic-fantasy.html"
+      },
+      {
+        "source_id": "ev_014",
+        "source_name": "Plos.org",
+        "source_type": "News Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0333788"
+      }
+    ],
+    "aggregate_metrics": {
+      "average_credibility": 0.8116666666666668,
+      "high_credibility_count": 20,
+      "medium_credibility_count": 10,
+      "low_credibility_count": 0,
+      "total_sources": 30
+    }
+  },
+  "sentiment_analysis": [
+    {
+      "claim_id": 1,
+      "claim_sentiment": {
+        "polarity_score": 0.0,
+        "subjectivity_score": 0.0,
+        "buzzword_count": 1,
+        "vague_terms": [],
+        "hedge_words": [],
+        "specificity_deficit": false
+      },
+      "evidence_sentiment": {
+        "polarity_score": 0.047,
+        "subjectivity_score": 0.275,
+        "buzzword_count": 2,
+        "vague_terms": [
+          "leading"
+        ],
+        "hedge_words": [
+          "about"
+        ],
+        "specificity_deficit": false
+      },
+      "sentiment_divergence": 0.047,
+      "divergence_score": 4,
+      "greenwashing_flags": [
+        {
+          "type": "Future Promise Heavy",
+          "severity": "Moderate",
+          "description": "Focus on future targets rather than current achievements"
+        }
+      ],
+      "llm_linguistic_analysis": {
+        "raw_analysis": "**Analysis Results**\n\n```json\n{\n  \"polarity_score\": 0.0,\n  \"subjectivity_score\": 0.0,\n  \"buzzword_count\": 0,\n  \"vague_terms\": [],\n  \"hedge_words\": [],\n  \"specificity_deficit\": true\n}\n```\n\n**Explanation**\n\n1. **Sentiment Polarity**: The text has a neutral sentiment, indicating no clear positive or ne",
+        "parsed": false
+      },
+      "overall_linguistic_risk": 13
+    },
+    {
+      "claim_id": 2,
+      "claim_sentiment": {
+        "polarity_score": 0.0,
+        "subjectivity_score": 0.0,
+        "buzzword_count": 0,
+        "vague_terms": [],
+        "hedge_words": [],
+        "specificity_deficit": false
+      },
+      "evidence_sentiment": {
+        "polarity_score": 0.013,
+        "subjectivity_score": 0.435,
+        "buzzword_count": 2,
+        "vague_terms": [
+          "leading"
+        ],
+        "hedge_words": [
+          "about"
+        ],
+        "specificity_deficit": false
+      },
+      "sentiment_divergence": 0.013,
+      "divergence_score": 1,
+      "greenwashing_flags": [],
+      "llm_linguistic_analysis": {
+        "raw_analysis": "**Analysis Results**\n\n```json\n{\n  \"polarity_score\": 0.2,\n  \"subjectivity_score\": 0.6,\n  \"buzzword_count\": 1,\n  \"vague_terms\": [\"reduced\"],\n  \"hedge_words\": [],\n  \"specificity_deficit\": true\n}\n```\n\n**Explanation**\n\n1. **Sentiment Polarity**: The sentiment polarity score is 0.2, indicating a slightly ",
+        "parsed": false
+      },
+      "overall_linguistic_risk": 0
+    }
+  ],
+  "historical_analysis": {
+    "company": "BP",
+    "analysis_date": "2025-10-13T12:52:41.698603",
+    "past_violations": [
+      {
+        "year": 2025,
+        "type": "Environmental",
+        "description": "When the Environmental Protection Agency finalised plans to gut the methane rule in August, David Lawler, the head of BP America, issued a statement saying the company \u201crespectfully disagrees with tod",
+        "source": "Greenpeace",
+        "url": "https://unearthed.greenpeace.org/2020/09/28/bp-shell-climate-lobby-groups/"
+      }
+    ],
+    "greenwashing_history": {
+      "prior_accusations": 2,
+      "examples": [
+        {
+          "year": 2025,
+          "description": "Washington, DC \u2013 As the UN Framework Convention on Climate Change opened today in Poznan, Poland, grassroots climate activists took over the Washingto",
+          "source": "Rainforest Action Network"
+        },
+        {
+          "year": 2025,
+          "description": "Feb 6, 2023 \u00b7 It is of course paramount for the development of a sustainable and inclusive economy that companies back any ESG -related claims they ma",
+          "source": "Amnesty International"
+        }
+      ],
+      "pattern_detected": false
+    },
+    "positive_track_record": [],
+    "temporal_patterns": {
+      "consistent_behavior": true,
+      "improving_trend": false,
+      "declining_trend": false,
+      "reactive_claims": false
+    },
+    "reputation_score": 25
+  },
+  "final_risk_assessment": {
+    "company": "BP",
+    "analysis_timestamp": "2025-10-13T12:54:35.981881",
+    "industry": "oil_and_gas",
+    "industry_baseline_risk": 75,
+    "base_risk_score": 37.5,
+    "industry_adjustment": 7.5,
+    "peer_adjustment": 0.0,
+    "greenwashing_risk_score": 45.0,
+    "esg_score": 55.0,
+    "risk_level": "MODERATE",
+    "rating_grade": "BBB",
+    "component_scores": {
+      "claim_verification": 70.0,
+      "evidence_quality": 10,
+      "source_credibility": 18,
+      "sentiment_divergence": 2,
+      "historical_pattern": 51,
+      "contradiction_severity": 30
+    },
+    "explainability_top_3_reasons": [
+      "Historical violations: 1 documented ESG violations (risk: 51%)",
+      "High-scrutiny industry (Oil And Gas): ESG claims require exceptional evidence standards"
+    ],
+    "actionable_insights": {
+      "for_investors": "MODERATE RISK: BP (Oil And Gas) shows mixed ESG performance. Additional due diligence required. Monitor peer comparisons and upcoming sustainability reports.",
+      "for_regulators": "MONITORING RECOMMENDED: BP has some inconsistencies. Standard oversight appropriate for Oil And Gas sector. Request clarification on specific claims.",
+      "for_consumers": "MIXED SIGNALS: BP shows some genuine ESG efforts but Oil And Gas sector has structural challenges. Verify specific claims independently."
+    },
+    "confidence_level": 85
+  },
+  "realtime_monitoring": {
+    "company": "BP",
+    "articles_found": 5,
+    "articles": [
+      {
+        "source": "Rainforest Action Network",
+        "url": "https://www.mckinsey.com/~/media/mckinsey/business+functions/sustainability/our+insights/does+esg+really+matter+and+why/does-esg-really-matter-and-why-vf.pdf",
+        "title": "Does ESG really matter\u2014 and why? - McKinsey & Company",
+        "snippet": "Does ESG really matter\u2014 and why? Although valid questions have been raised about ESG , the need for companies to understand and address their externalities is likely to become essential to maintaining their social license.",
+        "date": "2025-10-13T12:51:05.906130",
+        "data_source_api": "Rainforest Action Network - NGO",
+        "source_type": "NGO",
+        "extraction_failed": true,
+        "extraction_error": "Article `download()` failed with 404 Client Error: Not Found for url: https://www.mckinsey.com/~/media/mckinsey/business+functions/sustainability/our+insights/does+esg+really+matter+and+why/does-esg-r"
+      },
+      {
+        "source": "Amnesty International",
+        "url": "https://www.bp.com/en/global/corporate/sustainability.html",
+        "title": "Sustainability | Home - bp",
+        "snippet": "Many of them have complementary expertise on social and environmental issues and we sometimes rely on them to act as a bridge between bp and other stakeholders. Our investor relations team coordinates our one-to-one engagement with key investors and our investor events, which include roadshows and results presentations.",
+        "date": "2025-10-13T12:51:03.587878",
+        "data_source_api": "Amnesty International - NGO",
+        "source_type": "NGO",
+        "full_text": "Our approach to sustainability is targeted, systematic and collaborative \u2013 built on strong, foundations that guide the way we work and support our net zero, people and planet aims. We are working to embed sustainability more widely and deeply in our culture, business decisions, processes and governance.\n\nEngaging with our stakeholders\n\n\n\nEngaging constructively helps us deliver our strategy and sustainability aims. We engage with many different stakeholders, in various ways \u2013 from local meetings to global partnerships.\n\n\n\nOur main stakeholder groups are employees, customers, investors and shareholders, government and regulators, partners and suppliers, and society.\n\n",
+        "authors": [],
+        "publish_date": "2025-10-13T12:51:03.587878"
+      },
+      {
+        "source": "Amnesty International",
+        "url": "https://www.mckinsey.com/industries/consumer-packaged-goods/our-insights/consumers-care-about-sustainability-and-back-it-up-with-their-wallets",
+        "title": "Do consumers care about sustainability & ESG claims? | McKinsey",
+        "snippet": "Feb 6, 2023 \u00b7 It is of course paramount for the development of a sustainable and inclusive economy that companies back any ESG -related claims they make with genuine actions. \u201cGreenwashing\u201d\u2014empty or misleading claims about the environmental or social merits of a product or service\u2014poses reputational risks to businesses by eroding the trust of consumers.",
+        "date": "2025-10-13T12:51:03.587878",
+        "data_source_api": "Amnesty International - NGO",
+        "source_type": "NGO",
+        "full_text": "Total US consumer spending accounts for over $14 trillion annually and two-thirds of the US GDP. An important subset of this spending goes toward everyday consumer packaged goods (CPG), ranging from foods and beverages to cosmetics and cleaning products. The sheer size of the CPG sector\u2014with millions of employees and trillions of dollars in annual sales\u2014makes it a critical component in efforts to build a more sustainable, inclusive economy.\n\nAbout the authors This article is a collaborative effort by Sherry Frey of NielsenIQ and Jordan Bar Am, Vinit Doshi, Anandi Malik, and Steve Noble, representing views from McKinsey\u2019s Consumer Packaged Goods Practice.\n\nCPG companies increasingly allocate time, attention, and resources to instill environmental and social responsibility into their business practices. They are also making claims about environmental and social responsibility on their product labels. The results have been evident: walk down the aisle of any grocery or drugstore these days and you\u2019re bound to see products labeled \u201cenvironmentally sustainable,\u201d \u201ceco-friendly,\u201d \u201cfair trade,\u201d or other designations related to aspects of environmental and social responsibility. Most important is what lies behind these product claims\u2014the actual contribution of such business practices to achieving goals such as reducing carbon emissions across value chains, offering fair wages and working practices to employees, and supporting diversity and inclusion. But understanding how customers respond to social and environmental claims is also important and has not been clear in the past.\n\nWhen consumers are asked if they care about buying environmentally and ethically sustainable products, they overwhelmingly answer yes: in a 2020 McKinsey US consumer sentiment survey, more than 60 percent of respondents said they\u2019d pay more for a product with sustainable packaging. A recent study by NielsenIQ found that 78 percent of US consumers say that a sustainable lifestyle is important to them. Yet many CPG executives report that one challenge to their companies\u2019 environmental, social, and governance (ESG) initiatives is the inability to generate sufficient consumer demand for these products. There are many stories of companies launching new products incorporating ESG-related claims only to find that sales fell short of expectations.\n\nHow can both of these things be true? Do consumers really care whether products incorporate ESG-related claims? Do shoppers follow through and buy these products while standing in front of store shelves or browsing online? Do their real-life buying decisions diverge from their stated preferences? The potential costs\u2014particularly in an inflationary context\u2014of manufacturing and certifying products that make good on ESG-related claims are high. Accurately assessing demand for products that make these claims is vital as companies think about where to make ESG-related investments across their businesses. Companies should therefore be eager to better understand whether and how these types of claims influence consumers\u2019 purchasing decisions. Is a shopper more likely to purchase a product if there\u2019s an ESG-related claim printed on its package? What about multiple claims? Are some kinds of claims more resonant than others? Does a claim matter more if it\u2019s appended to a pricier product? Is it less meaningful if it comes from a big, established brand?\n\nOver the past several months, McKinsey and NielsenIQ undertook an extensive study seeking to answer these and other questions. We looked beyond the self-reported intentions of US consumers and examined their actual spending behavior\u2014tracking dollars instead of sentiment. The result, for CPG companies, is a fact-based case for bringing environmentally and socially responsible products to market as part of overall ESG strategies and commitments. Creating such products turns out to be not just a moral imperative but also a solid business decision.\n\nProducts making ESG-related claims averaged 28 percent cumulative growth over the past five-year period, versus 20 percent for products that made no such claims.\n\nTo be clear, this is only a first step in understanding the complex question of how consumers value brands and products that incorporate ESG-related claims. This work has significant limitations that merit mention at the outset.\n\nFirst, although this study examines how the sales growth of products that feature ESG-related claims fared relative to similar products without such claims, it does not demonstrate a causal relationship that definitively indicates whether consumers bought these brands because of the ESG-related claims or for other reasons. For instance, the study does not control for factors such as marketing investments, distribution, and promotional activity. It primarily explores the correlation between ESG-related claims and sales performance.\n\nSecond, McKinsey and NielsenIQ did not attempt to independently assess the veracity of ESG-related claims for th",
+        "authors": [
+          "Jordan Bar Am",
+          "Vinit Doshi",
+          "Steve Noble",
+          "Anandi Malik"
+        ],
+        "publish_date": "2025-10-13T12:51:03.587878"
+      },
+      {
+        "source": "Greenpeace",
+        "url": "https://www.greenpeace.org/usa/environmental-justice/",
+        "title": "Environmental Justice - Greenpeace",
+        "snippet": "Environmental Justice requires that we incorporate racial and socioeconomic justice into the way we fight for the protection of our planet.",
+        "date": "2025-10-13T12:50:58.495704",
+        "data_source_api": "Greenpeace - NGO",
+        "source_type": "NGO",
+        "full_text": "Environmental Justice Environmental Justice requires that we incorporate racial and socioeconomic justice into the way we fight for the protection of our planet.\n\nFrom direct actions that shape our future to investigations that result in incredible environmental wins to large-scale mobilizations that inspire hundreds of thousands of people, Greenpeace has been making an enormous impact on the global environmental movement since its very first action in 1971. But our journey from 50 years ago to today hasn\u2019t been perfect. Like many large environmental organizations and much like the mainstream environmental movement in the United States, Greenpeace USA has continual work to do to ensure justice is at the core of our campaigns.\n\n\n\nWhat is Environmental Justice?\n\nEnvironmental Justice is a concept that was coined in the early 1960s during the Civil Rights movement and has increasingly picked up momentum as our social justice movements and environmental issues have grown. The issues of racism and socioeconomic justice are central to the issue of Environmental Justice. At its core, Environmental Justice guarantees that all people have equal access to a healthy, safe, and sustainable environment, as well as equal protection from environmental harm.\n\nEnvironmental Justice assumes and recognizes community care and Indigenous and first nations\u2019 knowledge. It acknowledges how privilege, power, and oppression are integral to our understanding of how we are impacted by climate change and our environment.\n\nWe witness environmental injustice when our single-use plastic is incinerated causing air pollution in low-income communities in the US, or when it is shipped overseas to overwhelm South East Asian communities. We witness environmental injustice in Flint, MI, a majority-black community that still has lead in its water and when state violence harms Indigenous youth fighting to protect their land. These are only a few examples of the impact of environmental injustice that highlight the necessity of centering Environmental Justice in our movement.\n\nClimate Justice Means Migrant Justice\n\nClimate change is not just about rising temperatures or stronger storms \u2014 it\u2019s about people. Entire communities are being displaced, livelihoods are disappearing and families are being forced to make impossible choices. As ecosystems shift, people must too. But how we respond \u2014 whether with compassion and humanity or fear and hate \u2014 will determine the scale of human suffering. This is why climate justice is migrant justice.\n\nClimate Change is Forcing Migration\n\nAs fires raged through Los Angeles, more than 100,000 people were forced to flee their homes \u2014 many of whom will never return. Dozens lost their lives. This is not an isolated event. Human-caused climate change has made California hotter, drier, and more fire-prone, with devastating consequences. Across the U.S., Americans are increasingly citing climate change as a reason for relocating. Globally, millions are being displaced by climate disasters every year.\n\nThe communities most affected by climate migration are often those least responsible for the crisis. Many of those forced to leave their homes are from the Global South \u2014 regions that have historically contributed the least to carbon emissions but bear the brunt of climate consequences. Meanwhile, wealthier nations, which have historically emitted the most greenhouse gases, often shut their doors to those seeking refuge from climate disaster.\n\nClimate migrants often face a legal void \u2014 many countries including the United States do not recognize climate displacement as a valid reason for asylum. Without legal protections, climate refugees are left vulnerable to exploitation, detention, and deportation. Climate justice means acknowledging that migration is a necessary adaptation strategy and ensuring that those displaced by climate change are met with compassion and rights-based policies, not criminalization.\n\nWho\u2019s Responsible\n\nDespite overwhelming evidence, Big Oil executives and their political allies continue to deny, deflect, and profit. For over a half-century, oil and gas companies have known that burning fossil fuels would accelerate climate disasters. Instead of taking responsibility, they covered it up, spent billions lobbying against climate action, and bankrolled politicians like President Trump who now blame migrants for economic instability instead of corporate greed.\n\nIt\u2019s not an accident that the same politicians that spread hate and fear \u2013 demonizing, detaining, and deporting migrants \u2013 are also opening the floodgates for fossil fuel expansion. The more they can convince us to point the finger at each other, the less we can unite to hold those truly responsible to account.\n\nWhy is justice critical to the future of activism?\n\nAs our planet continues to warm, forest fires burn, plastics dump into our oceans, and natural disasters worsen, we are witnessing increases in negative impacts. Our movements must keep pac",
+        "authors": [
+          "Tim Donaghy",
+          "Charlie Jiang",
+          "Arc"
+        ],
+        "publish_date": "2025-10-13T12:50:58.495704"
+      },
+      {
+        "source": "Greenpeace",
+        "url": "https://www.epa.gov/sustainability",
+        "title": "Sustainability | US EPA",
+        "snippet": "Aug 11, 2025 \u00b7 Sustainability is part of everyday life and essential for the future of environmental protection. This site addresses waste management, water and energy conservation, and corporate sustainability .",
+        "date": "2025-10-13T12:50:58.495704",
+        "data_source_api": "Greenpeace - NGO",
+        "source_type": "NGO",
+        "full_text": "Sustainability is a priority interest for many organizations, and this is especially true at EPA. Sustainability isn\u2019t part of our work \u2013 it\u2019s a guiding influence for all of our work. Learn more about what EPA is doing and what you can do.",
+        "authors": [],
+        "publish_date": "2013-12-11T14:23:16-05:00"
+      }
+    ],
+    "timestamp": "2025-10-13T12:51:23.095781"
+  },
+  "industry_comparison": {
+    "company": "BP",
+    "peers_analyzed": [
+      "Shell",
+      "Chevron",
+      "ExxonMobil",
+      "TotalEnergies",
+      "ConocoPhillips"
+    ],
+    "peer_data": {
+      "Shell": {
+        "data_available": true,
+        "esg_score": "unknown",
+        "source_count": 4,
+        "raw_data": [
+          "Doubts over Shell \u2019s \u2018drive carbon neutral\u2019 claim - Unearthed",
+          "Revealed: BP and Shell back anti-climate lobby groups ... - Unearthed",
+          "organic shell roof made of thatch and mud tops sculptural eco-retreat in india"
+        ]
+      },
+      "Chevron": {
+        "data_available": true,
+        "esg_score": "unknown",
+        "source_count": 6,
+        "raw_data": [
+          "News and media - Greenpeace - Greenpeace",
+          "Sustainability \u2014 Chevron.com",
+          "Strategic Imperative For Social Responsibility"
+        ]
+      },
+      "ExxonMobil": {
+        "data_available": true,
+        "esg_score": "unknown",
+        "source_count": 4,
+        "raw_data": [
+          "Sustainability :: Exxon Mobil Corporation (XOM)",
+          "Exxon Mobil (XOM) ESG Score and Rating 2025 - MarketBeat",
+          "Europe Plastics Market Size to Cross USD 223.02 Billion by 2034"
+        ]
+      },
+      "TotalEnergies": {
+        "data_available": true,
+        "esg_score": "unknown",
+        "source_count": 4,
+        "raw_data": [
+          "The main ESG ratings | TotalEnergies.com",
+          "Top 10: ESG Strategies from the World\u2019s Largest Companies",
+          "This Maryland county will get its power from a solar farm on landfill"
+        ]
+      },
+      "ConocoPhillips": {
+        "data_available": true,
+        "esg_score": "unknown",
+        "source_count": 3,
+        "raw_data": [
+          "ESG Environmental sustainability | Philips",
+          "Do consumers care about sustainability & ESG claims? | McKinsey",
+          "A Shrinking Workforce Threatens the Future of the Grid"
+        ]
+      }
+    },
+    "claim_comparisons": [
+      {
+        "claim_id": 1,
+        "claim": "committed to net zero by 2050",
+        "uses_superlative": false,
+        "superlative_words": [],
+        "verified_against_peers": false,
+        "peer_comparison": []
+      },
+      {
+        "claim_id": 2,
+        "claim": "has reduced carbon emissions",
+        "uses_superlative": false,
+        "superlative_words": [],
+        "verified_against_peers": false,
+        "peer_comparison": []
+      }
+    ],
+    "industry_position": {
+      "category": "Average",
+      "rationale": "Compared against 5 peers - no superlative claims detected",
+      "confidence": 50,
+      "peers_with_data": 5,
+      "superlative_claims": 0
+    }
+  },
+  "confidence_assessment": {
+    "overall_confidence": 87,
+    "confidence_level": "HIGH",
+    "breakdown": {
+      "source_quantity": 25,
+      "source_quality": 22,
+      "data_recency": 20,
+      "historical_context": 5,
+      "evidence_completeness": 15
+    },
+    "interpretation": "HIGH CONFIDENCE: Analysis backed by extensive, recent, credible sources. Suitable for regulatory/investment decisions."
+  },
+  "conflict_resolutions": [
+    {
+      "claim_id": 1,
+      "conflicts_detected": true,
+      "conflicts": [
+        {
+          "type": "Evidence Disagreement",
+          "supporting_sources": 7,
+          "contradicting_sources": 1,
+          "support_credibility": 0.8428571428571429,
+          "contradict_credibility": 0.5,
+          "support_recency_days": 1.2857142857142858,
+          "contradict_recency_days": 5.0,
+          "llm_resolution": {
+            "more_reliable": "unknown",
+            "reason": "Parse error",
+            "confidence": 0
+          }
+        }
+      ],
+      "resolution": {
+        "verdict": "Likely True",
+        "confidence": 92,
+        "method": "Credibility-Weighted Ensemble Voting"
+      },
+      "requires_human_review": false
+    },
+    {
+      "claim_id": 2,
+      "conflicts_detected": true,
+      "conflicts": [
+        {
+          "type": "Evidence Disagreement",
+          "supporting_sources": 1,
+          "contradicting_sources": 1,
+          "support_credibility": 0.5,
+          "contradict_credibility": 0.5,
+          "support_recency_days": 5.0,
+          "contradict_recency_days": 5.0,
+          "llm_resolution": {
+            "more_reliable": "unknown",
+            "reason": "Parse error",
+            "confidence": 0
+          }
+        }
+      ],
+      "resolution": {
+        "verdict": "Conflicting Evidence - Uncertain",
+        "confidence": 40,
+        "method": "Credibility-Weighted Ensemble Voting"
+      },
+      "requires_human_review": true
+    }
+  ]
+}

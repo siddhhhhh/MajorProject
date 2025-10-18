@@ -1,0 +1,154 @@
+{
+  "industry_baseline_risk": {
+    "oil_and_gas": {
+      "baseline": 75,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "High carbon intensity, environmental impact, regulatory scrutiny"
+    },
+    "coal": {
+      "baseline": 80,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Highest carbon intensity, phase-out pressure, stranded assets"
+    },
+    "mining": {
+      "baseline": 70,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Environmental degradation, water usage, community displacement"
+    },
+    "chemicals": {
+      "baseline": 65,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Toxic waste, pollution, chemical safety concerns"
+    },
+    "aviation": {
+      "baseline": 70,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "High emissions, hard-to-abate sector, noise pollution"
+    },
+    "automotive": {
+      "baseline": 60,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Supply chain complexity, emissions transition challenges"
+    },
+    "fast_fashion": {
+      "baseline": 65,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Labor practices, waste, water usage, microplastics"
+    },
+    "tobacco": {
+      "baseline": 75,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Public health impact, marketing ethics, addiction"
+    },
+    "defense": {
+      "baseline": 60,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Weapons proliferation, ethical concerns, dual-use technology"
+    },
+    "consumer_goods": {
+      "baseline": 50,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Packaging waste, supply chain transparency"
+    },
+    "retail": {
+      "baseline": 45,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Labor practices, scope 3 emissions, waste management"
+    },
+    "food_beverage": {
+      "baseline": 50,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Water usage, agricultural supply chains, nutrition"
+    },
+    "pharmaceuticals": {
+      "baseline": 55,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Drug pricing, clinical trial ethics, access to medicine"
+    },
+    "banking": {
+      "baseline": 50,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Fossil fuel financing, financial inclusion, data privacy"
+    },
+    "real_estate": {
+      "baseline": 45,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Energy efficiency, tenant wellbeing, gentrification"
+    },
+    "transportation": {
+      "baseline": 55,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Emissions, safety, infrastructure impact"
+    },
+    "hospitality": {
+      "baseline": 45,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Labor practices, water usage, waste"
+    },
+    "technology": {
+      "baseline": 35,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Data privacy, e-waste, labor conditions in supply chain"
+    },
+    "software": {
+      "baseline": 30,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Lower environmental footprint, data security focus"
+    },
+    "healthcare_services": {
+      "baseline": 35,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Patient care quality, data privacy, healthcare access"
+    },
+    "telecommunications": {
+      "baseline": 40,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Digital divide, data privacy, infrastructure emissions"
+    },
+    "renewable_energy": {
+      "baseline": 25,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Positive climate impact, some land use concerns"
+    },
+    "education": {
+      "baseline": 30,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Access equity, student outcomes, fair pricing"
+    },
+    "unknown": {
+      "baseline": 50,
+      "source": "Default neutral baseline",
+      "rationale": "Insufficient data for classification"
+    }
+  },
+  "component_weights": {
+    "claim_verification": 0.30,
+    "evidence_quality": 0.15,
+    "source_credibility": 0.15,
+    "sentiment_divergence": 0.10,
+    "historical_pattern": 0.15,
+    "contradiction_severity": 0.15
+  },
+  "risk_thresholds": {
+    "very_high_risk_industries": {
+      "baseline_threshold": 70,
+      "high_risk": 45,
+      "moderate_risk": 30
+    },
+    "high_risk_industries": {
+      "baseline_threshold": 60,
+      "high_risk": 55,
+      "moderate_risk": 35
+    },
+    "moderate_risk_industries": {
+      "baseline_threshold": 50,
+      "high_risk": 65,
+      "moderate_risk": 40
+    },
+    "low_risk_industries": {
+      "baseline_threshold": 0,
+      "high_risk": 70,
+      "moderate_risk": 45
+    }
+  }
+}

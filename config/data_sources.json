@@ -1,0 +1,29 @@
+{
+  "rss_feeds": [
+    {
+      "name": "Reuters Sustainability",
+      "url": "https://www.reuters.com/arc/outboundfeeds/v1/rss/?outputType=xml&size=25&feedName=sustainability",
+      "type": "tier1_media"
+    },
+    {
+      "name": "Guardian Environment",
+      "url": "https://www.theguardian.com/environment/rss",
+      "type": "media"
+    },
+    {
+      "name": "Edie Sustainability",
+      "url": "https://www.edie.net/feed/",
+      "type": "esg_platform"
+    },
+    {
+      "name": "GreenBiz",
+      "url": "https://www.greenbiz.com/feed",
+      "type": "esg_platform"
+    }
+  ],
+  "social_media_apis": {
+    "twitter_bearer_token": "${TWITTER_BEARER_TOKEN}",
+    "reddit_client_id": "${REDDIT_CLIENT_ID}",
+    "reddit_client_secret": "${REDDIT_CLIENT_SECRET}"
+  }
+}

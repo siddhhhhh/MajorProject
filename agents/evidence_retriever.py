@@ -1,5 +1,10 @@
+"""
+Evidence Retrieval & Cross-Verification Specialist
+With intelligent relevance filtering to prevent cross-contamination
+"""
+
 import requests
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 from core.llm_client import llm_client
 from core.vector_store import vector_store
@@ -7,6 +12,7 @@ from utils.enterprise_data_sources import enterprise_fetcher
 from utils.web_search import classify_source
 from config.agent_prompts import EVIDENCE_RETRIEVAL_PROMPT
 import time
+
 
 class EvidenceRetriever:
     def __init__(self):
@@ -18,7 +24,7 @@ class EvidenceRetriever:
     def retrieve_evidence(self, claim: Dict[str, Any], company: str) -> Dict[str, Any]:
         """
         Gather LIVE multi-source evidence - ENTERPRISE GRADE
-        Uses 12+ premium data sources like MSCI, Sustainalytics, Bloomberg
+        With relevance filtering to prevent cross-contamination
         """
         
         claim_id = claim.get("claim_id")
@@ -33,10 +39,10 @@ class EvidenceRetriever:
         print(f"Category: {category}")
         
         # Generate targeted search query
-        query = f"{category} {claim_text[:50]}"
+        query = f'"{company}" {category} {claim_text[:50]}'
         
         # 1. Search vector store for historical context
-        print(f"\n🗄️  Searching vector database...")
+        print(f"\n🗄️ Searching vector database...")
         vector_results = self.vector_store.search_similar(claim_text, n_results=5)
         vector_evidence = self._process_vector_results(vector_results)
         print(f"   Found: {len(vector_evidence)} stored documents")
@@ -49,28 +55,36 @@ class EvidenceRetriever:
             max_per_source=5
         )
         
-        # 3. Aggregate and deduplicate
-        web_evidence = self.enterprise_fetcher.aggregate_and_deduplicate(source_dict)
+        # 3. Aggregate all sources
+        all_evidence = []
+        for source_type, results in source_dict.items():
+            for result in results:
+                all_evidence.append(result)
         
-        # 4. Combine all evidence
-        all_evidence = vector_evidence + web_evidence
+        print(f"\n📊 RAW EVIDENCE COLLECTED: {len(all_evidence)} sources")
         
-        print(f"\n📊 EVIDENCE COLLECTION COMPLETE:")
-        print(f"   Total unique sources: {len(all_evidence)}")
+        # 4. FILTER BY RELEVANCE (NEW - Prevents Apple for BP contamination)
+        print(f"🔍 Filtering for relevance to {company}...")
+        filtered_evidence = self._filter_relevant_evidence(all_evidence, company, claim_text)
+        
+        filtered_count = len(all_evidence) - len(filtered_evidence)
+        if filtered_count > 0:
+            print(f"   ⏭️  Filtered out {filtered_count} irrelevant sources")
+        print(f"   ✅ Relevant sources: {len(filtered_evidence)}")
         
         # Count by source API
         source_breakdown = {}
-        for ev in all_evidence:
+        for ev in filtered_evidence:
             api_source = ev.get('data_source_api', 'Unknown')
             source_breakdown[api_source] = source_breakdown.get(api_source, 0) + 1
         
         print(f"\n   Source breakdown:")
         for api_source, count in sorted(source_breakdown.items(), key=lambda x: x[1], reverse=True):
-            print(f"     - {api_source}: {count}")
+            print(f"   - {api_source}: {count}")
         
         # 5. Structure and classify evidence with AI
         print(f"\n📝 Analyzing evidence relationships...")
-        structured_evidence = self._structure_evidence(all_evidence, claim_text)
+        structured_evidence = self._structure_evidence(filtered_evidence, claim_text)
         
         # 6. Store in vector DB
         self._store_evidence_in_vectordb(structured_evidence, company, claim_id)
@@ -95,8 +109,65 @@ class EvidenceRetriever:
             "retrieval_timestamp": datetime.now().isoformat()
         }
     
+    def _filter_relevant_evidence(self, evidence: List[Dict], company: str, claim_text: str) -> List[Dict]:
+        """
+        Filter evidence to ensure relevance to company and claim
+        Removes cached cross-contamination (e.g., Apple results for BP query)
+        """
+        
+        filtered = []
+        company_lower = company.lower()
+        claim_keywords = set(claim_text.lower().split())
+        
+        # Common company names to detect wrong results
+        company_indicators = {
+            'apple', 'tesla', 'microsoft', 'google', 'amazon', 'meta', 'facebook',
+            'shell', 'exxon', 'chevron', 'bp', 'totalenergies', 'conocophillips',
+            'coca-cola', 'pepsi', 'nestle', 'unilever', 'nike', 'adidas', 'puma',
+            'walmart', 'target', 'costco', 'ford', 'gm', 'volkswagen', 'toyota'
+        }
+        
+        for item in evidence:
+            # Check if company name appears in title or snippet
+            title = item.get('title', '').lower()
+            snippet = item.get('snippet', '').lower()
+            url = item.get('url', '').lower()
+            combined_text = f"{title} {snippet} {url}"
+            
+            # Must mention the company
+            mentions_company = company_lower in combined_text
+            
+            # Or mentions key claim concepts (at least 2 keywords)
+            claim_relevance_score = sum(
+                1 for kw in claim_keywords 
+                if kw in combined_text and len(kw) > 3
+            )
+            
+            # Check if it's about a DIFFERENT company
+            wrong_company = None
+            for other_company in company_indicators:
+                if other_company != company_lower and other_company in combined_text:
+                    # If the other company is mentioned MORE than target company
+                    other_count = combined_text.count(other_company)
+                    target_count = combined_text.count(company_lower)
+                    
+                    if other_count > target_count:
+                        wrong_company = other_company
+                        break
+            
+            # Include if:
+            # 1. Mentions target company, OR
+            # 2. Has high claim relevance (3+ keywords) AND no wrong company detected
+            if mentions_company or (claim_relevance_score >= 3 and not wrong_company):
+                filtered.append(item)
+            elif wrong_company:
+                print(f"      ⏭️  Filtered: '{item.get('title', 'Unknown')[:60]}...' (mentions {wrong_company.title()}, not {company})")
+        
+        return filtered
+    
     def _structure_evidence(self, raw_evidence: List[Dict], claim: str) -> List[Dict]:
         """Structure and classify evidence with AI relationship determination"""
+        
         structured = []
         
         print(f"   Analyzing {len(raw_evidence)} sources with AI...", flush=True)
@@ -136,6 +207,7 @@ class EvidenceRetriever:
     
     def _determine_relationship(self, claim: str, evidence: str) -> str:
         """Use FAST LLM (Groq) to determine relationship"""
+        
         if not evidence or len(evidence) < 20:
             return "Neutral"
         
@@ -160,6 +232,7 @@ class EvidenceRetriever:
     
     def _calculate_freshness(self, date_str: str) -> int:
         """Calculate days since publication"""
+        
         if not date_str:
             return 999
         
@@ -173,6 +246,7 @@ class EvidenceRetriever:
     
     def _process_vector_results(self, results: Dict) -> List[Dict]:
         """Process Chroma vector store results"""
+        
         evidence = []
         docs = results.get("documents", [[]])[0]
         metadatas = results.get("metadatas", [[]])[0]
@@ -186,10 +260,12 @@ class EvidenceRetriever:
                 "data_source_api": "Vector Database (Historical)",
                 "source_type": meta.get("type", "Database")
             })
+        
         return evidence
     
     def _store_evidence_in_vectordb(self, evidence: List[Dict], company: str, claim_id: int):
         """Store evidence in vector DB for future queries"""
+        
         try:
             documents = []
             metadatas = []
@@ -197,6 +273,7 @@ class EvidenceRetriever:
             
             for i, ev in enumerate(evidence[:20]):  # Store top 20
                 doc_id = f"{company}_{claim_id}_{i}_{int(time.time())}"
+                
                 documents.append(ev.get("relevant_text", ""))
                 metadatas.append({
                     "company": company,
@@ -210,14 +287,15 @@ class EvidenceRetriever:
             
             if documents:
                 self.vector_store.add_documents(documents, metadatas, ids)
+        
         except Exception as e:
-            print(f"⚠️ Vector store error: {e}")
+            print(f"   ⚠️ Vector store error: {e}")
     
     def _calculate_quality_metrics(self, evidence: List[Dict], source_dict: Dict) -> Dict[str, Any]:
         """
         Calculate comprehensive evidence quality metrics
-        Takes into account ALL sources and their characteristics
         """
+        
         if not evidence:
             return {
                 "evidence_gap": True,
@@ -230,16 +308,16 @@ class EvidenceRetriever:
                 "api_source_breakdown": {}
             }
         
-        # Count independent sources (not company-controlled)
-        independent = sum(1 for ev in evidence 
+        # Count independent sources
+        independent = sum(1 for ev in evidence
                          if ev.get("source_type") not in ["Company-Controlled", "Sponsored Content"])
         
-        # Count premium sources (Tier-1 media, regulatory, academic)
+        # Count premium sources
         premium_types = ["Tier-1 Financial Media", "Government/Regulatory", "Academic", "NGO"]
-        premium = sum(1 for ev in evidence 
+        premium = sum(1 for ev in evidence
                      if ev.get("source_type") in premium_types)
         
-        # Average freshness (weighted by source credibility)
+        # Average freshness
         freshness_values = [ev.get("data_freshness_days", 999) for ev in evidence]
         avg_freshness = sum(freshness_values) / len(freshness_values) if freshness_values else 999
         
@@ -258,15 +336,15 @@ class EvidenceRetriever:
             api_source = ev.get("data_source_api", "Unknown")
             api_breakdown[api_source] = api_breakdown.get(api_source, 0) + 1
         
-        # Calculate source diversity score (0-100)
-        diversity_score = min(100, len(source_types) * 20)  # Max 5 types = 100
+        # Calculate diversity score
+        diversity_score = min(100, len(source_types) * 20)
         
-        # Evidence gap check - need at least 3 independent sources
+        # Evidence gap check
         evidence_gap = independent < 3
         
-        # Calculate coverage score based on source distribution
+        # Coverage score
         total_api_sources = len([k for k in source_dict.keys() if source_dict[k]])
-        coverage_score = (total_api_sources / 12) * 100  # 12 possible sources
+        coverage_score = (total_api_sources / 6) * 100  # 6 main source types
         
         return {
             "evidence_gap": evidence_gap,
@@ -280,4 +358,3 @@ class EvidenceRetriever:
             "source_type_breakdown": type_breakdown,
             "api_source_breakdown": api_breakdown
         }
-

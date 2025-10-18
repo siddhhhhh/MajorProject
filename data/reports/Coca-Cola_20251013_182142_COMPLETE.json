@@ -1,0 +1,862 @@
+{
+  "company": "Coca-Cola",
+  "analysis_timestamp": "2025-10-13T18:16:19.927946",
+  "orchestration_method": "Direct 11-Agent",
+  "claims": [
+    {
+      "claim_id": 1,
+      "actor": "Coca-Cola",
+      "claim_text": "Committed to water stewardship",
+      "category": "Environmental",
+      "subcategory": "Water management",
+      "metric": null,
+      "timeline": null,
+      "claim_type": "Policy",
+      "specificity_score": 2
+    },
+    {
+      "claim_id": 2,
+      "actor": "Coca-Cola",
+      "claim_text": "Recycling 100% of packaging by 2030",
+      "category": "Environmental",
+      "subcategory": "Packaging",
+      "metric": "100% of packaging",
+      "timeline": "by 2030",
+      "claim_type": "Target",
+      "specificity_score": 10
+    }
+  ],
+  "evidence": [
+    {
+      "claim_id": 1,
+      "evidence": [
+        {
+          "source_id": "ev_000",
+          "source_name": "Greenpeace",
+          "source_type": "NGO",
+          "url": "https://www.greenpeace.org/usa/coca-cola-greenwashes-sustainability-claims/",
+          "date": "2025-10-13T18:17:09.351262",
+          "relevant_text": "Apr 28, 2023 \u00b7 WASHINGTON, DC (April 27, 2023)\u2013In response to Coca-Cola \u2019s 2022 Business and Sustainability Report, Lisa Ramsden, Senior Oceans Campaigner, said: \u201c Coca-Cola says they want to help tackle the plastic waste crisis, but then they continue to increase the amount of plastic they use, year after year.",
+          "relationship_to_claim": "Contradicts",
+          "data_freshness_days": 0,
+          "data_source_api": "Greenpeace - NGO",
+          "retrieval_timestamp": "2025-10-13T18:17:23.759921"
+        },
+        {
+          "source_id": "ev_001",
+          "source_name": "Amnesty International",
+          "source_type": "NGO",
+          "url": "https://www.coca-colacompany.com/policies-and-practices/environmental-policy",
+          "date": "2025-10-13T18:17:12.562072",
+          "relevant_text": "The Coca\u2011Cola Operating Requirements (KORE) define the policies, standards and requirements for managing our environmental responsibilities across our operations.",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 0,
+          "data_source_api": "Amnesty International - NGO",
+          "retrieval_timestamp": "2025-10-13T18:17:23.855405"
+        },
+        {
+          "source_id": "ev_002",
+          "source_name": "10 Donors Addressing the Global Water Crisis \u2013 MzN International",
+          "source_type": "Web Source",
+          "url": "https://mzninternational.com/10-donors-addressing-the-global-water-crisis/",
+          "date": "2025-10-13T18:17:23.470545",
+          "relevant_text": "The Coca - Cola Foundation is committed to environmental sustainability and community development. Focused on areas such as water stewardship , women\u2019s empowerment, education, and community well-being, the foundation strives to make a positive impact on a broad scale.",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 0,
+          "data_source_api": "DuckDuckGo - Web",
+          "retrieval_timestamp": "2025-10-13T18:17:23.947943"
+        },
+        {
+          "source_id": "ev_003",
+          "source_name": "\u201cNow We Don't Walk Miles for Water \u201d: How The Coca - Cola India...",
+          "source_type": "Web Source",
+          "url": "https://thecsruniverse.com/articles/-now-we-don-t-walk-miles-for-water-how-the-coca-cola-india-foundation-is-empowering-women-in-madhya-pradesh",
+          "date": "2025-10-13T18:17:23.470545",
+          "relevant_text": "This initiative stands as a powerful testament to Coca - Cola India's commitment to promoting water stewardship , enhancing water use efficiency, and treating and returning safe water to communities.",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 0,
+          "data_source_api": "DuckDuckGo - Web",
+          "retrieval_timestamp": "2025-10-13T18:17:24.031976"
+        },
+        {
+          "source_id": "ev_004",
+          "source_name": "Coca - Cola unveils initiative to address water -related challenges in Africa",
+          "source_type": "Web Source",
+          "url": "https://thecooperator.news/coca-cola-unveils-initiative-to-address-water-related-challenges-in-africa/",
+          "date": "2025-10-13T18:17:23.470545",
+          "relevant_text": "Coca - Cola uses water to produce its products.The effort, called \u2018The Coca - Cola System\u2019s Africa Water Stewardship Initiative\u2019, was introduced in Cape Town, South Africa, in presence of executives from the Coca - Cola system in Africa and NGO partners.",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 0,
+          "data_source_api": "DuckDuckGo - Web",
+          "retrieval_timestamp": "2025-10-13T18:17:24.129436"
+        }
+      ],
+      "evidence_gap": false,
+      "quality_metrics": {
+        "evidence_gap": false,
+        "independent_sources": 5,
+        "premium_sources": 2,
+        "avg_freshness_days": 0.0,
+        "source_diversity": 2,
+        "diversity_score": 40,
+        "coverage_score": 66.7,
+        "total_sources": 5,
+        "source_type_breakdown": {
+          "NGO": 2,
+          "Web Source": 3
+        },
+        "api_source_breakdown": {
+          "Greenpeace - NGO": 1,
+          "Amnesty International - NGO": 1,
+          "DuckDuckGo - Web": 3
+        }
+      },
+      "source_breakdown": {
+        "Greenpeace - NGO": 1,
+        "Amnesty International - NGO": 1,
+        "DuckDuckGo - Web": 3
+      },
+      "retrieval_timestamp": "2025-10-13T18:17:24.788477"
+    },
+    {
+      "claim_id": 2,
+      "evidence": [
+        {
+          "source_id": "ev_000",
+          "source_name": "Greenpeace",
+          "source_type": "NGO",
+          "url": "https://www.greenpeace.org/usa/coca-cola-greenwashes-sustainability-claims/",
+          "date": "2025-10-13T18:17:54.814314",
+          "relevant_text": "Apr 28, 2023 \u00b7 WASHINGTON, DC (April 27, 2023)\u2013In response to Coca-Cola \u2019s 2022 Business and Sustainability Report, Lisa Ramsden, Senior Oceans Campaigner, said: \u201c Coca-Cola says they want to help tackle the plastic waste crisis, but then they continue to increase the amount of plastic they use, year after year.",
+          "relationship_to_claim": "Contradicts",
+          "data_freshness_days": 0,
+          "data_source_api": "Greenpeace - NGO",
+          "retrieval_timestamp": "2025-10-13T18:18:06.535790"
+        },
+        {
+          "source_id": "ev_001",
+          "source_name": "Greenpeace",
+          "source_type": "NGO",
+          "url": "https://www.coca-colacompany.com/policies-and-practices/environmental-policy",
+          "date": "2025-10-13T18:17:54.814314",
+          "relevant_text": "Our vision is to craft the brands and choice of drinks that people love, to refresh them in body and spirit while doing this in a way that creates a more sustainable business and better shared future. We strive to achieve this ambition with the full commitment of system leaders and the active, global participation and engagement of our employees. See full list on coca -colacompany.com We will conduct our business in ways that will protect and preserve the environment while reducing our environme",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 0,
+          "data_source_api": "Greenpeace - NGO",
+          "retrieval_timestamp": "2025-10-13T18:18:06.648691"
+        },
+        {
+          "source_id": "ev_002",
+          "source_name": "Amnesty International",
+          "source_type": "NGO",
+          "url": "https://www.coca-colacompany.com/policies-and-practices/environmental-policy",
+          "date": "2025-10-13T18:17:56.666694",
+          "relevant_text": "The Coca\u2011Cola Operating Requirements (KORE) define the policies, standards and requirements for managing our environmental responsibilities across our operations.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "Amnesty International - NGO",
+          "retrieval_timestamp": "2025-10-13T18:18:06.737852"
+        },
+        {
+          "source_id": "ev_003",
+          "source_name": "Coca - Cola aims to recycle 100 % of its packaging by 2030",
+          "source_type": "Web Source",
+          "url": "https://www.wastedive.com/news/coca-cola-recycle-100-percent-packaging-2030/515137/",
+          "date": "2025-10-13T18:18:06.387489",
+          "relevant_text": "Coca - Cola 's 100 % packaging recycling goal isn't new, but it doesn't make its key partnerships any less meaningful \u2014 the company has joined with groups that are already taking meaningful action in developing a more circular economy.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "DuckDuckGo - Web",
+          "retrieval_timestamp": "2025-10-13T18:18:06.824555"
+        },
+        {
+          "source_id": "ev_004",
+          "source_name": "Coca Cola - Plastic Bank",
+          "source_type": "Web Source",
+          "url": "https://plasticbank.com/client/coca-cola/",
+          "date": "2025-10-13T18:18:06.387489",
+          "relevant_text": "Further Coca - Cola is expanding the number of products that use 100 % recycled PET plastic packaging in 2022.",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 0,
+          "data_source_api": "DuckDuckGo - Web",
+          "retrieval_timestamp": "2025-10-13T18:18:06.909678"
+        },
+        {
+          "source_id": "ev_005",
+          "source_name": "Coca - Cola Targets 100 % Recycled Plastic Packaging by 2030 - All of...",
+          "source_type": "Web Source",
+          "url": "https://theenergyrepublic.com/coca-cola-targets-100-recycled-plastic-packaging-by-2030/",
+          "date": "2025-10-13T18:18:06.387489",
+          "relevant_text": "Coca - Cola one has set a target to recycle 100 percent of its plastic bottles used in packaging beverage drinks by 2030 .",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 0,
+          "data_source_api": "DuckDuckGo - Web",
+          "retrieval_timestamp": "2025-10-13T18:18:06.997153"
+        },
+        {
+          "source_id": "ev_006",
+          "source_name": "How Is Coca Cola Reducing Their Carbon Footprint",
+          "source_type": "Web Source",
+          "url": "https://ecologiclife.com/how-is-coca-cola-reducing-their-carbon-footprint.html",
+          "date": "2025-10-13T18:18:06.387489",
+          "relevant_text": "Coca Cola \u2019s Sustainable Solutions. Coca - Cola has set a 2030 science-based target to reduce its absolute greenhouse gas emissions by 25% compared to a 2015 baseline.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "DuckDuckGo - Web",
+          "retrieval_timestamp": "2025-10-13T18:18:07.089221"
+        }
+      ],
+      "evidence_gap": false,
+      "quality_metrics": {
+        "evidence_gap": false,
+        "independent_sources": 7,
+        "premium_sources": 3,
+        "avg_freshness_days": 0.0,
+        "source_diversity": 2,
+        "diversity_score": 40,
+        "coverage_score": 66.7,
+        "total_sources": 7,
+        "source_type_breakdown": {
+          "NGO": 3,
+          "Web Source": 4
+        },
+        "api_source_breakdown": {
+          "Greenpeace - NGO": 2,
+          "Amnesty International - NGO": 1,
+          "DuckDuckGo - Web": 4
+        }
+      },
+      "source_breakdown": {
+        "Greenpeace - NGO": 2,
+        "Amnesty International - NGO": 1,
+        "DuckDuckGo - Web": 4
+      },
+      "retrieval_timestamp": "2025-10-13T18:18:07.882780"
+    }
+  ],
+  "contradiction_analysis": [
+    {
+      "claim_id": 1,
+      "overall_verdict": "Partially True",
+      "verification_confidence": 65,
+      "specific_contradictions": [
+        {
+          "aspect": "Sincerity and Overall Impact",
+          "claim_states": "The company is fully committed to water stewardship.",
+          "evidence_shows": "A major environmental NGO (Greenpeace) publicly questions the sincerity and effectiveness of the company's sustainability reports and commitments, suggesting a potential gap between their public relations and their actual environmental impact.",
+          "severity": "Moderate"
+        }
+      ],
+      "supportive_evidence": [
+        "The company's philanthropic arm, The Coca-Cola Foundation, is explicitly focused on water stewardship (MzN International).",
+        "The company has launched specific, named initiatives to address water challenges in regions like India and Africa.",
+        "Internal policies and standards for managing environmental responsibilities, such as the Coca\u2011Cola Operating Requirements (KORE), are in place."
+      ],
+      "key_issues": [
+        "Omission of Negative Impacts: The provided evidence focuses on positive initiatives but omits any mention of the company's massive water footprint or the well-documented controversies regarding its operations depleting local water sources in water-stressed communities.",
+        "Lack of Scale and Data: The evidence mentions specific projects but provides no quantitative data on their impact (e.g., liters of water replenished) relative to the company's total water consumption. This makes it impossible to assess if the stewardship efforts are meaningful in scale or merely token gestures.",
+        "Potential for 'Greenwashing': The combination of positive, company-promoted stories with skepticism from a credible NGO like Greenpeace is a classic indicator of potential greenwashing, where positive actions are highlighted to distract from a larger, negative operational reality."
+      ],
+      "evidence_counts": {
+        "supporting": 4,
+        "contradicting": 1,
+        "neutral": 0
+      }
+    },
+    {
+      "claim_id": 2,
+      "overall_verdict": "Partially True",
+      "verification_confidence": 75,
+      "specific_contradictions": [
+        {
+          "aspect": "Scope of Packaging",
+          "claim_states": "Recycling 100% of packaging by 2030.",
+          "evidence_shows": "One source specifies the target is for '100 percent of its plastic bottles,' which is a significantly narrower scope than all 'packaging' (which also includes cans, glass, cardboard, etc.).",
+          "severity": "Moderate"
+        }
+      ],
+      "supportive_evidence": [
+        "Multiple web sources confirm that Coca-Cola has publicly set a target to recycle 100% of its packaging (or plastic bottles) by 2030."
+      ],
+      "key_issues": [
+        "The evidence confirms this is a corporate *goal* or *target*, not a guaranteed future achievement. The claim's wording implies a certainty that the evidence does not support.",
+        "There is a significant omission of context regarding the feasibility of this goal and current progress towards it. The evidence only confirms the existence of the pledge.",
+        "The provided NGO evidence is flawed; the Greenpeace quote is incomplete, and other sources attributed to Greenpeace and Amnesty International appear to be generic corporate statements, not independent analysis."
+      ],
+      "evidence_counts": {
+        "supporting": 3,
+        "contradicting": 1,
+        "neutral": 3
+      }
+    }
+  ],
+  "credibility_analysis": {
+    "source_credibility_analyses": [
+      {
+        "source_id": "ev_000",
+        "source_name": "Greenpeace",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.greenpeace.org/usa/coca-cola-greenwashes-sustainability-claims/"
+      },
+      {
+        "source_id": "ev_001",
+        "source_name": "Amnesty International",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.coca-colacompany.com/policies-and-practices/environmental-policy"
+      },
+      {
+        "source_id": "ev_002",
+        "source_name": "10 Donors Addressing the Global Water Crisis \u2013 MzN International",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://mzninternational.com/10-donors-addressing-the-global-water-crisis/"
+      },
+      {
+        "source_id": "ev_003",
+        "source_name": "\u201cNow We Don't Walk Miles for Water \u201d: How The Coca - Cola India...",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://thecsruniverse.com/articles/-now-we-don-t-walk-miles-for-water-how-the-coca-cola-india-foundation-is-empowering-women-in-madhya-pradesh"
+      },
+      {
+        "source_id": "ev_004",
+        "source_name": "Coca - Cola unveils initiative to address water -related challenges in Africa",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://thecooperator.news/coca-cola-unveils-initiative-to-address-water-related-challenges-in-africa/"
+      },
+      {
+        "source_id": "ev_000",
+        "source_name": "Greenpeace",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.greenpeace.org/usa/coca-cola-greenwashes-sustainability-claims/"
+      },
+      {
+        "source_id": "ev_001",
+        "source_name": "Greenpeace",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.coca-colacompany.com/policies-and-practices/environmental-policy"
+      },
+      {
+        "source_id": "ev_002",
+        "source_name": "Amnesty International",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.coca-colacompany.com/policies-and-practices/environmental-policy"
+      },
+      {
+        "source_id": "ev_003",
+        "source_name": "Coca - Cola aims to recycle 100 % of its packaging by 2030",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.wastedive.com/news/coca-cola-recycle-100-percent-packaging-2030/515137/"
+      },
+      {
+        "source_id": "ev_004",
+        "source_name": "Coca Cola - Plastic Bank",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://plasticbank.com/client/coca-cola/"
+      },
+      {
+        "source_id": "ev_005",
+        "source_name": "Coca - Cola Targets 100 % Recycled Plastic Packaging by 2030 - All of...",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://theenergyrepublic.com/coca-cola-targets-100-recycled-plastic-packaging-by-2030/"
+      },
+      {
+        "source_id": "ev_006",
+        "source_name": "How Is Coca Cola Reducing Their Carbon Footprint",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://ecologiclife.com/how-is-coca-cola-reducing-their-carbon-footprint.html"
+      }
+    ],
+    "aggregate_metrics": {
+      "average_credibility": 0.7166666666666668,
+      "high_credibility_count": 5,
+      "medium_credibility_count": 7,
+      "low_credibility_count": 0,
+      "total_sources": 12
+    }
+  },
+  "sentiment_analysis": [
+    {
+      "claim_id": 1,
+      "claim_sentiment": {
+        "polarity_score": 0.0,
+        "subjectivity_score": 0.0,
+        "buzzword_count": 0,
+        "vague_terms": [],
+        "hedge_words": [],
+        "specificity_deficit": false
+      },
+      "evidence_sentiment": {
+        "polarity_score": 0.148,
+        "subjectivity_score": 0.476,
+        "buzzword_count": 0,
+        "vague_terms": [],
+        "hedge_words": [],
+        "specificity_deficit": false
+      },
+      "sentiment_divergence": 0.148,
+      "divergence_score": 14,
+      "greenwashing_flags": [],
+      "llm_linguistic_analysis": {
+        "raw_analysis": "**Analysis Results**\n\n```json\n{\n  \"polarity_score\": 0.0,\n  \"subjectivity_score\": 0.8,\n  \"buzzword_count\": 1,\n  \"vague_terms\": [\"significant\", \"substantial\"],\n  \"hedge_words\": [\"committed\"],\n  \"specificity_deficit\": true\n}\n```\n\n**Explanation**\n\n1. **Sentiment Polarity**: The text has a neutral sentim",
+        "parsed": false
+      },
+      "overall_linguistic_risk": 4
+    },
+    {
+      "claim_id": 2,
+      "claim_sentiment": {
+        "polarity_score": 0.0,
+        "subjectivity_score": 0.0,
+        "buzzword_count": 0,
+        "vague_terms": [],
+        "hedge_words": [],
+        "specificity_deficit": false
+      },
+      "evidence_sentiment": {
+        "polarity_score": 0.202,
+        "subjectivity_score": 0.441,
+        "buzzword_count": 2,
+        "vague_terms": [],
+        "hedge_words": [],
+        "specificity_deficit": false
+      },
+      "sentiment_divergence": 0.202,
+      "divergence_score": 20,
+      "greenwashing_flags": [],
+      "llm_linguistic_analysis": {
+        "raw_analysis": "**ESG Communication Sentiment & Linguistic Analysis**\n\n**Input Text:** Recycling 100% of packaging by 2030\n\n**Analysis:**\n\n### Sentiment Polarity\nThe sentiment polarity of the text is **0.0**, indicating a neutral tone. The text does not express a clear positive or negative sentiment.\n\n### Subjectiv",
+        "parsed": false
+      },
+      "overall_linguistic_risk": 6
+    }
+  ],
+  "historical_analysis": {
+    "company": "Coca-Cola",
+    "analysis_date": "2025-10-13T18:18:30.724153",
+    "past_violations": [
+      {
+        "year": 2025,
+        "type": "ESG-Related",
+        "description": "only Coca - Cola products in thebrand\u2019s loaner refrigerators.Small businesses where the Coca-Colarefrigerator is the only one, however, suchas restaurants or pulper\u00edas, can store a varietyof products ",
+        "source": "Coca - Cola Fined for Monopolistic Practices",
+        "url": "https://ticotimes.net/2005/04/08/coca-cola-fined-for-monopolistic-practices"
+      },
+      {
+        "year": 2025,
+        "type": "ESG-Related",
+        "description": "Notes: Parent-subsidiary linkages are based on relationships current as of the latest revision listed in the Update Log, which may vary from what was the case when a violation occurred. The penalty to",
+        "source": "ecolab | Violation Tracker",
+        "url": "https://violationtracker.goodjobsfirst.org/parent/ecolab"
+      },
+      {
+        "year": 2025,
+        "type": "Environmental",
+        "description": "5 days ago \u00b7 The U.S. EPA has reversed plans to delay regulations for steel industry coal plants, following a lawsuit from the Environmental Integrity Project and EarthJustice.",
+        "source": "EPA reversed regulations delay for steel coke plants",
+        "url": "https://www.chicagotribune.com/2025/10/07/epa-reversed-regulations-delay-for-steel-coke-plants-environmental-group-says/"
+      },
+      {
+        "year": 2025,
+        "type": "ESG-Related",
+        "description": "Mar 25, 2025 \u00b7 A limited Coca-Cola recall has been issued due to plastic contamination. Here's what consumers in Illinois and Wisconsin need to know.",
+        "source": "Coca-Cola Recall? FDA Flags Contamination Risk\u2014But ... - Forbes",
+        "url": "https://www.forbes.com/sites/stephaniegravalese/2025/03/25/coca-cola-recall-fda-flags-contamination-risk-but-theres-a-catch/"
+      }
+    ],
+    "greenwashing_history": {
+      "prior_accusations": 5,
+      "examples": [
+        {
+          "year": 2025,
+          "description": "... organisations from 13 countries reported to EU consumer authorities (the CPC-Network) misleading commercial claims about the recyclability of thei",
+          "source": "Coca-Cola promises to tackle greenwashing following BEUC"
+        },
+        {
+          "year": 2025,
+          "description": "... Coca - Cola \u2019s environmental and sustainability claims are in violation of the DC Consumer Protection Procedures Act, which protects consumers aga",
+          "source": "Greenwashing? Court Says Coca-Cola\u2019s Aspirational Statements"
+        },
+        {
+          "year": 2025,
+          "description": "... Coca - Cola HBC, Nestle, and Danone have been accused of making misleading commercial claims about the recyclability of their water bottles, a pra",
+          "source": "Coca-Cola HBC, Nestle, and Danone face new greenwashing"
+        },
+        {
+          "year": 2025,
+          "description": "Coca - Cola Company has escaped the false advertising lawsuit waged against it by an environmental activist group, which accused the ...",
+          "source": "What Can Brands Learn from Coke's Greenwashing Lawsuit Win?"
+        },
+        {
+          "year": 2025,
+          "description": "The Court stated that Earth Island Institute had not alleged that any statement made by Coca - Cola was provably false or plausibly misleading or that",
+          "source": "Coca-Cola Wins Greenwashing Case - Verdant Law"
+        }
+      ],
+      "pattern_detected": false
+    },
+    "positive_track_record": [],
+    "temporal_patterns": {
+      "consistent_behavior": true,
+      "improving_trend": false,
+      "declining_trend": false,
+      "reactive_claims": false
+    },
+    "reputation_score": 10
+  },
+  "final_risk_assessment": {
+    "company": "Coca-Cola",
+    "analysis_timestamp": "2025-10-13T18:21:42.408523",
+    "industry": "food_beverage",
+    "industry_baseline_risk": 50,
+    "industry_source": "MSCI ESG Industry Materiality Map 2024",
+    "base_risk_score": 39.6,
+    "industry_adjustment": 0.0,
+    "peer_adjustment": 0.0,
+    "greenwashing_risk_score": 39.6,
+    "esg_score": 60.4,
+    "risk_level": "LOW",
+    "rating_grade": "A",
+    "component_scores": {
+      "claim_verification": 50.0,
+      "evidence_quality": 35,
+      "source_credibility": 28,
+      "sentiment_divergence": 17,
+      "historical_pattern": 90,
+      "contradiction_severity": 0
+    },
+    "explainability_top_3_reasons": [
+      "Historical violations: 4 documented ESG violation(s) (risk: 90%)",
+      "Insufficient data quality or evidence gaps detected",
+      "Insufficient data quality or evidence gaps detected"
+    ],
+    "actionable_insights": {
+      "for_investors": "LOW RISK: Coca-Cola (Food Beverage) shows credible ESG commitments backed by verifiable evidence from quality sources. Suitable for ESG-focused portfolios. Continue standard monitoring of annual reports and third-party assessments.",
+      "for_regulators": "NO MAJOR CONCERNS: Coca-Cola meets expected disclosure and performance standards for Food Beverage sector. Routine monitoring sufficient. Claims appear substantiated and consistent with available evidence.",
+      "for_consumers": "TRUSTWORTHY: Coca-Cola's ESG claims appear credible with reasonable evidence backing from independent sources. Good choice within Food Beverage sector. Look for third-party certifications for additional assurance."
+    },
+    "confidence_level": 85
+  },
+  "realtime_monitoring": {
+    "company": "Coca-Cola",
+    "articles_found": 5,
+    "articles": [
+      {
+        "source": "Coca - Cola Bottlers Japan Secures Continued Selection in Key ESG ...",
+        "url": "https://third-news.com/article/294aff24-6386-11f0-935f-9ca3ba0a67df",
+        "title": "Coca - Cola Bottlers Japan Secures Continued Selection in Key ESG ...",
+        "snippet": "Coca - Cola Bottlers Japan's Commitment to ESG .By being included in these indices, Coca - Cola Bottlers Japan not only highlights its commitment to sustainability but also reassures investors of its dedication to adhering to best practices in these vital areas.",
+        "date": "2025-10-13T18:16:38.502620",
+        "data_source_api": "DuckDuckGo - Web",
+        "source_type": "Web Source",
+        "full_text": "Coca-Cola Bottlers Japan's Commitment to ESG\n\nImportance of the FTSE Indices\n\nCreating Shared Value through Sustainability\n\nCoca-Cola Bottlers Japan Holdings Inc., headquartered in Minato, Tokyo and led by President Karin Dragan, has proudly announced its continuation as a constituent of three prominent ESG indices: the FTSE4Good Index Series, FTSE Blossom Japan Index, and the FTSE Blossom Japan Sector Relative Index. These indices, developed by the global index provider FTSE Russell, evaluate companies on their corporate governance, health and safety measures, anti-corruption efforts, and responses to climate change, specifically identifying those that excel in Environmental, Social, and Governance (ESG) practices.The FTSE indices play a critical role in measuring the performance of companies that meet various ESG standards, making them essential for sustainable investment funds and the evaluation of financial products. By being included in these indices, Coca-Cola Bottlers Japan not only highlights its commitment to sustainability but also reassures investors of its dedication to adhering to best practices in these vital areas.Notably, the FTSE Blossom Japan Index and FTSE Blossom Japan Sector Relative Index are crucial benchmarks for ESG passive investments chosen by the Government Pension Investment Fund (GPIF) of Japan. With this latest selection, Coca-Cola Bottlers Japan has now been recognized across four ESG indices utilized by the GPIF: 1) FTSE Blossom Japan Index 2) FTSE Blossom Japan Sector Relative Index 3) S&P/JPX Carbon Efficient Index and 4) Morningstar Japan Equity Gender Diversity Tilt Index (excluding REITs), as of June 2025.Coca-Cola Bottlers Japan regards the creation of shared value (CSV) through its business as a core aspect of its management philosophy. This approach is central to its sustainability strategy, where the company aims to fulfill its non-financial objectives termed \u201cCSV Goals.\u201d These goals drive numerous initiatives aimed at achieving sustainability, which are actively pursued and executed by the company. In line with its medium-term management plan,",
+        "authors": [],
+        "publish_date": "2025-10-13T18:16:38.502620"
+      },
+      {
+        "source": "Coca - Cola 's 2035 Sustainable Manufacturing... | Manufacturing Digital",
+        "url": "https://manufacturingdigital.com/articles/how-circularity-is-at-the-heart-of-coca-colas-2035-vision",
+        "title": "Coca - Cola 's 2035 Sustainable Manufacturing... | Manufacturing Digital",
+        "snippet": "Sustainability & ESG . Coca - Cola operates in 200 countries, offering over 200 brands like Sprite, Fanta, Coca - Cola , Dasani, and Costa Coffee. With expansive operations, the beverage manufacturer has worked to shrink its environmental imprint across operations. Youtube Placeholder.",
+        "date": "2025-10-13T18:16:38.502620",
+        "data_source_api": "DuckDuckGo - Web",
+        "source_type": "Web Source",
+        "extraction_failed": true,
+        "extraction_error": "Article `download()` failed with 403 Client Error: Forbidden for url: https://manufacturingdigital.com/articles/how-circularity-is-at-the-heart-of-coca-colas-2035-vision on URL https://manufacturingdi"
+      },
+      {
+        "source": "CSRWire - Coca - Cola HBC, EY & IBM on the G in ESG",
+        "url": "https://www.csrwire.com/press_releases/803336-coca-cola-hbc-ey-ibm-g-esg",
+        "title": "CSRWire - Coca - Cola HBC, EY & IBM on the G in ESG",
+        "snippet": "Sustainability leaders from Coca - Cola HBC, EY and IBM discuss how corporate governance plays into their ESG and wider sustainability strategy . Corporate governance arguably goes under the radar, but senior executives say that should not be the case. So how is it defined?",
+        "date": "2025-10-13T18:16:38.502620",
+        "data_source_api": "DuckDuckGo - Web",
+        "source_type": "Web Source",
+        "full_text": "Published 06-04-24 Submitted by IBM\n\nImage courtesy of Sustainability Magazine\n\nOriginally published by Charlie King on Sustainability Magazine\n\nSustainability leaders from Coca-Cola HBC, EY and IBM discuss how corporate governance plays into their ESG and wider sustainability strategy\n\nCorporate governance arguably goes under the radar, but senior executives say that should not be the case.\n\nSo how is it defined?\n\nCorporate governance is the internal system of practices, controls and procedures a company adopts to govern itself, make effective decisions, comply with the law and meet the needs of external stakeholders.\n\nJonah Smith, Vice President, Environmental, Social, Governance (ESG) Strategy and Programs at IBM, agrees: \u201cFor IBM, corporate governance is about creating innovations, policies and practices that prioritise ESG progress simultaneously with ethics, trust, transparency and \u2013 above all \u2013 accountability.\u201d\n\nContinue reading here",
+        "authors": [],
+        "publish_date": "2025-10-13T18:16:38.502620"
+      },
+      {
+        "source": "Mission 2025 | Coca - Cola HBC | CCH Group Website",
+        "url": "https://www.coca-colahellenic.com/en/a-more-sustainable-future/mission-2025",
+        "title": "Mission 2025 | Coca - Cola HBC | CCH Group Website",
+        "snippet": "Our Mission 2025 approach to achieving sustainable growth is based on our stakeholder materiality matrix and is aligned with the United Nations' SDGs.Address: Coca - Cola HBC Bulgaria, Coca - Cola Business Center, 8 Racho Petkov Kazandzhiyata Str., Sofia, 1766, Bulgaria.",
+        "date": "2025-10-13T18:16:38.502620",
+        "data_source_api": "DuckDuckGo - Web",
+        "source_type": "Web Source",
+        "full_text": "Our Mission 2025 commitments on climate, packaging, water, ingredients, nutrition, people and communities set measurable targets. We aim to achieve net zero emissions by 2040 and have a net positive impact on biodiversity in critical areas of our value chain by 2040.\n\n2025 will be the final year of our Mission 2025 goals. We have already reached 9 out of our 18 targets, ahead of the target year.",
+        "authors": [],
+        "publish_date": "2025-10-13T18:16:38.502620"
+      },
+      {
+        "source": "Coca - Cola Updates Sustainability Targets With WWF - Stratton Craig...",
+        "url": "https://www.strattoncraig.com/insight/coca-cola-updates-sustainability-targets-with-wwf-july1/",
+        "title": "Coca - Cola Updates Sustainability Targets With WWF - Stratton Craig...",
+        "snippet": "Coca - Cola is launching a project that seeks to improve the company\u00b4s water efficiency by 25% by 2020, as part of its major sustainability programme.",
+        "date": "2025-10-13T18:16:38.502620",
+        "data_source_api": "DuckDuckGo - Web",
+        "source_type": "Web Source",
+        "full_text": "Coca-Cola is launching a project that seeks to improve the company\u00b4s water efficiency by 25% by 2020, as part of its major sustainability programme. The brand is also teaming up with the World Wildlife Fund (WWF) in a bid to reduce its environmental footprint, Coca-Cola announced this week.\n\nThe updated targets are in addition to Coca-Cola\u00b4s existing well-being and community commitments through to 2020. The goals also include sustainable use of energy and packaging, as well as sustainable sourcing of agricultural products used in Coca-Cola\u00b4s manufacturing processes. At the same time, Coca-Cola intends to cut carbon dioxide emissions embedded in every single drink by 25% and aims to achieve a 75% recovery rate of bottles and cans in developed markets by 2020.\n\nMuhtar Kent, chairman and chief executive officer of the Coca-Cola Company, commented that the company was firmly committed to addressing environmental challenges and together with its partners will be seeking to manage the world\u00b4s natural resources wisely and responsibly.\n\nCarter Roberts, president and chief executive of the WWF, stated that natural resources around the world were under unprecedented pressure as the global population increases. It is the responsibility of businesses to make sure that their own existence is not put at risk by exhaustion of resources. Environmental challenges can be addressed only by working together, he added.\n\nNew targets will also be set for Coca-Cola\u00b4s almost 300 different bottling partners in 200 countries around the world, the company announced.",
+        "authors": [
+          "Stratton Craig"
+        ],
+        "publish_date": "2025-10-13T18:16:38.502620"
+      }
+    ],
+    "timestamp": "2025-10-13T18:16:55.129729"
+  },
+  "industry_comparison": {
+    "company": "Coca-Cola",
+    "peers_analyzed": [
+      "PepsiCo",
+      "Nestle",
+      "Unilever",
+      "Danone",
+      "Keurig Dr Pepper"
+    ],
+    "peer_data": {
+      "PepsiCo": {
+        "esg_score": null,
+        "carbon_neutral_target": "2050",
+        "sustainability_certifications": null,
+        "recent_violations": "yes",
+        "data_available": true,
+        "source_count": 6,
+        "sources_used": [
+          "https://www.pepsico.com/",
+          "https://www.pepsico.com/investors/investor-relations",
+          "https://reportyak.com/blog/cdp-scoring-methodology/"
+        ]
+      },
+      "Nestle": {
+        "esg_score": 22.7,
+        "carbon_neutral_target": "unknown",
+        "sustainability_certifications": [],
+        "recent_violations": "unknown",
+        "data_available": true,
+        "source_count": 6,
+        "sources_used": [
+          "https://www.nestle.ch/sites/g/files/pydnoa506/files/2025-02/non-financial-statement-2024.pdf",
+          "https://www.knowesg.com/esg-ratings/nestla-c-s-a",
+          "https://www.comunicaffe.com/nestle-again-earning-a-place-in-the-annual-cdp-climate-a-list/"
+        ]
+      },
+      "Unilever": {
+        "esg_score": 45,
+        "carbon_neutral_target": "2050",
+        "sustainability_certifications": [
+          "B Corp"
+        ],
+        "recent_violations": "yes",
+        "data_available": true,
+        "source_count": 6,
+        "sources_used": [
+          "https://en.wikipedia.org/wiki/Unilever",
+          "https://www.unilever.com/",
+          "https://www.unilever.co.uk/news/2020/unilever-recognised-by-cdp-for-action-on-climate-crisis/"
+        ]
+      },
+      "Danone": {
+        "esg_score": null,
+        "carbon_neutral_target": "2050",
+        "sustainability_certifications": [
+          "B Corp"
+        ],
+        "recent_violations": "yes",
+        "data_available": true,
+        "source_count": 6,
+        "sources_used": [
+          "https://www.danone.com/sustainability/our-approach/external-recognition.html",
+          "https://www.knowesg.com/esg-ratings/danone-sa",
+          "https://www.danone.com/newsroom/press-releases/danone-recognized-for-the-fifth-year-in-a-row-as-glob"
+        ]
+      },
+      "Keurig Dr Pepper": {
+        "esg_score": 77,
+        "carbon_neutral_target": "unknown",
+        "sustainability_certifications": null,
+        "recent_violations": "unknown",
+        "data_available": true,
+        "source_count": 6,
+        "sources_used": [
+          "https://www.marketbeat.com/stocks/NASDAQ/KDP/sustainability/",
+          "https://keurigdrpepper.com/wp-content/uploads/2025/06/2024-impact-report.pdf",
+          "https://ditchcarbon.com/organizations/1740"
+        ]
+      }
+    },
+    "claim_comparisons": [
+      {
+        "claim_id": 1,
+        "claim": "Committed to water stewardship",
+        "uses_superlative": false,
+        "superlative_words": [],
+        "verified_against_peers": false,
+        "peer_comparison": []
+      },
+      {
+        "claim_id": 2,
+        "claim": "Recycling 100% of packaging by 2030",
+        "uses_superlative": false,
+        "superlative_words": [],
+        "verified_against_peers": false,
+        "peer_comparison": []
+      }
+    ],
+    "industry_position": {
+      "category": "Average",
+      "rationale": "Compared against 5 peers - no superlative claims detected",
+      "confidence": 50,
+      "peers_with_data": 5,
+      "superlative_claims": 0
+    }
+  },
+  "confidence_assessment": {
+    "overall_confidence": 85,
+    "confidence_level": "HIGH",
+    "breakdown": {
+      "source_quantity": 20,
+      "source_quality": 20,
+      "data_recency": 20,
+      "historical_context": 10,
+      "evidence_completeness": 15
+    },
+    "interpretation": "HIGH CONFIDENCE: Analysis backed by extensive, recent, credible sources. Suitable for regulatory/investment decisions."
+  },
+  "conflict_resolutions": [
+    {
+      "claim_id": 1,
+      "conflicts_detected": true,
+      "conflicts": [
+        {
+          "type": "Evidence Disagreement",
+          "supporting_sources": 4,
+          "contradicting_sources": 1,
+          "support_credibility": 0.6,
+          "contradict_credibility": 0.9,
+          "support_recency_days": 0.0,
+          "contradict_recency_days": 0.0,
+          "llm_resolution": {
+            "more_reliable": "contradicting",
+            "reason": "The contradicting evidence from Greenpeace has a higher credibility score (0.90) compared to the supporting evidence (0.60). Additionally, both pieces of evidence are equally recent (0 days old), but the contradicting evidence provides a more specific and recent response to Coca-Cola's 2022 Business and Sustainability report.",
+            "confidence": 80
+          }
+        }
+      ],
+      "resolution": {
+        "verdict": "Likely True",
+        "confidence": 72,
+        "method": "Credibility-Weighted Ensemble Voting"
+      },
+      "requires_human_review": false
+    },
+    {
+      "claim_id": 2,
+      "conflicts_detected": true,
+      "conflicts": [
+        {
+          "type": "Evidence Disagreement",
+          "supporting_sources": 3,
+          "contradicting_sources": 1,
+          "support_credibility": 0.6333333333333333,
+          "contradict_credibility": 0.9,
+          "support_recency_days": 0.0,
+          "contradict_recency_days": 0.0,
+          "llm_resolution": {
+            "more_reliable": "contradicting",
+            "reason": "The contradicting evidence has a higher source credibility (0.90) compared to the supporting evidence (0.63). Although both pieces of evidence are from Greenpeace, the contradicting evidence is a response to Coca-Cola's 2022 Business and Sustainability Report, indicating it is a more recent and specific critique.",
+            "confidence": 80
+          }
+        }
+      ],
+      "resolution": {
+        "verdict": "Likely True",
+        "confidence": 67,
+        "method": "Credibility-Weighted Ensemble Voting"
+      },
+      "requires_human_review": true
+    }
+  ]
+}

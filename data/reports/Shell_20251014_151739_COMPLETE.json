@@ -1,0 +1,1042 @@
+{
+  "company": "Shell",
+  "analysis_timestamp": "2025-10-14T15:12:51.339042",
+  "orchestration_method": "Direct 11-Agent",
+  "claims": [
+    {
+      "claim_id": 1,
+      "actor": "Shell",
+      "claim_text": "Shell is transitioning to clean energy",
+      "category": "Environmental",
+      "subcategory": "Energy Transition Strategy",
+      "metric": "Not specified",
+      "timeline": "Ongoing",
+      "claim_type": "Policy",
+      "specificity_score": 2
+    },
+    {
+      "claim_id": 2,
+      "actor": "Shell",
+      "claim_text": "Investing 3 billion annually in renewable energy",
+      "category": "Environmental",
+      "subcategory": "Renewable Energy Investment",
+      "metric": "3 billion [currency not specified]",
+      "timeline": "Annually",
+      "claim_type": "Policy",
+      "specificity_score": 8
+    }
+  ],
+  "evidence": [
+    {
+      "claim_id": 1,
+      "evidence": [
+        {
+          "source_id": "ev_000",
+          "source_name": "Greenpeace",
+          "source_type": "NGO",
+          "url": "https://www.shell.com/investors/environmental-social-and-governance.html",
+          "date": "2025-10-14T15:13:35.698606",
+          "relevant_text": "The environmental, social and governance ( ESG ) information hub brings together our key reports, policies and commitments, our sustainability data and performance, and mapping to reporting standards and frameworks.",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 0,
+          "data_source_api": "Greenpeace - NGO",
+          "retrieval_timestamp": "2025-10-14T15:13:47.173139"
+        },
+        {
+          "source_id": "ev_001",
+          "source_name": "Greenpeace",
+          "source_type": "NGO",
+          "url": "https://www.cnbc.com/2021/05/26/dutch-court-rules-oil-giant-shell-must-cut-carbon-emissions-by-45percent-by-2030-in-landmark-case.html",
+          "date": "2025-10-14T15:13:35.698606",
+          "relevant_text": "May 26, 2021 \u00b7 LONDON \u2014 A Dutch court on Wednesday ruled oil giant Royal Dutch Shell must reduce its carbon emissions by 45% by 2030 from 2019 levels. That's a much higher reduction than the company's current ...",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 0,
+          "data_source_api": "Greenpeace - NGO",
+          "retrieval_timestamp": "2025-10-14T15:13:47.265528"
+        },
+        {
+          "source_id": "ev_002",
+          "source_name": "Amnesty International",
+          "source_type": "NGO",
+          "url": "https://www.shell.com/investors/environmental-social-and-governance.html",
+          "date": "2025-10-14T15:13:38.200688",
+          "relevant_text": "The environmental, social and governance ( ESG ) information hub brings together our key reports, policies and commitments, our sustainability data and performance, and mapping to reporting standards and frameworks.",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 0,
+          "data_source_api": "Amnesty International - NGO",
+          "retrieval_timestamp": "2025-10-14T15:13:47.352389"
+        },
+        {
+          "source_id": "ev_003",
+          "source_name": "Amnesty International",
+          "source_type": "NGO",
+          "url": "https://www.amnesty.org/en/latest/news/2020/06/no-clean-up-no-justice-shell-oil-pollution-in-the-niger-delta/",
+          "date": "2025-10-14T15:13:38.200688",
+          "relevant_text": "Jun 18, 2020 \u00b7 Friends of the Earth Europe, Amnesty International, Environmental Rights Action, Milieudefensie Nearly 10 years after a clean-up was urged for areas polluted by Shell and other oil companies in the Niger Delta, work has begun on only 11% of planned sites while vast areas remain heavily contaminated, according to a new investigation by four NGOs.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "Amnesty International - NGO",
+          "retrieval_timestamp": "2025-10-14T15:13:47.446796"
+        },
+        {
+          "source_id": "ev_004",
+          "source_name": "Designboom",
+          "source_type": "News Source",
+          "url": "https://www.designboom.com/architecture/organic-shell-roof-thatch-mud-sculptural-eco-retreat-india-earth-embrace-raving-dots-studio-10-12-2025/",
+          "date": "2025-10-12T01:01:02Z",
+          "relevant_text": "earth\u2019s embrace nature-integrated retreat is shaped by parametric design and sustainable construction.\nThe post organic shell roof made of thatch and mud tops sculptural eco-retreat in india appeared first on designboom | architecture & design magazine.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 2,
+          "data_source_api": "NewsAPI",
+          "retrieval_timestamp": "2025-10-14T15:14:10.055480"
+        },
+        {
+          "source_id": "ev_005",
+          "source_name": "Shell case study: Innovating for a clean energy future",
+          "source_type": "Web Source",
+          "url": "https://blog.wearedrew.co/en/shell-case-study-innovating-for-a-clean-energy-future",
+          "date": "2025-10-14T15:13:46.714181",
+          "relevant_text": "Conclusion Shell's case highlights how a traditional fossil fuel company can transform into a leader in clean energy through innovation and strategic investment. Shell's transition to renewable energy reflects not only a change in business strategy but also a commitment to sustainability and environ",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 0,
+          "data_source_api": "DuckDuckGo - Web",
+          "retrieval_timestamp": "2025-10-14T15:14:17.686028"
+        },
+        {
+          "source_id": "ev_006",
+          "source_name": "ESG Voices Shell's Path to Net-Zero: The 2024 Energy Transition Strategy",
+          "source_type": "Web Source",
+          "url": "https://www.esgvoices.com/post/shell-path-to-net-zero-the-2024-energy-transition-strategy",
+          "date": "2025-10-14T15:13:46.714181",
+          "relevant_text": "April 1, 2024 - This holistic strategy sets out ... Shell ' s transition to a cleaner energy future, acknowledging the complex challenges and highlighting Shell \u2019s readiness to address them. Net-Zero Emissions by 2050: Central to Shell 's vision is the commitment to reach net-zero emissions. This ob",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 0,
+          "data_source_api": "DuckDuckGo - Web",
+          "retrieval_timestamp": "2025-10-14T15:14:17.779752"
+        },
+        {
+          "source_id": "ev_007",
+          "source_name": "Shellenergy Decarbonization",
+          "source_type": "Web Source",
+          "url": "https://shellenergy.com/decarbonization",
+          "date": "2025-10-14T15:13:46.714181",
+          "relevant_text": "Shell Energy is working to make your path to sustainability easier, investing in new technologies and projects to help support a cleaner energy future. Shell Energy can be your guide to help make the energy transition easier. We supply renewable energy and environmental products that are tailored ..",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 0,
+          "data_source_api": "DuckDuckGo - Web",
+          "retrieval_timestamp": "2025-10-14T15:14:17.867899"
+        },
+        {
+          "source_id": "ev_008",
+          "source_name": "Follow-this Shell lowers investments in clean energy to 8%, endangering the company\u2019s future by igno",
+          "source_type": "Web Source",
+          "url": "https://follow-this.org/shell-lowers-investments-in-clean-energy-to-8-endangering-the-companys-future-by-ignoring-the-energy-transition/",
+          "date": "2025-10-14T15:13:46.714181",
+          "relevant_text": "The backtrack in investments in clean energy comes after Shell scrapped emissions reduction targets in March. At least 92%* of investments remain tied to fossil fuels. ... \u201cBy continuing to bet on fossil fuel expansion, the board of Shell jeopardizes the future of the company,\u201d says Mark van Baal, f",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 0,
+          "data_source_api": "DuckDuckGo - Web",
+          "retrieval_timestamp": "2025-10-14T15:14:17.961744"
+        },
+        {
+          "source_id": "ev_009",
+          "source_name": "ClientEarth The Greenwashing Files - Shell | ClientEarth",
+          "source_type": "Web Source",
+          "url": "https://www.clientearth.org/projects/the-greenwashing-files/shell/",
+          "date": "2025-10-14T15:13:46.714181",
+          "relevant_text": "January 8, 2025 - Advertising vs. reality - discover the greenwashing practices of Shell",
+          "relationship_to_claim": "Contradicts",
+          "data_freshness_days": 0,
+          "data_source_api": "DuckDuckGo - Web",
+          "retrieval_timestamp": "2025-10-14T15:14:18.046759"
+        }
+      ],
+      "evidence_gap": false,
+      "quality_metrics": {
+        "evidence_gap": false,
+        "independent_sources": 10,
+        "premium_sources": 4,
+        "avg_freshness_days": 0.2,
+        "source_diversity": 3,
+        "diversity_score": 60,
+        "coverage_score": 66.7,
+        "total_sources": 10,
+        "source_type_breakdown": {
+          "NGO": 4,
+          "News Source": 1,
+          "Web Source": 5
+        },
+        "api_source_breakdown": {
+          "Greenpeace - NGO": 2,
+          "Amnesty International - NGO": 2,
+          "NewsAPI": 1,
+          "DuckDuckGo - Web": 5
+        }
+      },
+      "source_breakdown": {
+        "Greenpeace - NGO": 2,
+        "Amnesty International - NGO": 2,
+        "NewsAPI": 1,
+        "DuckDuckGo - Web": 5
+      },
+      "retrieval_timestamp": "2025-10-14T15:14:18.474360"
+    },
+    {
+      "claim_id": 2,
+      "evidence": [
+        {
+          "source_id": "ev_000",
+          "source_name": "Greenpeace",
+          "source_type": "NGO",
+          "url": "https://greenwire.greenpeace.org/uk/en-gb/blogs/shells-sustainability-sustainable",
+          "date": "2025-10-14T15:14:49.745991",
+          "relevant_text": "Shell and Gazprom appear to be doing a 'Good Cop, Bad Cop' routine in the Arctic. Shell are the caring modern company which gets nominated for sustainability awards. By contrast Gazprom seem to be happy to play the role of the thug.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "Greenpeace - NGO",
+          "retrieval_timestamp": "2025-10-14T15:15:01.522155"
+        },
+        {
+          "source_id": "ev_001",
+          "source_name": "Greenpeace",
+          "source_type": "NGO",
+          "url": "https://unearthed.greenpeace.org/2021/10/25/shell-oil-carbon-neutral-offsetting/",
+          "date": "2025-10-14T15:14:49.745991",
+          "relevant_text": "October 29, 2021 - Shell claims customers can opt to \u2018drive carbon neutral\u2019 by offsetting their emissions, but a new investigation casts doubt on the climate benefit.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "Greenpeace - NGO",
+          "retrieval_timestamp": "2025-10-14T15:15:01.818243"
+        },
+        {
+          "source_id": "ev_002",
+          "source_name": "Amnesty International",
+          "source_type": "NGO",
+          "url": "https://www.shell.com/investors/environmental-social-and-governance.html",
+          "date": "2025-10-14T15:14:51.668440",
+          "relevant_text": "The environmental, social and governance ( ESG ) information hub brings together our key reports, policies and commitments, our sustainability data and performance, and mapping to reporting standards and frameworks.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "Amnesty International - NGO",
+          "retrieval_timestamp": "2025-10-14T15:15:02.053182"
+        },
+        {
+          "source_id": "ev_003",
+          "source_name": "Amnesty International",
+          "source_type": "NGO",
+          "url": "https://www.amnesty.org/en/latest/news/2020/06/no-clean-up-no-justice-shell-oil-pollution-in-the-niger-delta/",
+          "date": "2025-10-14T15:14:51.668440",
+          "relevant_text": "Jun 18, 2020 \u00b7 Friends of the Earth Europe, Amnesty International, Environmental Rights Action, Milieudefensie Nearly 10 years after a clean-up was urged for areas polluted by Shell and other oil companies in the Niger Delta, work has begun on only 11% of planned sites while vast areas remain heavily contaminated, according to a new investigation by four NGOs.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "Amnesty International - NGO",
+          "retrieval_timestamp": "2025-10-14T15:15:02.261591"
+        },
+        {
+          "source_id": "ev_004",
+          "source_name": "Rainforest Action Network",
+          "source_type": "NGO",
+          "url": "https://www.ran.org/press-releases/new-report-exposes-royal-golden-eagle-groups-environmental-violations-and-calls-for-brands-and-banks-to-drop-ties/",
+          "date": "2025-10-14T15:14:53.903795",
+          "relevant_text": "The report builds on wide ranging allegations concerning corruption, environmental destruction, human rights violations, and the use of shell companies and offshore corporate ownership structures by RGE, making it a prime example of irresponsible corporate behavior.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "Rainforest Action Network - NGO",
+          "retrieval_timestamp": "2025-10-14T15:15:02.355096"
+        },
+        {
+          "source_id": "ev_005",
+          "source_name": "Designboom",
+          "source_type": "News Source",
+          "url": "https://www.designboom.com/architecture/organic-shell-roof-thatch-mud-sculptural-eco-retreat-india-earth-embrace-raving-dots-studio-10-12-2025/",
+          "date": "2025-10-12T01:01:02Z",
+          "relevant_text": "earth\u2019s embrace nature-integrated retreat is shaped by parametric design and sustainable construction.\nThe post organic shell roof made of thatch and mud tops sculptural eco-retreat in india appeared first on designboom | architecture & design magazine.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 2,
+          "data_source_api": "NewsAPI",
+          "retrieval_timestamp": "2025-10-14T15:15:02.869338"
+        },
+        {
+          "source_id": "ev_006",
+          "source_name": "Marketing Mix Analysis of Shell plc (SHEL) \u2013 DCFmodeling.com",
+          "source_type": "Web Source",
+          "url": "https://dcfmodeling.com/products/shel-marketing-mix",
+          "date": "2025-10-14T15:15:01.268717",
+          "relevant_text": "Shell invested $ 3 .5 billion in renewable energy and low-carbon technologies in 2022. Marketing campaigns focused on net-zero emissions commitment by 2050. Campaign Focus. Investment Amount. Target Audience. Renewable Energy .",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 0,
+          "data_source_api": "DuckDuckGo - Web",
+          "retrieval_timestamp": "2025-10-14T15:15:03.158017"
+        },
+        {
+          "source_id": "ev_007",
+          "source_name": "Shell To Invest In Renewables, But More On Oil & Gas",
+          "source_type": "Web Source",
+          "url": "https://taiyangnews.info/business/shell-to-invest-in-renewables-but-more-on-oil-gas",
+          "date": "2025-10-14T15:15:01.268717",
+          "relevant_text": "Even as Royal Dutch Shell continues to invest in renewable power generation including solar and storage, its net zero ambitions are ambiguous as oil and gas take a large chunk of the company\u2019s investments in the future under its strategy update released.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "DuckDuckGo - Web",
+          "retrieval_timestamp": "2025-10-14T15:15:03.305037"
+        },
+        {
+          "source_id": "ev_008",
+          "source_name": "Shell Gets Greener, Even as Climate Advocates Say, \u2018Go Faster\u2019 - The...",
+          "source_type": "Web Source",
+          "url": "https://www.nytimes.com/2021/06/18/business/shell-renewable-energy.html",
+          "date": "2025-10-14T15:15:01.268717",
+          "relevant_text": "Royal Dutch Shell , though still reliant on profits from fossil fuels, is investing more in renewable energy . Critics say the changes have to come quicker.",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 0,
+          "data_source_api": "DuckDuckGo - Web",
+          "retrieval_timestamp": "2025-10-14T15:15:03.544855"
+        }
+      ],
+      "evidence_gap": false,
+      "quality_metrics": {
+        "evidence_gap": false,
+        "independent_sources": 9,
+        "premium_sources": 5,
+        "avg_freshness_days": 0.2,
+        "source_diversity": 3,
+        "diversity_score": 60,
+        "coverage_score": 66.7,
+        "total_sources": 9,
+        "source_type_breakdown": {
+          "NGO": 5,
+          "News Source": 1,
+          "Web Source": 3
+        },
+        "api_source_breakdown": {
+          "Greenpeace - NGO": 2,
+          "Amnesty International - NGO": 2,
+          "Rainforest Action Network - NGO": 1,
+          "NewsAPI": 1,
+          "DuckDuckGo - Web": 3
+        }
+      },
+      "source_breakdown": {
+        "Greenpeace - NGO": 2,
+        "Amnesty International - NGO": 2,
+        "Rainforest Action Network - NGO": 1,
+        "NewsAPI": 1,
+        "DuckDuckGo - Web": 3
+      },
+      "retrieval_timestamp": "2025-10-14T15:15:04.062904"
+    }
+  ],
+  "contradiction_analysis": [
+    {
+      "claim_id": 1,
+      "overall_verdict": "Contradicted",
+      "verification_confidence": 95,
+      "specific_contradictions": [
+        {
+          "aspect": "Investment Allocation",
+          "claim_states": "Shell is transforming into a leader in clean energy through innovation and strategic investment.",
+          "evidence_shows": "Shell lowered investments in clean energy to 8%, with at least 92% of investments remaining tied to fossil fuels. (Source: Follow-this)",
+          "severity": "Major"
+        },
+        {
+          "aspect": "Commitment to Emission Targets",
+          "claim_states": "Shell has a holistic strategy for a cleaner energy future and is on a path to Net-Zero.",
+          "evidence_shows": "Shell scrapped emissions reduction targets in March 2024. Additionally, a 2021 court ruling forced the company to adopt more aggressive 2030 emission reduction targets, suggesting its voluntary commitments were insufficient. (Sources: Follow-this, Greenpeace)",
+          "severity": "Major"
+        },
+        {
+          "aspect": "Corporate Sincerity",
+          "claim_states": "Shell is genuinely transitioning to clean energy.",
+          "evidence_shows": "The company is explicitly accused of greenwashing by organizations like ClientEarth, and its historical environmental record includes significant delays in pollution clean-up efforts. (Sources: ClientEarth, Amnesty International)",
+          "severity": "Moderate"
+        }
+      ],
+      "supportive_evidence": [
+        "Shell's own promotional materials (case study, Shell Energy website) and an industry-focused publication (ESG Voices) articulate a formal strategy and public commitment to transitioning to cleaner energy."
+      ],
+      "key_issues": [
+        "Discrepancy Between Strategy and Spending: The primary issue is the vast gap between Shell's public relations narrative of a 'clean energy transition' and the financial reality that over 90% of its investments are still directed towards fossil fuels.",
+        "Weakening of Commitments: Recent actions, such as scrapping emission targets, directly contradict the forward-looking promises made in their transition strategy, indicating a potential reversal of climate commitments.",
+        "External vs. Internal Motivation: Evidence suggests that significant environmental action from Shell has been prompted by external legal pressure (Dutch court ruling) rather than purely voluntary corporate strategy, questioning the authenticity of their commitment.",
+        "Irrelevant Data: Some provided evidence (e.g., the Designboom article about an architectural 'shell roof') is irrelevant and serves as noise, highlighting the need for careful source vetting."
+      ],
+      "evidence_counts": {
+        "supporting": 7,
+        "contradicting": 1,
+        "neutral": 2
+      }
+    },
+    {
+      "claim_id": 2,
+      "overall_verdict": "Partially True",
+      "verification_confidence": 85,
+      "specific_contradictions": [
+        {
+          "aspect": "Proportionality of Investment",
+          "claim_states": "The claim highlights a significant absolute investment figure ($3 billion) in renewable energy, implying a major strategic shift.",
+          "evidence_shows": "Evidence suggests that while Shell does invest in renewables, a larger portion of its investment continues to go into oil and gas, making the renewables investment proportionally small and potentially misleading about the company's primary focus.",
+          "severity": "Major"
+        }
+      ],
+      "supportive_evidence": [
+        "One web source (DCFmodeling.com) confirms that 'Shell invested $ 3 .5 billion in renewable energy and low-carbon technologies in 2022,' which is higher than the claimed amount for that specific year."
+      ],
+      "key_issues": [
+        "Omission of Context: The primary issue is that the claim is presented in isolation. Evidence from sources like 'Shell To Invest In Renewables, But More On Oil & Gas' indicates the investment in fossil fuels remains larger, a critical piece of context missing from the claim.",
+        "Temporal Ambiguity: The claim states the investment is 'annually,' but the supporting evidence only provides a specific figure for a single year (2022). It is not possible to verify if this is a consistent, long-term annual investment based on the data provided.",
+        "Allegations of Greenwashing: Multiple NGO sources raise broader concerns about Shell's environmental practices, including questionable carbon offset programs and slow responses to pollution incidents, which casts doubt on the sincerity of its sustainability claims."
+      ],
+      "evidence_counts": {
+        "supporting": 2,
+        "contradicting": 0,
+        "neutral": 7
+      }
+    }
+  ],
+  "credibility_analysis": {
+    "source_credibility_analyses": [
+      {
+        "source_id": "ev_000",
+        "source_name": "Greenpeace",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.shell.com/investors/environmental-social-and-governance.html"
+      },
+      {
+        "source_id": "ev_001",
+        "source_name": "Greenpeace",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.cnbc.com/2021/05/26/dutch-court-rules-oil-giant-shell-must-cut-carbon-emissions-by-45percent-by-2030-in-landmark-case.html"
+      },
+      {
+        "source_id": "ev_002",
+        "source_name": "Amnesty International",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.shell.com/investors/environmental-social-and-governance.html"
+      },
+      {
+        "source_id": "ev_003",
+        "source_name": "Amnesty International",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.amnesty.org/en/latest/news/2020/06/no-clean-up-no-justice-shell-oil-pollution-in-the-niger-delta/"
+      },
+      {
+        "source_id": "ev_004",
+        "source_name": "Designboom",
+        "source_type": "News Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.designboom.com/architecture/organic-shell-roof-thatch-mud-sculptural-eco-retreat-india-earth-embrace-raving-dots-studio-10-12-2025/"
+      },
+      {
+        "source_id": "ev_005",
+        "source_name": "Shell case study: Innovating for a clean energy future",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://blog.wearedrew.co/en/shell-case-study-innovating-for-a-clean-energy-future"
+      },
+      {
+        "source_id": "ev_006",
+        "source_name": "ESG Voices Shell's Path to Net-Zero: The 2024 Energy Transition Strategy",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.esgvoices.com/post/shell-path-to-net-zero-the-2024-energy-transition-strategy"
+      },
+      {
+        "source_id": "ev_007",
+        "source_name": "Shellenergy Decarbonization",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://shellenergy.com/decarbonization"
+      },
+      {
+        "source_id": "ev_008",
+        "source_name": "Follow-this Shell lowers investments in clean energy to 8%, endangering the company\u2019s future by igno",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://follow-this.org/shell-lowers-investments-in-clean-energy-to-8-endangering-the-companys-future-by-ignoring-the-energy-transition/"
+      },
+      {
+        "source_id": "ev_009",
+        "source_name": "ClientEarth The Greenwashing Files - Shell | ClientEarth",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.clientearth.org/projects/the-greenwashing-files/shell/"
+      },
+      {
+        "source_id": "ev_000",
+        "source_name": "Greenpeace",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://greenwire.greenpeace.org/uk/en-gb/blogs/shells-sustainability-sustainable"
+      },
+      {
+        "source_id": "ev_001",
+        "source_name": "Greenpeace",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://unearthed.greenpeace.org/2021/10/25/shell-oil-carbon-neutral-offsetting/"
+      },
+      {
+        "source_id": "ev_002",
+        "source_name": "Amnesty International",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.shell.com/investors/environmental-social-and-governance.html"
+      },
+      {
+        "source_id": "ev_003",
+        "source_name": "Amnesty International",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.amnesty.org/en/latest/news/2020/06/no-clean-up-no-justice-shell-oil-pollution-in-the-niger-delta/"
+      },
+      {
+        "source_id": "ev_004",
+        "source_name": "Rainforest Action Network",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.ran.org/press-releases/new-report-exposes-royal-golden-eagle-groups-environmental-violations-and-calls-for-brands-and-banks-to-drop-ties/"
+      },
+      {
+        "source_id": "ev_005",
+        "source_name": "Designboom",
+        "source_type": "News Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.designboom.com/architecture/organic-shell-roof-thatch-mud-sculptural-eco-retreat-india-earth-embrace-raving-dots-studio-10-12-2025/"
+      },
+      {
+        "source_id": "ev_006",
+        "source_name": "Marketing Mix Analysis of Shell plc (SHEL) \u2013 DCFmodeling.com",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://dcfmodeling.com/products/shel-marketing-mix"
+      },
+      {
+        "source_id": "ev_007",
+        "source_name": "Shell To Invest In Renewables, But More On Oil & Gas",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://taiyangnews.info/business/shell-to-invest-in-renewables-but-more-on-oil-gas"
+      },
+      {
+        "source_id": "ev_008",
+        "source_name": "Shell Gets Greener, Even as Climate Advocates Say, \u2018Go Faster\u2019 - The...",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.nytimes.com/2021/06/18/business/shell-renewable-energy.html"
+      }
+    ],
+    "aggregate_metrics": {
+      "average_credibility": 0.7394736842105263,
+      "high_credibility_count": 9,
+      "medium_credibility_count": 10,
+      "low_credibility_count": 0,
+      "total_sources": 19
+    }
+  },
+  "sentiment_analysis": [
+    {
+      "claim_id": 1,
+      "claim_sentiment": {
+        "polarity_score": 0.367,
+        "subjectivity_score": 0.7,
+        "buzzword_count": 1,
+        "vague_terms": [],
+        "hedge_words": [],
+        "specificity_deficit": false
+      },
+      "evidence_sentiment": {
+        "polarity_score": 0.031,
+        "subjectivity_score": 0.49,
+        "buzzword_count": 3,
+        "vague_terms": [],
+        "hedge_words": [
+          "may",
+          "nearly"
+        ],
+        "specificity_deficit": false
+      },
+      "sentiment_divergence": 0.336,
+      "divergence_score": 33,
+      "greenwashing_flags": [],
+      "llm_linguistic_analysis": {
+        "raw_analysis": "**ESG Communication Sentiment & Linguistic Analysis**\n\n**Input Text:** Shell is transitioning to clean energy\n\n**Analysis:**\n\n### Sentiment Polarity\nUsing a sentiment analysis tool, I calculated the sentiment polarity of the input text as:\n```json\n{\n  \"polarity_score\": 0.6\n}\n```\nThe polarity score i",
+        "parsed": false
+      },
+      "overall_linguistic_risk": 15
+    },
+    {
+      "claim_id": 2,
+      "claim_sentiment": {
+        "polarity_score": 0.0,
+        "subjectivity_score": 0.0,
+        "buzzword_count": 0,
+        "vague_terms": [],
+        "hedge_words": [],
+        "specificity_deficit": false
+      },
+      "evidence_sentiment": {
+        "polarity_score": 0.085,
+        "subjectivity_score": 0.409,
+        "buzzword_count": 3,
+        "vague_terms": [],
+        "hedge_words": [
+          "nearly"
+        ],
+        "specificity_deficit": false
+      },
+      "sentiment_divergence": 0.085,
+      "divergence_score": 8,
+      "greenwashing_flags": [],
+      "llm_linguistic_analysis": {
+        "raw_analysis": "**ESG Communication Sentiment & Linguistic Analysis**\n\n**Input Text:** Investing 3 billion annually in renewable energy\n\n**Analysis:**\n\n### Sentiment Polarity\nThe sentiment polarity of the text is **0.2** (slightly positive). This is because the text mentions investing in renewable energy, which is ",
+        "parsed": false
+      },
+      "overall_linguistic_risk": 2
+    }
+  ],
+  "historical_analysis": {
+    "company": "Shell",
+    "analysis_date": "2025-10-14T15:15:26.114066",
+    "past_violations": [
+      {
+        "year": 2025,
+        "type": "Environmental",
+        "description": "May 25, 2023 - The Clean Air Council and Environmental Integrity Project even filed a federal lawsuit accusing Shell of repeatedly violating permitted air pollution limits, which exacerbate health iss",
+        "source": "Quartz Shell paid a $10 million fine to restart a Pennsylvania plant that is bound to keep polluting",
+        "url": "https://qz.com/shell-chemical-appalachia-pennsylvania-pollution-fine-1850473853"
+      },
+      {
+        "year": 2025,
+        "type": "Environmental",
+        "description": "May 30, 2025 - On top of the fine , the plant faces a federal lawsuit from two environmental groups for repeated violations of its air permit. As part of a consent agreement between the company and DE",
+        "source": "NPR Shell\u2019s air pollution violations result in $10 million fine for Beaver County ethane cracker | S",
+        "url": "https://stateimpact.npr.org/pennsylvania/2023/05/25/shells-air-pollution-violations-result-in-10-million-fine-for-beaver-county-ethane-cracker/"
+      },
+      {
+        "year": 2025,
+        "type": "Environmental",
+        "description": "May 25, 2023 - On top of the fine , the plant faces a federal lawsuit from two environmental groups for repeated violations of its air permit. As part of a consent agreement between the company and DE",
+        "source": "WESA Shell's air pollution violations result in $10 million fine for Beaver County ethane cracker | ",
+        "url": "https://www.wesa.fm/environment-energy/2023-05-25/shells-air-pollution-violations-result-in-10-million-fine-for-beaver-county-ethane-cracker"
+      },
+      {
+        "year": 2025,
+        "type": "Environmental",
+        "description": "This investigation was conducted ... by OSHA to \u00b7 determine if violations of occupational safety and health laws had occurred. ... On Sunday, June 22, 1997, at approximately 10:07 a.m. Central Dayligh",
+        "source": "US EPA Epa",
+        "url": "https://archive.epa.gov/emergencies/docs/chem/web/pdf/shellrpt.pdf"
+      },
+      {
+        "year": 2025,
+        "type": "Environmental",
+        "description": "In September 2022, the plant, called Shell Polymers Monaca, emitted 512 tons of VOCs, nearly reaching the 12-month permitted limit of its approved VOC emissions (516.2 tons of VOCs in any consecutive ",
+        "source": "Cleanair Clean Air Council \u00bb Blog Archive \u00bb Environmental groups take legal action against PA chemic",
+        "url": "https://cleanair.org/environmental-groups-take-legal-action-against-pa-chemical-plant-for-air-pollution-violations/"
+      },
+      {
+        "year": 2025,
+        "type": "Environmental",
+        "description": "The U.S. Environmental Protection Agency announced settlements with Shell Gulf of Mexico, Inc. and Shell Offshore, Inc. for violations of their Clean Air Act permits for arctic oil and gas exploration",
+        "source": "EPA , Shell Reach Settlement for Arctic Drilling Violations",
+        "url": "https://www.offshore-energy.biz/epa-shell-reach-settlement-for-arctic-drilling-violations/"
+      },
+      {
+        "year": 2025,
+        "type": "Environmental",
+        "description": "On 14 March 2007, the Louisiana Department of Environmental Quality (DEQ) announced [10] that Shell Chemical Company has settled six years of ...",
+        "source": "Royal Dutch Shell environmental issues \u2013 Royal Dutch",
+        "url": "https://royaldutchshellplc.com/2010/09/27/royal-dutch-shell-environmental-issues/"
+      }
+    ],
+    "greenwashing_history": {
+      "prior_accusations": 3,
+      "examples": [
+        {
+          "year": 2025,
+          "description": "The Greenwashing Files have been produced and published by ClientEarth, an environmental law charity registered in England and Wales, with research as",
+          "source": "The Greenwashing Files - Shell | ClientEarth"
+        },
+        {
+          "year": 2025,
+          "description": "February 1, 2023 - Shell says its financial disclosures are fully compliant with all SEC requirements.",
+          "source": "Washington Post Oil giant Shell accused of 'greenwashing' and misleading investors - The Washington "
+        },
+        {
+          "year": 2025,
+          "description": "November 20, 2023 - Demonstrating that a significant ... the Environmental Campaign group Global Witness petitioned the U.S. Securities and Exchange C",
+          "source": "Energytransition Shell games: dodging lawsuits and greenwashing charges on both sides of the Atlanti"
+        }
+      ],
+      "pattern_detected": false
+    },
+    "positive_track_record": [],
+    "temporal_patterns": {
+      "consistent_behavior": true,
+      "improving_trend": false,
+      "declining_trend": false,
+      "reactive_claims": false
+    },
+    "reputation_score": 0
+  },
+  "final_risk_assessment": {
+    "company": "Shell",
+    "analysis_timestamp": "2025-10-14T15:17:39.890489",
+    "industry": "oil_and_gas",
+    "industry_baseline_risk": 75,
+    "industry_source": "MSCI ESG Industry Materiality Map 2024",
+    "base_risk_score": 59.3,
+    "industry_adjustment": 7.5,
+    "peer_adjustment": 0.0,
+    "greenwashing_risk_score": 66.8,
+    "esg_score": 33.2,
+    "risk_level": "HIGH",
+    "rating_grade": "B",
+    "component_scores": {
+      "claim_verification": 75.0,
+      "evidence_quality": 20,
+      "source_credibility": 26,
+      "sentiment_divergence": 20,
+      "historical_pattern": 96,
+      "contradiction_severity": 90
+    },
+    "explainability_top_3_reasons": [
+      "Historical violations: 7 documented ESG violation(s) (risk: 96%)",
+      "Major contradictions: 3 severe inconsistenc(y/ies) detected (risk: 90%)",
+      "Claim verification failure: 1 claim(s) contradicted by evidence (risk: 75%)"
+    ],
+    "actionable_insights": {
+      "for_investors": "HIGH RISK: Shell (Oil And Gas) shows significant greenwashing indicators. Claims lack credible verification or contain major contradictions. NOT suitable for ESG portfolios without deep independent audit and verification.",
+      "for_regulators": "IMMEDIATE ATTENTION REQUIRED: Shell requires formal investigation. Multiple red flags detected including unverified claims, contradictions, or historical violations. Recommend requesting documentation and potential enforcement action in high-scrutiny Oil And Gas sector.",
+      "for_consumers": "CAUTION ADVISED: Shell's ESG claims appear questionable or unsubstantiated. Oil And Gas companies face inherent sustainability challenges. Strongly recommend seeking alternatives with credible third-party certifications (B Corp, Fair Trade, etc.)."
+    },
+    "confidence_level": 85
+  },
+  "realtime_monitoring": {
+    "company": "Shell",
+    "articles_found": 5,
+    "articles": [
+      {
+        "source": "ESG information hub - Shell Global",
+        "url": "https://www.shell.com/investors/environmental-social-and-governance.html",
+        "title": "ESG information hub - Shell Global",
+        "snippet": "The environmental, social and governance ( ESG ) information hub brings together our key reports, policies and commitments, our sustainability data and performance, and mapping to reporting standards and frameworks.",
+        "date": "2025-10-14T15:13:08.621624",
+        "data_source_api": "DuckDuckGo - Web",
+        "source_type": "Web Source",
+        "full_text": "",
+        "authors": [],
+        "publish_date": "2025-10-14T15:13:08.621624"
+      },
+      {
+        "source": "Sustainability | About Us",
+        "url": "https://www.shell.us/about-us/sustainability.html",
+        "title": "Sustainability | About Us",
+        "snippet": "At Shell , we believe sustainability is providing essential energy for a growing population in a responsible way. See how.",
+        "date": "2025-10-14T15:13:08.621624",
+        "data_source_api": "DuckDuckGo - Web",
+        "source_type": "Web Source",
+        "full_text": "",
+        "authors": [],
+        "publish_date": "2025-10-14T15:13:08.621624"
+      },
+      {
+        "source": "Environmental , social , and governance - Wikipedia",
+        "url": "https://en.wikipedia.org/wiki/Environmental,_social,_and_governance",
+        "title": "Environmental , social , and governance - Wikipedia",
+        "snippet": "Environmental , social , and governance is shorthand for an investing principle that prioritizes environmental issues, social issues, and corporate governance . Investing with ESG considerations is sometimes referred to as responsible investing or, in m...",
+        "date": "2025-10-14T15:13:08.621086",
+        "data_source_api": "DuckDuckGo - Web",
+        "source_type": "Web Source",
+        "full_text": "Business framework\n\nEnvironmental, social, and governance (ESG) is shorthand for an investing principle that prioritizes environmental issues, social issues, and corporate governance.[1] Investing with ESG considerations is sometimes referred to as responsible investing or, in more proactive cases, impact investing.[1] The term is also frequently used interchangeably with corporate social responsibility and sustainability[2], although these concepts have different foci, origins and applications.[3]\n\nThe term ESG first came to prominence in a 2004 report titled \"Who Cares Wins\", which was a joint initiative of financial institutions at the invitation of the United Nations (UN).[4] By 2023, the ESG movement had grown from a UN corporate social responsibility initiative into a global phenomenon representing more than US$30 trillion in assets under management.[5]\n\nCriticisms of ESG vary depending on viewpoint and area of focus. These areas include data quality and a lack of standardization; evolving regulation and politics; greenwashing; and variety in the definition and assessment of social good.[6] Some critics argue that ESG serves as a de facto extension of governmental regulation, with large investment firms like BlackRock imposing ESG standards that governments cannot or do not directly legislate.[7] This has led to accusations that ESG creates a mechanism for influencing markets and corporate behavior without democratic oversight, raising concerns about accountability and overreach.[8][9]\n\nHistory [ edit ]\n\nInvestment decisions are predominantly based on the potential for financial returns for a given level of risk.[10] However, there have always been many other criteria for deciding where to place money\u2014from political considerations to heavenly reward.[11]\n\nIn the 1970s, the worldwide abhorrence of the apartheid regime in South Africa led to one of the most renowned examples of selective disinvestment along ethical lines. As a response to a growing call for sanctions against the regime, the Reverend Leon Sullivan, a board member of General Motors in the United States, drew up a Code of Conduct in 1977 for practising business with South Africa.[11] What became known as the Sullivan Principles (Sullivan Code) attracted a great deal of attention. Several reports were commissioned by the government to examine how many US companies were investing in South African businesses that were contravening the Sullivan Code. The conclusions of the reports led to mass disinvestment by the US from many South African companies. The resulting pressure applied to the South African regime by its business community added great weight to the growing impetus for the system of apartheid to be abandoned.[12]\n\nIn the 1960s and 1970s, the economist Milton Friedman, in response to the prevailing mood of philanthropy, argued that social responsibility adversely affects a firm's financial performance and that regulation and interference from \"big government\" will always damage the macro economy.[13] His contention that the valuation of a company or asset should be predicated almost exclusively on the financial bottom line (with the costs incurred by social responsibility being deemed non-essential) was prevalent for most of the 20th century (see Friedman doctrine). Towards the end of the 20th century, however, a contrary theory began to gain ground. In 1988 James S. Coleman wrote an article in the American Journal of Sociology titled \"Social Capital in the Creation of Human Capital\", the article challenged the dominance of the concept of 'self-interest' in economics and introduced the concept of social capital into the measurement of value.[10]\n\nThere was a new form of pressure applied, acting in a coalition with environmental groups: using the leveraging power of collective investors to encourage companies and capital markets to incorporate environmental and social risks and opportunities into their decision-making.\n\nAlthough the concept of selective investment was not a new one, with the demand side of the investment market having a long history of those wishing to control the effects of their investments, what began to develop at the turn of the 21st century was a response from the supply-side of the equation. At the time, this field was typically referred to as ethical or socially responsible investment. The investment market began to pick up on the growing need for products geared towards what was becoming known as the Responsible Investor. In 1981, Freer Spreckley, the creator of Social Enterprise, published Social Audit \u2014 A Management Tool for Co-operative Working, in which he first introduced the idea of a set of internal criteria that social enterprises and other organisations should use in their annual planning and accounting. These were financial viability, social wealth creation, organisational governance, and environmental responsibility, and they became known as social accounting and auditing. Later on, in 1998, John El",
+        "authors": [],
+        "publish_date": "2025-10-14T15:13:08.621086"
+      },
+      {
+        "source": "Sustainability | Shell UK | About Shell UK",
+        "url": "https://www.shell.co.uk/about-us/sustainability.html",
+        "title": "Sustainability | Shell UK | About Shell UK",
+        "snippet": "What sustainability means at Shell . Our commitment to contribute to sustainable development has been part of the Shell General Business Principles. since 1997.",
+        "date": "2025-10-14T15:13:08.621086",
+        "data_source_api": "DuckDuckGo - Web",
+        "source_type": "Web Source",
+        "full_text": "",
+        "authors": [],
+        "publish_date": "2025-10-14T15:13:08.621086"
+      },
+      {
+        "source": "Sustainability - Shell Global",
+        "url": "https://www.shell.com/sustainability.html",
+        "title": "Sustainability - Shell Global",
+        "snippet": "Our approach to sustainability takes into account the impacts, risks and opportunities related to climate, environment, safety, ethics, and people - from the global to the local level.",
+        "date": "2025-10-14T15:13:08.621086",
+        "data_source_api": "DuckDuckGo - Web",
+        "source_type": "Web Source",
+        "full_text": "",
+        "authors": [],
+        "publish_date": "2025-10-14T15:13:08.621086"
+      }
+    ],
+    "timestamp": "2025-10-14T15:13:18.798552"
+  },
+  "industry_comparison": {
+    "company": "Shell",
+    "peers_analyzed": [
+      "Chevron",
+      "ExxonMobil",
+      "TotalEnergies",
+      "ConocoPhillips"
+    ],
+    "peer_data": {
+      "Chevron": {
+        "esg_score": 45,
+        "carbon_neutral_target": "unknown",
+        "sustainability_certifications": [
+          "B Corp"
+        ],
+        "recent_violations": "yes",
+        "data_available": true,
+        "source_count": 6,
+        "sources_used": [
+          "https://www.combourse.com/Societe/Voltalia_SA_Calendrier_de_communication_financiere_2025_VOLTALIA__",
+          "https://www.fool.com/investing/stock-market/types-of-stocks/esg-investing/esg-stocks/",
+          "https://cdpturkey.sabanciuniv.edu/en/content/cdp-scores-and-its-analysis"
+        ]
+      },
+      "ExxonMobil": {
+        "esg_score": null,
+        "carbon_neutral_target": "unknown",
+        "sustainability_certifications": null,
+        "recent_violations": "unknown",
+        "data_available": true,
+        "source_count": 6,
+        "sources_used": [
+          "https://en.wikipedia.org/wiki/ExxonMobil",
+          "https://corporate.exxonmobil.com/",
+          "https://en.wikipedia.org/wiki/ExxonMobil"
+        ]
+      },
+      "TotalEnergies": {
+        "esg_score": null,
+        "carbon_neutral_target": "2050",
+        "sustainability_certifications": [
+          "B Corp"
+        ],
+        "recent_violations": "yes",
+        "data_available": true,
+        "source_count": 6,
+        "sources_used": [
+          "https://en.wikipedia.org/wiki/TotalEnergies",
+          "https://totalenergies.com/",
+          "https://totalenergies.com/sustainability/reports-and-indicators/main-esg-ratings"
+        ]
+      },
+      "ConocoPhillips": {
+        "esg_score": null,
+        "carbon_neutral_target": "unknown",
+        "sustainability_certifications": null,
+        "recent_violations": "unknown",
+        "data_available": true,
+        "source_count": 6,
+        "sources_used": [
+          "https://en.wikipedia.org/wiki/ConocoPhillips",
+          "https://www.conocophillips.com/",
+          "https://www.climateaction100.org/company/conocophillips/"
+        ]
+      }
+    },
+    "claim_comparisons": [
+      {
+        "claim_id": 1,
+        "claim": "Shell is transitioning to clean energy",
+        "uses_superlative": false,
+        "superlative_words": [],
+        "verified_against_peers": false,
+        "peer_comparison": []
+      },
+      {
+        "claim_id": 2,
+        "claim": "Investing 3 billion annually in renewable energy",
+        "uses_superlative": false,
+        "superlative_words": [],
+        "verified_against_peers": false,
+        "peer_comparison": []
+      }
+    ],
+    "industry_position": {
+      "category": "Average",
+      "rationale": "Compared against 4 peers - no superlative claims detected",
+      "confidence": 50,
+      "peers_with_data": 4,
+      "superlative_claims": 0
+    }
+  },
+  "confidence_assessment": {
+    "overall_confidence": 96,
+    "confidence_level": "HIGH",
+    "breakdown": {
+      "source_quantity": 25,
+      "source_quality": 21,
+      "data_recency": 20,
+      "historical_context": 15,
+      "evidence_completeness": 15
+    },
+    "interpretation": "HIGH CONFIDENCE: Analysis backed by extensive, recent, credible sources. Suitable for regulatory/investment decisions."
+  },
+  "conflict_resolutions": [
+    {
+      "claim_id": 1,
+      "conflicts_detected": true,
+      "conflicts": [
+        {
+          "type": "Evidence Disagreement",
+          "supporting_sources": 7,
+          "contradicting_sources": 1,
+          "support_credibility": 0.6714285714285715,
+          "contradict_credibility": 0.5,
+          "support_recency_days": 0.0,
+          "contradict_recency_days": 0.0,
+          "llm_resolution": {
+            "more_reliable": "supporting",
+            "reason": "The supporting evidence has a higher average credibility (0.67) compared to the contradicting evidence (0.50). Although both sets of evidence are recent (0 days old), the supporting evidence has more sources, which increases its reliability. The contradicting evidence is a single source, which may be biased or have a specific agenda.",
+            "confidence": 80
+          }
+        }
+      ],
+      "resolution": {
+        "verdict": "Likely True",
+        "confidence": 90,
+        "method": "Credibility-Weighted Ensemble Voting"
+      },
+      "requires_human_review": false
+    },
+    {
+      "claim_id": 2,
+      "conflicts_detected": false,
+      "conflicts": [],
+      "resolution": {
+        "verdict": "Likely True",
+        "confidence": 95,
+        "method": "Credibility-Weighted Ensemble Voting"
+      },
+      "requires_human_review": false
+    }
+  ]
+}

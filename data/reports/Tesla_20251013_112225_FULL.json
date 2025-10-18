@@ -1,0 +1,550 @@
+{
+  "company": "Tesla",
+  "analysis_timestamp": "2025-10-13T11:19:26.986552",
+  "claims": [
+    {
+      "claim_id": 1,
+      "actor": "Tesla",
+      "claim_text": "achieves 45% water reduction",
+      "category": "Environmental",
+      "subcategory": "Water management",
+      "metric": "45% reduction",
+      "timeline": "Not specified",
+      "claim_type": "Achievement",
+      "specificity_score": 8
+    }
+  ],
+  "evidence": [
+    {
+      "claim_id": 1,
+      "evidence": [
+        {
+          "source_id": "ev_000",
+          "source_name": "tesery.com",
+          "source_type": "Web Source",
+          "url": "https://www.tesery.com/blogs/news/tesla-giga-berlin-surprises-with-water-consumption-efficiency",
+          "date": "2025-10-11T12:19:45.102089",
+          "relevant_text": "Sep 29, 2025 \u00b7 Tesla ' s Giga Berlin has recorded a total water consumption of 456,953 cubic meters in 2024 , equating to approximately 2.16 cubic meters per vehicle produced. This figure encompasses both industrial and sanitary water use and is notably lower than the industry average of 3.50 cubic ",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 1,
+          "data_source_api": "Vector Database (Historical)",
+          "retrieval_timestamp": "2025-10-13T11:20:02.857612"
+        },
+        {
+          "source_id": "ev_001",
+          "source_name": "tesery.com",
+          "source_type": "Web Source",
+          "url": "https://www.tesery.com/blogs/news/tesla-giga-berlin-surprises-with-water-consumption-efficiency",
+          "date": "2025-10-11T12:19:45.102089",
+          "relevant_text": "Sep 29, 2025 \u00b7 Tesla ' s Giga Berlin has recorded a total water consumption of 456,953 cubic meters in 2024 , equating to approximately 2.16 cubic meters per vehicle produced. This figure encompasses both industrial and sanitary water use and is notably lower than the industry average of 3.50 cubic ",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 1,
+          "data_source_api": "Vector Database (Historical)",
+          "retrieval_timestamp": "2025-10-13T11:20:02.978841"
+        },
+        {
+          "source_id": "ev_002",
+          "source_name": "tesery.com",
+          "source_type": "Web Source",
+          "url": "https://www.tesery.com/blogs/news/tesla-giga-berlin-surprises-with-water-consumption-efficiency",
+          "date": "2025-10-11T12:19:45.102089",
+          "relevant_text": "Sep 29, 2025 \u00b7 Tesla ' s Giga Berlin has recorded a total water consumption of 456,953 cubic meters in 2024 , equating to approximately 2.16 cubic meters per vehicle produced. This figure encompasses both industrial and sanitary water use and is notably lower than the industry average of 3.50 cubic ",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 1,
+          "data_source_api": "Vector Database (Historical)",
+          "retrieval_timestamp": "2025-10-13T11:20:03.068463"
+        },
+        {
+          "source_id": "ev_003",
+          "source_name": "ilovetesla.com",
+          "source_type": "Web Source",
+          "url": "https://ilovetesla.com/tesla-spotlights-water-recycling-initiatives-at-gigafactory-berlin/",
+          "date": "2025-10-11T12:19:45.102089",
+          "relevant_text": "In a bid to address environmental concerns and demonstrate its commitment to sustainable practices, Tesla has recently shone a spotlight on its water recycling initiatives at Gigafactory Berlin.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 1,
+          "data_source_api": "Vector Database (Historical)",
+          "retrieval_timestamp": "2025-10-13T11:20:03.178661"
+        },
+        {
+          "source_id": "ev_004",
+          "source_name": "ilovetesla.com",
+          "source_type": "Web Source",
+          "url": "https://ilovetesla.com/tesla-spotlights-water-recycling-initiatives-at-gigafactory-berlin/",
+          "date": "2025-10-11T12:19:45.102089",
+          "relevant_text": "In a bid to address environmental concerns and demonstrate its commitment to sustainable practices, Tesla has recently shone a spotlight on its water recycling initiatives at Gigafactory Berlin.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 1,
+          "data_source_api": "Vector Database (Historical)",
+          "retrieval_timestamp": "2025-10-13T11:20:03.273086"
+        },
+        {
+          "source_id": "ev_005",
+          "source_name": "tesla.com",
+          "source_type": "Web Source",
+          "url": "https://www.tesla.com/impact",
+          "date": "2025-10-13T11:20:02.647437",
+          "relevant_text": "Our mission is to accelerate the world\u2019s transition to sustainable energy. Read our 2024 Impact Report .",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "DuckDuckGo - Web Fallback",
+          "retrieval_timestamp": "2025-10-13T11:20:03.433983"
+        },
+        {
+          "source_id": "ev_006",
+          "source_name": "yourgreenwealth.com",
+          "source_type": "Web Source",
+          "url": "https://yourgreenwealth.com/esg/is-tesla-sustainable/",
+          "date": "2025-10-13T11:20:02.647437",
+          "relevant_text": "Tesla is far from having great ESG ratings and scores. Tesla produces highly-efficient EVs, but it has several sustainability issues, including the environmental impact of its batteries, poor working conditions and the eccentric and unusual governance of Elon Musk.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "DuckDuckGo - Web Fallback",
+          "retrieval_timestamp": "2025-10-13T11:20:03.527559"
+        },
+        {
+          "source_id": "ev_007",
+          "source_name": "spglobal.com",
+          "source_type": "Web Source",
+          "url": "https://www.spglobal.com/sustainable1/en/scores/results?cid=4574287",
+          "date": "2025-10-13T11:20:02.647437",
+          "relevant_text": "View your ESG scores and detailed results with Corporate Sustainability Assessment. Explore detailed breakdowns and year-over-year changes. report ( or similar) and/or annual report , all subject to appropriate source attribution to S&P Global Sustainable 1.",
+          "relationship_to_claim": "Supports",
+          "data_freshness_days": 0,
+          "data_source_api": "DuckDuckGo - Web Fallback",
+          "retrieval_timestamp": "2025-10-13T11:20:03.618818"
+        },
+        {
+          "source_id": "ev_008",
+          "source_name": "sigmaearth.com",
+          "source_type": "Web Source",
+          "url": "https://sigmaearth.com/tesla-esg-why-is-elon-musk-against-esg/",
+          "date": "2025-10-13T11:20:02.647437",
+          "relevant_text": "Tesla ESG fell off the S&P 500 index of firms that excel at environmental , social , and governance ( ESG ) issues. Read more about Tesla 's ESG & why Elon Musk is against it in this article.",
+          "relationship_to_claim": "Contradicts",
+          "data_freshness_days": 0,
+          "data_source_api": "DuckDuckGo - Web Fallback",
+          "retrieval_timestamp": "2025-10-13T11:20:03.709370"
+        },
+        {
+          "source_id": "ev_009",
+          "source_name": "permutable.ai",
+          "source_type": "Web Source",
+          "url": "https://permutable.ai/tesla-esg-score/",
+          "date": "2025-10-13T11:20:02.647437",
+          "relevant_text": "Our Tesla ESG score is a rating that quantifies the company\u2019s performance in environmental , social , and governance aspects.As sustainability becomes an increasingly important differentiating factor, Tesla \u2019s strong ESG performance sets it apart from its competitors.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "DuckDuckGo - Web Fallback",
+          "retrieval_timestamp": "2025-10-13T11:20:03.808721"
+        },
+        {
+          "source_id": "ev_010",
+          "source_name": "Rainforest Action Network",
+          "source_type": "NGO",
+          "url": "https://www.ran.org/wp-content/uploads/2018/06/ran_annualreport2007.pdf",
+          "date": "2025-10-13T11:19:49.654638",
+          "relevant_text": "RAN\u2019s markets-based approach to grassroots activism has helped convince more than 400 leading companies such as Citi, JPMorgan Chase, Goldman Sachs, Boise Cascade, Home Depot and Burger King to adopt environmental policies.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "Rainforest Action Network - NGO",
+          "retrieval_timestamp": "2025-10-13T11:20:03.907660"
+        },
+        {
+          "source_id": "ev_011",
+          "source_name": "Amnesty International",
+          "source_type": "NGO",
+          "url": "https://www.marketbeat.com/stocks/NASDAQ/TSLA/sustainability/",
+          "date": "2025-10-13T11:19:45.324713",
+          "relevant_text": "3 days ago \u00b7 View the latest Tesla ESG rating and score at MarketBeat. Compare society, knowledge, health, environment, and sustainability scores for TSLA.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "Amnesty International - NGO",
+          "retrieval_timestamp": "2025-10-13T11:20:04.001461"
+        },
+        {
+          "source_id": "ev_012",
+          "source_name": "Greenpeace",
+          "source_type": "NGO",
+          "url": "https://www.greenpeace.org/usa/news-media/",
+          "date": "2025-10-13T11:19:42.791916",
+          "relevant_text": "... from Greenpeace USA and Greenpeace International, accusing these organizations of playing a central role in organizing the Indigenous-led \u2026",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "Greenpeace - NGO",
+          "retrieval_timestamp": "2025-10-13T11:20:04.088643"
+        },
+        {
+          "source_id": "ev_013",
+          "source_name": "Greenpeace",
+          "source_type": "NGO",
+          "url": "https://finance.yahoo.com/quote/TSLA/sustainability/?fr=sycsrp_catchall",
+          "date": "2025-10-13T11:19:42.791916",
+          "relevant_text": "See Tesla, Inc. (TSLA ) Environment, Social and Governance Ratings to help you in your stock buying decisions.",
+          "relationship_to_claim": "Neutral",
+          "data_freshness_days": 0,
+          "data_source_api": "Greenpeace - NGO",
+          "retrieval_timestamp": "2025-10-13T11:20:04.172819"
+        }
+      ],
+      "evidence_gap": false,
+      "quality_metrics": {
+        "evidence_gap": false,
+        "independent_sources": 14,
+        "premium_sources": 4,
+        "avg_freshness_days": 0.4,
+        "source_diversity": 2,
+        "diversity_score": 40,
+        "coverage_score": 16.7,
+        "total_sources": 14,
+        "source_type_breakdown": {
+          "Web Source": 10,
+          "NGO": 4
+        },
+        "api_source_breakdown": {
+          "Vector Database (Historical)": 5,
+          "DuckDuckGo - Web Fallback": 5,
+          "Rainforest Action Network - NGO": 1,
+          "Amnesty International - NGO": 1,
+          "Greenpeace - NGO": 2
+        }
+      },
+      "source_breakdown": {
+        "Vector Database (Historical)": 5,
+        "DuckDuckGo - Web Fallback": 5,
+        "Rainforest Action Network - NGO": 1,
+        "Amnesty International - NGO": 1,
+        "Greenpeace - NGO": 2
+      },
+      "retrieval_timestamp": "2025-10-13T11:20:04.567672"
+    }
+  ],
+  "contradiction_analysis": [
+    {
+      "claim_id": 1,
+      "overall_verdict": "Unverifiable",
+      "verification_confidence": 0,
+      "specific_contradictions": [],
+      "supportive_evidence": [
+        "Evidence from ilovetesla.com mentions 'water recycling initiatives at Gigafactory Berlin', which aligns thematically with an effort to reduce water consumption, but provides no quantitative support."
+      ],
+      "key_issues": [
+        {
+          "aspect": "Missing Baseline Data",
+          "claim_states": "The company claims a '45% water reduction'.",
+          "evidence_shows": "The evidence provides a single data point for 2024 water consumption (2.16 cubic meters per vehicle) but offers no prior year data, industry average, or initial target to compare against. A percentage reduction cannot be calculated or verified without a baseline.",
+          "severity": "Major"
+        },
+        {
+          "aspect": "Lack of Specificity",
+          "claim_states": "The claim is a general '45% water reduction' without specifying if this applies to a single factory or the entire company.",
+          "evidence_shows": "The only specific data provided relates exclusively to the Giga Berlin factory, making it impossible to assess a company-wide claim.",
+          "severity": "Moderate"
+        },
+        {
+          "aspect": "Irrelevant Evidence",
+          "claim_states": "N/A",
+          "evidence_shows": "The provided sources from NGOs (Rainforest Action Network, Amnesty International, Greenpeace) are generic and do not contain any specific data or analysis related to Tesla's water consumption, rendering them useless for verification.",
+          "severity": "Minor"
+        },
+        {
+          "aspect": "Temporal Anomaly",
+          "claim_states": "N/A",
+          "evidence_shows": "The primary evidence source (tesery.com) is dated September 29, 2025, which is in the future. This raises significant questions about the credibility and origin of the data provided.",
+          "severity": "Moderate"
+        }
+      ],
+      "evidence_counts": {
+        "supporting": 4,
+        "contradicting": 1,
+        "neutral": 9
+      }
+    }
+  ],
+  "credibility_analysis": {
+    "source_credibility_analyses": [
+      {
+        "source_id": "ev_000",
+        "source_name": "tesery.com",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.tesery.com/blogs/news/tesla-giga-berlin-surprises-with-water-consumption-efficiency"
+      },
+      {
+        "source_id": "ev_001",
+        "source_name": "tesery.com",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.tesery.com/blogs/news/tesla-giga-berlin-surprises-with-water-consumption-efficiency"
+      },
+      {
+        "source_id": "ev_002",
+        "source_name": "tesery.com",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.tesery.com/blogs/news/tesla-giga-berlin-surprises-with-water-consumption-efficiency"
+      },
+      {
+        "source_id": "ev_003",
+        "source_name": "ilovetesla.com",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)",
+          "-0.15 (company source)"
+        ],
+        "final_credibility_score": 0.4,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://ilovetesla.com/tesla-spotlights-water-recycling-initiatives-at-gigafactory-berlin/"
+      },
+      {
+        "source_id": "ev_004",
+        "source_name": "ilovetesla.com",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)",
+          "-0.15 (company source)"
+        ],
+        "final_credibility_score": 0.4,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://ilovetesla.com/tesla-spotlights-water-recycling-initiatives-at-gigafactory-berlin/"
+      },
+      {
+        "source_id": "ev_005",
+        "source_name": "tesla.com",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)",
+          "-0.15 (company source)"
+        ],
+        "final_credibility_score": 0.4,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.tesla.com/impact"
+      },
+      {
+        "source_id": "ev_006",
+        "source_name": "yourgreenwealth.com",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://yourgreenwealth.com/esg/is-tesla-sustainable/"
+      },
+      {
+        "source_id": "ev_007",
+        "source_name": "spglobal.com",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.spglobal.com/sustainable1/en/scores/results?cid=4574287"
+      },
+      {
+        "source_id": "ev_008",
+        "source_name": "sigmaearth.com",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://sigmaearth.com/tesla-esg-why-is-elon-musk-against-esg/"
+      },
+      {
+        "source_id": "ev_009",
+        "source_name": "permutable.ai",
+        "source_type": "Web Source",
+        "base_credibility": 0.5,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.55,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://permutable.ai/tesla-esg-score/"
+      },
+      {
+        "source_id": "ev_010",
+        "source_name": "Rainforest Action Network",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.ran.org/wp-content/uploads/2018/06/ran_annualreport2007.pdf"
+      },
+      {
+        "source_id": "ev_011",
+        "source_name": "Amnesty International",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.marketbeat.com/stocks/NASDAQ/TSLA/sustainability/"
+      },
+      {
+        "source_id": "ev_012",
+        "source_name": "Greenpeace",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://www.greenpeace.org/usa/news-media/"
+      },
+      {
+        "source_id": "ev_013",
+        "source_name": "Greenpeace",
+        "source_type": "NGO",
+        "base_credibility": 0.9,
+        "adjustments": [
+          "+0.05 (recent)"
+        ],
+        "final_credibility_score": 0.95,
+        "paid_content_detected": false,
+        "bias_direction": "Neutral",
+        "url": "https://finance.yahoo.com/quote/TSLA/sustainability/?fr=sycsrp_catchall"
+      }
+    ],
+    "aggregate_metrics": {
+      "average_credibility": 0.6321428571428571,
+      "high_credibility_count": 4,
+      "medium_credibility_count": 7,
+      "low_credibility_count": 3,
+      "total_sources": 14
+    }
+  },
+  "sentiment_analysis": [
+    {
+      "claim_id": 1,
+      "claim_sentiment": {
+        "polarity_score": 0.0,
+        "subjectivity_score": 0.0,
+        "buzzword_count": 0,
+        "vague_terms": [],
+        "hedge_words": [],
+        "specificity_deficit": false
+      },
+      "evidence_sentiment": {
+        "polarity_score": 0.096,
+        "subjectivity_score": 0.506,
+        "buzzword_count": 1,
+        "vague_terms": [],
+        "hedge_words": [
+          "approximately",
+          "about"
+        ],
+        "specificity_deficit": false
+      },
+      "sentiment_divergence": 0.096,
+      "divergence_score": 9,
+      "greenwashing_flags": [],
+      "llm_linguistic_analysis": {
+        "raw_analysis": "**Analysis Results**\n\n```json\n{\n  \"polarity_score\": 0.2,\n  \"subjectivity_score\": 0.6,\n  \"buzzword_count\": 0,\n  \"vague_terms\": [\"substantial\"],\n  \"hedge_words\": [],\n  \"specificity_deficit\": true\n}\n```\n\n**Explanation**\n\n1. **Sentiment Polarity**: The text has a positive sentiment polarity of 0.2, indi",
+        "parsed": false
+      },
+      "overall_linguistic_risk": 2
+    }
+  ],
+  "historical_analysis": {
+    "company": "Tesla",
+    "analysis_date": "2025-10-13T11:20:22.254741",
+    "past_violations": [
+      {
+        "year": 2025,
+        "type": "Environmental",
+        "description": "Mar 18, 2025 \u00b7 1. Introduction Tesla \u2019s mission to \u201caccelerate the world\u2019s transition to sustainable energy\u201d has redefined the automotive and energy industries. As the global leader in electric vehicl",
+        "source": "teslaacessories.com",
+        "url": "https://www.teslaacessories.com/blogs/news/tesla-environmental-footprint-sustainability-efforts-and-impact"
+      }
+    ],
+    "greenwashing_history": {
+      "prior_accusations": 0,
+      "examples": [],
+      "pattern_detected": false
+    },
+    "positive_track_record": [],
+    "temporal_patterns": {
+      "consistent_behavior": true,
+      "improving_trend": false,
+      "declining_trend": false,
+      "reactive_claims": false
+    },
+    "reputation_score": 45
+  },
+  "final_risk_assessment": {
+    "company": "Tesla",
+    "analysis_timestamp": "2025-10-13T11:22:25.950658",
+    "esg_score": 71.0,
+    "greenwashing_risk_score": 29.1,
+    "risk_level": "LOW",
+    "component_scores": {
+      "claim_verification": 60.0,
+      "evidence_quality": 0.0,
+      "source_credibility": 36,
+      "sentiment_divergence": 9,
+      "historical_pattern": 55,
+      "contradiction_severity": 0
+    },
+    "rating_grade": "A",
+    "explainability_top_3_reasons": [
+      "Historical track record: 1 documented violations (risk score: 55)",
+      "Comprehensive multi-source analysis across ESG dimensions"
+    ],
+    "actionable_insights": {
+      "for_investors": "Low greenwashing risk. ESG claims appear credible. Suitable for ESG-focused investment portfolios.",
+      "for_regulators": "No major red flags requiring immediate regulatory action based on public information.",
+      "for_consumers": "Company's ESG claims appear trustworthy. Reasonable confidence in sustainability commitments."
+    },
+    "industry_benchmark": {
+      "industry": "To be determined",
+      "peer_average_esg_score": null,
+      "company_percentile": null,
+      "note": "Industry benchmarking requires proprietary database access"
+    },
+    "confidence_level": 85
+  }
+}
