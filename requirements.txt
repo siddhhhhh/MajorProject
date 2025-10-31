@@ -19,3 +19,10 @@ lxml>=4.9.0
 html5lib>=1.1
 python-dateutil>=2.8.0
 openai>=1.0.0
+
+# NEW: LangGraph dependencies for Phase 1
+langgraph>=0.2.0
+langgraph-checkpoint-sqlite>=1.0.0
+langchain-core>=0.3.0
+langchain-groq>=0.2.0
+langchain-google-genai>=2.0.0

@@ -1,4 +1,32 @@
+
 {
+  "greenwashing_sensitivity": {
+    "Energy": {
+      "vague_claim_threshold": 2,
+      "escalate_moderate_to_high": true,
+      "high_risk_keywords": ["leader in clean", "climate leader", "pioneer in sustainability"]
+    },
+    "Automotive": {
+      "vague_claim_threshold": 2,
+      "escalate_moderate_to_high": true,
+      "high_risk_keywords": ["emissions free", "completely green", "zero pollution"]
+    },
+    "Consumer Goods": {
+      "vague_claim_threshold": 3,
+      "escalate_moderate_to_high": false,
+      "high_risk_keywords": ["100% sustainable", "perfectly green", "completely natural"]
+    },
+    "Technology": {
+      "vague_claim_threshold": 3,
+      "escalate_moderate_to_high": false,
+      "high_risk_keywords": ["carbon negative", "zero waste", "perfectly sustainable"]
+    },
+    "Financial Services": {
+      "vague_claim_threshold": 3,
+      "escalate_moderate_to_high": false,
+      "high_risk_keywords": ["purely sustainable", "completely ethical", "100% responsible"]
+    }
+  },
   "industry_baseline_risk": {
     "oil_and_gas": {
       "baseline": 75,

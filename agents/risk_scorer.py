@@ -153,7 +153,12 @@ class RiskScorer:
         
         # Step 5: Apply peer comparison modifier
         peer_modifier = self._calculate_peer_modifier(all_analyses, industry)
-        final_risk = adjusted_risk + peer_modifier
+        debate_penalty = 0
+        if all_analyses.get("debate_activated"):
+            debate_penalty = 10.0  # +10 points risk if debate triggered
+            print(f"⚠️  Multi-agent debate detected - applying +{debate_penalty} risk penalty")
+
+        final_risk = adjusted_risk + peer_modifier + debate_penalty
         
         # Clamp to 0-100
         greenwashing_risk = max(0, min(100, final_risk))
@@ -352,8 +357,26 @@ Industry:"""
         else:
             components['contradiction_severity'] = 0
         
+        # At the end of calculate_components method (before return components, around line 440):
+
+        # NEW: Check for vague greenwashing language
+        if analyses.get("claim"):
+            claim_text = analyses["claim"].lower()
+            greenwashing_keywords = [
+                "committed to", "leader in", "eco-friendly", "sustainable", 
+                "green", "environmentally friendly", "climate positive"
+            ]
+            
+            keyword_count = sum(1 for keyword in greenwashing_keywords if keyword in claim_text)
+            has_numbers = any(char.isdigit() for char in analyses["claim"])
+            
+            # Vague claim (multiple buzzwords + no metrics) = +20 risk penalty
+            if keyword_count >= 2 and not has_numbers:
+                components["claim_verification"] = min(100, components.get("claim_verification", 50) + 20)
+                print(f"⚠️  Vague claim detected ({keyword_count} buzzwords, no metrics) - penalty applied")
+
         return components
-    
+
     def _calculate_peer_modifier(self, analyses: Dict, industry: str) -> float:
         """
         Calculate peer comparison modifier
