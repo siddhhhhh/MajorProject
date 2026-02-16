@@ -22,6 +22,70 @@ from core.agent_wrappers import (
 from core.professional_report_generator import professional_report_generation_node as report_generation_node
 from core.debate_orchestrator import debate_node
 
+
+def save_peer_to_database_node(state: ESGState) -> ESGState:
+    """
+    Save company ESG scores to peer database
+    This builds the real peer comparison database over time
+    """
+    print(f"\n{'🔵 SAVING TO PEER DATABASE':=^70}")
+    
+    try:
+        from agents.industry_comparator import IndustryComparator
+        
+        # Extract company info
+        company = state.get("company")
+        industry = state.get("industry")
+        
+        if not company or not industry:
+            print("⚠️ Missing company or industry - skipping database save")
+            return state
+        
+        # Get risk scorer output for ESG scores
+        agent_outputs = state.get("agent_outputs", [])
+        risk_scorer_outputs = [o for o in agent_outputs if o.get("agent") == "risk_scoring"]
+        
+        if not risk_scorer_outputs:
+            print("⚠️ No risk scorer output found - skipping database save")
+            return state
+        
+        risk_scorer_result = risk_scorer_outputs[-1].get("output", {})
+        pillar_scores = risk_scorer_result.get("pillar_scores", {})
+        
+        esg_score = pillar_scores.get("overall_esg_score")
+        rating = risk_scorer_result.get("rating_grade", "BBB")
+        
+        if esg_score is None:
+            print("⚠️ No ESG score available - skipping database save")
+            return state
+        
+        # Import comparator and save
+        comparator = IndustryComparator()
+        
+        success = comparator.save_company_to_peer_db(
+            company=company,
+            industry=industry,
+            esg_score=esg_score,
+            pillar_scores=pillar_scores,
+            rating=rating
+        )
+        
+        if success:
+            print(f"✅ {company} saved to peer database")
+            print(f"   ESG: {esg_score:.1f}, Rating: {rating}")
+            print(f"   Industry: {industry}")
+        else:
+            print(f"⚠️ Failed to save {company} to peer database")
+        
+        print(f"{'='*70}")
+    
+    except Exception as e:
+        print(f"❌ Error saving to peer database: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    return state
+
 def build_phase2_graph():
     """
     Phase 2 LangGraph - SIMPLIFIED (no self-correction loop yet)
@@ -44,6 +108,7 @@ def build_phase2_graph():
     workflow.add_node("fast_risk", risk_scoring_node)
     workflow.add_node("fast_confidence", confidence_scoring_node)
     workflow.add_node("fast_verdict", verdict_generation_node)
+    workflow.add_node("fast_save_peer", save_peer_to_database_node)  # NEW: Save to peer DB
     workflow.add_node("fast_report", report_generation_node)
     
     # ============================================================
@@ -60,6 +125,7 @@ def build_phase2_graph():
     workflow.add_node("std_risk", risk_scoring_node)
     workflow.add_node("std_confidence", confidence_scoring_node)
     workflow.add_node("std_verdict", verdict_generation_node)
+    workflow.add_node("std_save_peer", save_peer_to_database_node)  # NEW: Save to peer DB
     workflow.add_node("std_report", report_generation_node)
     
     # ============================================================
@@ -77,6 +143,7 @@ def build_phase2_graph():
     workflow.add_node("deep_confidence", confidence_scoring_node)
     workflow.add_node("deep_verdict", verdict_generation_node)
     workflow.add_node("deep_debate", debate_node)
+    workflow.add_node("deep_save_peer", save_peer_to_database_node)  # NEW: Save to peer DB
     workflow.add_node("deep_report", report_generation_node)
     
     # ============================================================
@@ -101,7 +168,8 @@ def build_phase2_graph():
     workflow.add_edge("fast_claim", "fast_risk")
     workflow.add_edge("fast_risk", "fast_confidence")
     workflow.add_edge("fast_confidence", "fast_verdict")
-    workflow.add_edge("fast_verdict", "fast_report")
+    workflow.add_edge("fast_verdict", "fast_save_peer")  # NEW: Save peer data
+    workflow.add_edge("fast_save_peer", "fast_report")
     workflow.add_edge("fast_report", END)  # FIXED: Direct to END
     
     # Standard track path (linear - no loops)
@@ -115,7 +183,8 @@ def build_phase2_graph():
     workflow.add_edge("std_realtime", "std_risk")
     workflow.add_edge("std_risk", "std_confidence")
     workflow.add_edge("std_confidence", "std_verdict")
-    workflow.add_edge("std_verdict", "std_report")
+    workflow.add_edge("std_verdict", "std_save_peer")  # NEW: Save peer data
+    workflow.add_edge("std_save_peer", "std_report")
     workflow.add_edge("std_report", END)  # FIXED: Direct to END
     
     # Deep analysis path (linear with debate - no loops)
@@ -130,7 +199,8 @@ def build_phase2_graph():
     workflow.add_edge("deep_risk", "deep_confidence")
     workflow.add_edge("deep_confidence", "deep_verdict")
     workflow.add_edge("deep_verdict", "deep_debate")
-    workflow.add_edge("deep_debate", "deep_report")
+    workflow.add_edge("deep_debate", "deep_save_peer")  # NEW: Save peer data
+    workflow.add_edge("deep_save_peer", "deep_report")
     workflow.add_edge("deep_report", END)  # FIXED: Direct to END
     
     # Compile with memory checkpointer
@@ -138,3 +208,12 @@ def build_phase2_graph():
     app = workflow.compile()  # No checkpointer = faster, less memory
     
     return app
+
+
+def get_chromadb_client():
+    """
+    Get ChromaDB client for peer comparison database
+    Returns a ChromaDB client instance
+    """
+    import chromadb
+    return chromadb.Client()

@@ -12,6 +12,7 @@ agents_dir = Path(__file__).parent.parent / "agents"
 sys.path.insert(0, str(agents_dir))
 
 from core.state_schema import ESGState
+from core.evidence_cache import evidence_cache
 from typing import Dict, Any
 
 # ============================================================
@@ -195,6 +196,11 @@ def claim_extraction_node(state: ESGState) -> ESGState:
     print(f"Timestamp: {datetime.now().strftime('%H:%M:%S')}")
     print("="*70)
     
+    # Clear session cache for new analysis (keeps disk cache for reuse)
+    if state.get("iteration_count", 0) == 0:
+        evidence_cache.clear_session_cache()
+        print("🔄 Session cache cleared for new analysis")
+    
     if not CLAIM_EXTRACTOR_AVAILABLE:
         from core.minimal_agents import claim_extraction_node as minimal_claim
         return minimal_claim(state)
@@ -249,9 +255,10 @@ def claim_extraction_node(state: ESGState) -> ESGState:
 def evidence_retrieval_node(state: ESGState) -> ESGState:
     """
     LIVE: EvidenceRetriever fetches real-time evidence
+    Includes financial analyst integration for ESG-financial correlation
     """
     print(f"\n{'🟢 LANGGRAPH NODE EXECUTING':=^70}")
-    print(f"Node: evidence_retrieval")
+    print(f"Node: evidence_retrieval (with Financial Analyst)")
     print(f"Timestamp: {datetime.now().strftime('%H:%M:%S')}")
     print("="*70)
     
@@ -263,26 +270,45 @@ def evidence_retrieval_node(state: ESGState) -> ESGState:
         retriever = EvidenceRetriever()
         
         print(f"🔍 Live evidence search for: {state['company']}")
-        print(f"📡 Calling external APIs...")
+        print(f"📡 Calling 15 external APIs + Financial Analyst...")
         
-        # Check what methods are available
-        if hasattr(retriever, 'retrieve'):
-            result = retriever.retrieve(state["claim"])
-        elif hasattr(retriever, 'fetch_evidence'):
-            result = retriever.fetch_evidence(state["claim"], state["company"])
-        elif hasattr(retriever, 'gather'):
-            result = retriever.gather(state["claim"])
-        else:
-            print("⚠️ No known method found, using generic call")
-            result = {"evidence": [], "confidence": 0.5}
+        # Create claim dict for evidence retriever
+        claim_dict = {
+            "claim_id": "C1",
+            "claim_text": state["claim"],
+            "category": "sustainability"
+        }
+        
+        # Call retrieve_evidence with proper parameters
+        result = retriever.retrieve_evidence(claim_dict, state["company"])
         
         if isinstance(result, dict):
             evidence_list = result.get("evidence", [])
             confidence = result.get("confidence", 0.7)
+            financial_context = result.get("financial_context")  # NEW: From Financial Analyst
+            
             print(f"✅ Retrieved {len(evidence_list)} evidence items")
+            
+            if financial_context:
+                print(f"💰 Financial Analysis (Agent #14):")
+                if "financial_data" in financial_context:
+                    fin_data = financial_context["financial_data"]
+                    print(f"   Revenue: ${fin_data.get('revenue_usd', 0)/1e9:.1f}B")
+                    print(f"   Profit Margin: {fin_data.get('profit_margin_pct', 0):.1f}%")
+                if "greenwashing_flags" in financial_context:
+                    flags = financial_context["greenwashing_flags"]
+                    # Handle both dict and list formats
+                    if isinstance(flags, dict):
+                        high_risk = flags.get("HIGH", [])
+                        if high_risk:
+                            print(f"   ⚠️ HIGH risk flags: {len(high_risk)}")
+                    elif isinstance(flags, list):
+                        if flags:
+                            print(f"   ⚠️ Greenwashing flags: {len(flags)}")
         else:
             evidence_list = result if isinstance(result, list) else []
             confidence = 0.7
+            financial_context = None
         
         state["evidence"].extend(evidence_list)
         
@@ -291,6 +317,7 @@ def evidence_retrieval_node(state: ESGState) -> ESGState:
             "output": result,
             "evidence_count": len(evidence_list),
             "confidence": confidence,
+            "financial_context": financial_context,  # NEW: Pass to risk scorer
             "timestamp": datetime.now().isoformat(),
             "live_fetch": True
         })
@@ -299,6 +326,8 @@ def evidence_retrieval_node(state: ESGState) -> ESGState:
         
     except Exception as e:
         print(f"❌ EvidenceRetriever error: {e}")
+        import traceback
+        traceback.print_exc()
         state["agent_outputs"].append({
             "agent": "evidence_retrieval",
             "error": str(e),
@@ -468,9 +497,9 @@ def peer_comparison_node(state: ESGState) -> ESGState:
 
 
 def risk_scoring_node(state: ESGState) -> ESGState:
-    """LIVE: RiskScorer with MSCI thresholds"""
+    """LIVE: RiskScorer with ML + Formula hybrid approach"""
     print(f"\n{'🟢 LANGGRAPH NODE EXECUTING':=^70}")
-    print(f"Node: risk_scoring")
+    print(f"Node: risk_scoring (ML-Enhanced with Financial Analyst)")
     print("="*70)
     
     if not RISK_SCORER_AVAILABLE:
@@ -481,30 +510,70 @@ def risk_scoring_node(state: ESGState) -> ESGState:
         scorer = RiskScorer()
         
         print(f"⚖️ Calculating risk score for {state['industry']} industry...")
-        
-        if hasattr(scorer, 'calculate'):
-            result = scorer.calculate(state["company"], state["industry"])
-        elif hasattr(scorer, 'score'):
-            result = scorer.score(state["company"])
-        elif hasattr(scorer, 'assess'):
-            result = scorer.assess(state["company"], state["evidence"])
+        if scorer.use_ml:
+            print(f"🤖 ML model loaded - using hybrid ML + formula approach")
         else:
-            result = {"risk_level": "MODERATE", "confidence": 0.5}
+            print(f"📐 Using formula-based scoring only")
+        
+        # Build all_analyses dict from agent_outputs
+        all_analyses = _build_analyses_dict(state)
+        
+        # Add claim and company for pillar calculation
+        all_analyses["claim"] = {
+            "claim_id": "C1",
+            "claim_text": state["claim"],
+            "category": "sustainability"
+        }
+        all_analyses["company"] = state["company"]
+        
+        # Call calculate_final_score with proper parameters
+        result = scorer.calculate_final_score(
+            company=state["company"],
+            all_analyses=all_analyses
+        )
         
         if isinstance(result, dict):
             risk_level = result.get("risk_level", "MODERATE")
-            confidence = result.get("confidence", 0.8)
-            print(f"✅ Risk Level: {risk_level} (confidence: {confidence:.0%})")
+            rating_grade = result.get("rating_grade", "BBB")
+            confidence = result.get("confidence_level", 85) / 100
+            risk_source = result.get("risk_source", "Formula-based")
+            high_carbon_flag = result.get("high_carbon_greenwashing_flag", False)
+            pillar_scores = result.get("pillar_scores", {})
+            
+            print(f"✅ Risk Level: {risk_level}")
+            print(f"   Rating Grade: {rating_grade}")
+            print(f"   Source: {risk_source}")
+            print(f"   Greenwashing Risk: {result.get('greenwashing_risk_score', 50):.1f}/100")
+            print(f"   ESG Score: {result.get('esg_score', 50):.1f}/100")
+            
+            if pillar_scores:
+                print(f"   📊 Pillar Scores:")
+                print(f"      E: {pillar_scores.get('environmental_score', 0):.1f}/100")
+                print(f"      S: {pillar_scores.get('social_score', 0):.1f}/100")
+                print(f"      G: {pillar_scores.get('governance_score', 0):.1f}/100")
+            
+            if high_carbon_flag:
+                print(f"   🚨 High-Carbon Greenwashing Flag: ACTIVE")
+            
+            # Show ML contribution if available
+            if "ml_prediction" in result:
+                ml_info = result["ml_prediction"]
+                print(f"   ML Prediction: {ml_info['prediction']} (confidence: {ml_info['confidence']:.1%})")
+                print(f"   ML Used: {'YES' if ml_info['used_for_final'] else 'NO'}")
         else:
             risk_level = "MODERATE"
+            rating_grade = "BBB"
             confidence = 0.5
         
         state["risk_level"] = risk_level
+        state["rating_grade"] = rating_grade  # NEW: Set rating_grade in state
+        state["confidence"] = confidence
         
         state["agent_outputs"].append({
             "agent": "risk_scoring",
             "output": result,
             "risk_level": risk_level,
+            "rating_grade": rating_grade,
             "confidence": confidence,
             "timestamp": datetime.now().isoformat()
         })
@@ -513,7 +582,10 @@ def risk_scoring_node(state: ESGState) -> ESGState:
         
     except Exception as e:
         print(f"❌ RiskScorer error: {e}")
+        import traceback
+        traceback.print_exc()
         state["risk_level"] = "MODERATE"
+        state["confidence"] = 0.5
         state["agent_outputs"].append({
             "agent": "risk_scoring",
             "error": str(e),
@@ -521,6 +593,60 @@ def risk_scoring_node(state: ESGState) -> ESGState:
         })
     
     return state
+
+
+def _build_analyses_dict(state: ESGState) -> Dict[str, Any]:
+    """
+    Convert state agent_outputs into the format expected by RiskScorer.calculate_final_score
+    """
+    analyses = {
+        "contradiction_analysis": [],
+        "evidence": [],
+        "credibility_analysis": {},
+        "sentiment_analysis": [],
+        "historical_analysis": {},
+        "peer_comparison": {},
+        "debate_activated": False,
+        "financial_context": None
+    }
+    
+    for output in state.get("agent_outputs", []):
+        agent_name = output.get("agent", "")
+        agent_result = output.get("output", {})
+        
+        if agent_name == "contradiction_analysis":
+            if isinstance(agent_result, list):
+                analyses["contradiction_analysis"] = agent_result
+            elif isinstance(agent_result, dict) and "contradictions" in agent_result:
+                analyses["contradiction_analysis"] = agent_result["contradictions"]
+        
+        elif agent_name == "evidence_retrieval":
+            if isinstance(agent_result, dict):
+                analyses["evidence"].append(agent_result)
+                # Extract financial context
+                if "financial_context" in output:
+                    analyses["financial_context"] = output["financial_context"]
+        
+        elif agent_name == "credibility_analysis":
+            analyses["credibility_analysis"] = agent_result
+        
+        elif agent_name == "sentiment_analysis":
+            if isinstance(agent_result, list):
+                analyses["sentiment_analysis"] = agent_result
+            else:
+                analyses["sentiment_analysis"].append(agent_result)
+        
+        elif agent_name == "temporal_analysis" or agent_name == "historical_analysis":
+            analyses["historical_analysis"] = agent_result
+        
+        elif agent_name == "peer_comparison":
+            analyses["peer_comparison"] = agent_result
+        
+        elif agent_name == "debate":
+            analyses["debate_activated"] = True
+            analyses["debate_result"] = agent_result
+    
+    return analyses
 
 
 def sentiment_analysis_node(state: ESGState) -> ESGState:
@@ -717,6 +843,68 @@ def verdict_generation_node(state: ESGState) -> ESGState:
     print(f"\n{'🟢 LANGGRAPH NODE EXECUTING':=^70}")
     print(f"Node: verdict_generation")
     print("="*70)
+    
+    # ============================================================
+    # CRITICAL: CHECK IF RISK SCORER LOCKED THE DECISION
+    # ============================================================
+    # If risk_scorer already determined HIGH risk for oil_and_gas greenwashing,
+    # DO NOT override - this is domain knowledge that must be preserved
+    
+    risk_scorer_outputs = [o for o in state.get("agent_outputs", []) if o.get("agent") == "risk_scoring"]
+    if risk_scorer_outputs:
+        risk_scorer_result = risk_scorer_outputs[-1].get("output", {})
+        high_carbon_flag = risk_scorer_result.get("high_carbon_greenwashing_flag", False)
+        risk_source = risk_scorer_result.get("risk_source", "")
+        
+        # Check if risk scorer applied domain knowledge override
+        if "Domain Knowledge Override" in risk_source or high_carbon_flag:
+            print(f"\n🔒 VERDICT LOCKED - Risk Scorer Domain Knowledge Override Detected")
+            print(f"   Risk Source: {risk_source}")
+            print(f"   High Carbon Flag: {high_carbon_flag}")
+            print(f"   Industry: {state.get('industry')}")
+            print(f"   ⚠️ Verdict generation will NOT override domain-specific risk assessment")
+            
+            # Extract risk scorer's final decision
+            locked_risk_level = risk_scorer_result.get("risk_level", "HIGH")
+            locked_rating = risk_scorer_result.get("rating_grade", "BB")
+            locked_confidence = state.get("confidence", 0.85)
+            
+            # Lock the state
+            state["risk_level"] = locked_risk_level
+            state["rating_grade"] = locked_rating
+            state["confidence"] = locked_confidence
+            state["verdict_locked"] = True
+            
+            verdict_data = {
+                "company": state["company"],
+                "claim": state["claim"],
+                "risk_level": locked_risk_level,
+                "rating_grade": locked_rating,
+                "confidence": locked_confidence,
+                "evidence_count": len(state["evidence"]),
+                "timestamp": datetime.now().isoformat(),
+                "locked_by": "risk_scorer_domain_knowledge",
+                "lock_reason": f"Oil & Gas greenwashing pattern detected - {risk_source}"
+            }
+            
+            state["agent_outputs"].append({
+                "agent": "verdict_generation",
+                "output": verdict_data,
+                "confidence": locked_confidence,
+                "timestamp": datetime.now().isoformat(),
+                "verdict_locked": True
+            })
+            
+            state["final_verdict"] = verdict_data
+            
+            print(f"\n✅ LOCKED VERDICT: {locked_risk_level} (Rating: {locked_rating}, Confidence: {locked_confidence:.1%})")
+            print(f"{'✅ NODE COMPLETED':^70}")
+            
+            return state
+    
+    # ============================================================
+    # NORMAL VERDICT GENERATION (if not locked)
+    # ============================================================
     
     verdict_data = {
         "company": state["company"],

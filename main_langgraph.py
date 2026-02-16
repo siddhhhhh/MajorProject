@@ -4,6 +4,7 @@ Maintains compatibility with existing main.py while adding agentic capabilities
 """
 import os
 import sys
+import argparse
 from datetime import datetime
 from dotenv import load_dotenv
 import json
@@ -79,6 +80,8 @@ class ESGGreenwashingDetectorLangGraph:
             "agent_outputs": [],
             "iteration_count": 0,
             "needs_revision": False,
+            "financial_context": None,  # From Financial Analyst (Agent #14)
+            "ml_prediction": None,  # From XGBoost risk model
             "final_verdict": {},
             "report": ""
         }
@@ -342,12 +345,154 @@ def quick_analysis(company: str, claim: str, industry: str = None):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 2:
-        # Command line mode: python main_langgraph.py "BP" "Net-zero by 2050"
-        company_name = sys.argv[1]
-        claim_text = sys.argv[2]
-        industry_sector = sys.argv[3] if len(sys.argv) > 3 else None
-        quick_analysis(company_name, claim_text, industry_sector)
+    # Setup argument parser for named arguments
+    parser = argparse.ArgumentParser(
+        description='ESG Greenwashing Detection System v3.0',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python main_langgraph.py --company "ExxonMobil" --claim "carbon neutral by 2050" --industry "Oil & Gas"
+  python main_langgraph.py --company "Tesla" --claim "100%% renewable energy" --industry "Automotive"
+  python main_langgraph.py  (interactive mode)
+        """
+    )
+    
+    parser.add_argument('--company', type=str, help='Company name to analyze')
+    parser.add_argument('--claim', type=str, help='ESG claim to verify')
+    parser.add_argument('--industry', type=str, help='Industry sector (optional, auto-detected if not provided)')
+    
+    args = parser.parse_args()
+    
+    # If company and claim are provided, run analysis
+    if args.company and args.claim:
+        quick_analysis(args.company, args.claim, args.industry)
     else:
-        # Interactive mode
+        # Interactive mode if no arguments provided
         interactive_mode()
+
+# ============================================================================
+# API WRAPPER FUNCTION FOR TESTING & INTEGRATION
+# ============================================================================
+
+def run_esg_analysis(company: str, claim: str, industry: str) -> dict:
+    """
+    Wrapper function to run ESG analysis programmatically
+    
+    Args:
+        company: Company name (e.g., "Tesla")
+        claim: ESG claim to analyze (e.g., "Carbon neutral by 2030")
+        industry: Industry sector (e.g., "Automotive")
+    
+    Returns:
+        dict with keys:
+            - company: str
+            - claim: str
+            - industry: str
+            - risk_level: str (HIGH/MODERATE/LOW)
+            - confidence: float (0-100)
+            - evidence_count: int
+            - agent_outputs: list
+            - final_verdict: dict
+            - report_path: str (if generated)
+    """
+    import sys
+    from datetime import datetime
+    
+    print(f"\n{'='*80}")
+    print(f"🏢 COMPANY: {company}")
+    print(f"📋 CLAIM: {claim}")
+    print(f"🏭 INDUSTRY: {industry}")
+    print(f"{'='*80}\n")
+    
+    # Initialize state
+    initial_state = {
+        "company": company,
+        "claim": claim,
+        "industry": industry,
+        "claims": [],
+        "evidence": [],
+        "agent_outputs": [],
+        "risk_level": "UNKNOWN",
+        "confidence": 0.0,
+        "complexity_score": 0.0,
+        "workflow_path": "standard_track",
+        "needs_revision": False,
+        "iteration_count": 0,
+        "final_verdict": {},
+        "report": ""
+    }
+    
+    try:
+        # Build and compile graph
+        # Build graph (already compiled)
+        print("🔧 Building LangGraph workflow...")
+        app = build_phase2_graph()
+        print("✅ Workflow ready\n")
+        
+        # Run the graph
+        print("🚀 Starting agent execution...\n")
+        final_state = None
+        
+        for step_output in app.stream(initial_state):
+            # Track progress
+            if isinstance(step_output, dict):
+                for node_name, node_output in step_output.items():
+                    if node_name != "__end__":
+                        print(f"   ⚙️  {node_name}")
+                final_state = node_output
+        
+        if final_state is None:
+            final_state = initial_state
+        
+        print("\n✅ All agents completed!\n")
+        
+        # Generate report
+        print("📄 Generating report...")
+        report_gen = ProfessionalReportGenerator()
+        
+        # Generate professional report
+        professional_report = report_gen.generate_executive_report(final_state)
+        
+        # Save report to file
+        os.makedirs("reports", exist_ok=True)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        report_path = f"reports/ESG_Report_{company.replace(' ', '_')}_{timestamp}.txt"
+        with open(report_path, 'w', encoding='utf-8') as f:
+            f.write(professional_report)
+        
+        print(f"✅ Report saved: {report_path}\n")
+        
+        # Extract results
+        result = {
+            "company": final_state.get("company", company),
+            "claim": final_state.get("claim", claim),
+            "industry": final_state.get("industry", industry),
+            "risk_level": final_state.get("risk_level", "UNKNOWN"),
+            "confidence": final_state.get("confidence", 0.0) * 100,  # Convert to percentage
+            "evidence_count": len(final_state.get("evidence", [])),
+            "agent_outputs": final_state.get("agent_outputs", []),
+            "final_verdict": final_state.get("final_verdict", {}),
+            "report_path": report_path,
+            "workflow_path": final_state.get("workflow_path", "unknown"),
+            "complexity_score": final_state.get("complexity_score", 0.0)
+        }
+        
+        return result
+        
+    except Exception as e:
+        print(f"\n❌ Error during analysis: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        return {
+            "company": company,
+            "claim": claim,
+            "industry": industry,
+            "risk_level": "ERROR",
+            "confidence": 0.0,
+            "evidence_count": 0,
+            "agent_outputs": [],
+            "final_verdict": {"error": str(e)},
+            "report_path": None
+        }
+

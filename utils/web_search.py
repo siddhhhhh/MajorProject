@@ -381,53 +381,158 @@ class RealTimeDataFetcher:
             return "Unknown"
 
 def classify_source(url: str, source_name: str) -> str:
-    """Classify source type with 2025 updates"""
+    """
+    Classify source type with 2026 updates + 8 NEW API sources
+    Comprehensive classification for credibility scoring
+    """
     url_lower = url.lower()
     name_lower = source_name.lower()
     
-    # Government/Regulatory
-    gov_domains = [".gov", "sec.gov", "epa.gov", "europa.eu", "sebi.gov.in", 
-                   "fca.org.uk", "asic.gov.au"]
+    # ===== PRIORITY 1: Government/Regulatory =====
+    gov_domains = [
+        ".gov", "sec.gov", "epa.gov", "osha.gov", "ftc.gov",
+        "europa.eu", "sebi.gov.in", "fca.org.uk", "asic.gov.au"
+    ]
     if any(domain in url_lower for domain in gov_domains):
         return "Government/Regulatory"
     
-    # NGO - Updated 2025
-    ngo_domains = ["greenpeace.org", "wwf.org", "amnesty.org", "ran.org", 
-                   "corporatewatch.org", "globalwitness.org", "oxfam.org", 
-                   "hrw.org", "earthjustice.org", "350.org", "climateaction.org"]
-    if any(domain in url_lower for domain in ngo_domains):
-        return "NGO"
+    # ===== PRIORITY 2: International Data Organizations =====
+    intl_orgs = ["worldbank.org", "imf.org", "oecd.org", "un.org", "unfccc.int", "ilo.org"]
+    if any(org in url_lower for org in intl_orgs):
+        return "Government/International Data"
     
-    # Academic
-    if any(domain in url_lower for domain in ["scholar.google", "researchgate", "arxiv.org", ".edu", "jstor", "nature.com"]):
+    # ===== PRIORITY 3: Legal/Court Documents =====
+    legal_sources = [
+        "courtlistener.com", "law.justia.com", "supremecourt.gov",
+        "law.cornell.edu", "caselaw.findlaw.com", "pacer.gov", "justice.gov"
+    ]
+    if any(legal in url_lower for legal in legal_sources):
+        return "Legal/Court Documents"
+    
+    # ===== PRIORITY 4: Compliance/Sanctions Databases =====
+    compliance_sources = [
+        "opensanctions.org", "ofac.treasury.gov", "sanctionsmap.eu",
+        "worldcompliance.com", "mneguidelines.oecd.org"
+    ]
+    if any(comp in url_lower for comp in compliance_sources):
+        return "Compliance/Sanctions Database"
+    
+    # ===== PRIORITY 5: Academic Sources =====
+    academic_domains = [
+        "scholar.google", "researchgate", "arxiv.org", "jstor", 
+        "nature.com", "science.org", "sciencedirect.com", "springer.com",
+        "wiley.com", "tandfonline.com", "ssrn.com", "wikipedia.org"
+    ]
+    academic_suffixes = [".edu", ".ac.uk", ".edu.au"]
+    
+    if any(domain in url_lower for domain in academic_domains) or \
+       any(url_lower.endswith(suffix) for suffix in academic_suffixes):
         return "Academic"
     
-    # Tier-1 Financial Media (highly credible)
-    tier1_media = ["reuters.com", "bloomberg.com", "ft.com", "wsj.com", 
-                   "economist.com", "financial-times.com"]
+    # ===== PRIORITY 6: Climate/Environmental NGOs =====
+    climate_ngos = [
+        "carbontracker.org", "greenpeace.org", "clientearth.org",
+        "350.org", "climateaction.org", "climatecentral.org",
+        "carbontrust.com", "ran.org", "earthjustice.org", "changingmarkets.org"
+    ]
+    if any(ngo in url_lower for ngo in climate_ngos):
+        return "Climate NGO"
+    
+    # ===== PRIORITY 7: General NGOs =====
+    general_ngos = [
+        "wwf.org", "amnesty.org", "corporatewatch.org", "globalwitness.org",
+        "oxfam.org", "hrw.org", "transparency.org", "foe.org", "sierraclub.org"
+    ]
+    if any(ngo in url_lower for ngo in general_ngos):
+        return "NGO"
+    
+    # ===== PRIORITY 7.5: Supply Chain/Labor Databases =====
+    supply_chain_sources = ["openapparel.org", "opensupplyhub.org", "knowthechain.org"]
+    if any(source in url_lower for source in supply_chain_sources):
+        return "Supply Chain Database"
+    
+    # ===== PRIORITY 7.6: Patent/Innovation Databases =====
+    patent_sources = ["patents.google.com", "uspto.gov", "epo.org"]
+    if any(source in url_lower for source in patent_sources):
+        return "Patent Database"
+    
+    # ===== PRIORITY 7.7: Historical/Archive Sources =====
+    archive_sources = ["archive.org", "web.archive.org", "wayback"]
+    if any(source in url_lower for source in archive_sources):
+        return "Historical Archive"
+    
+    # ===== PRIORITY 7.8: UK/EU Regulatory Bodies =====
+    uk_eu_regulatory = ["gov.uk/cma", "asa.org.uk", "ec.europa.eu"]
+    if any(reg in url_lower for reg in uk_eu_regulatory):
+        return "UK/EU Regulatory"
+    
+    # ===== PRIORITY 8: Tier-1 Financial Media (Highest Credibility) =====
+    tier1_media = [
+        "reuters.com", "bloomberg.com", "ft.com", "wsj.com",
+        "economist.com", "financial-times.com", "marketwatch.com"
+    ]
     if any(outlet in url_lower for outlet in tier1_media):
         return "Tier-1 Financial Media"
     
-    # General Media
-    media_outlets = ["guardian", "nytimes", "bbc", "cnn", "forbes", "theguardian",
-                    "apnews", "npr.org", "aljazeera", "dw.com"]
-    if any(outlet in name_lower or outlet in url_lower for outlet in media_outlets):
+    # ===== PRIORITY 9: Global News Aggregators =====
+    news_aggregators = [
+        "gdeltproject.org", "newsapi.org", "bing.com/news",
+        "news.google.com", "newsnow.co.uk"
+    ]
+    if any(agg in url_lower for agg in news_aggregators):
+        return "Global News Aggregator"
+    
+    # ===== PRIORITY 10: Research/Data Analytics Platforms =====
+    data_platforms = [
+        "ourworldindata.org", "gapminder.org", "data.gov",
+        "kaggle.com", "statista.com"
+    ]
+    if any(platform in url_lower for platform in data_platforms):
+        return "Research/Data Platform"
+    
+    # ===== PRIORITY 11: General Media (Major News Outlets) =====
+    major_media = [
+        "guardian", "nytimes", "bbc", "cnn", "forbes", "theguardian",
+        "apnews", "npr.org", "aljazeera", "dw.com", "washingtonpost",
+        "latimes", "telegraph.co.uk", "independent.co.uk"
+    ]
+    if any(outlet in name_lower or outlet in url_lower for outlet in major_media):
         return "General Media"
     
-    # ESG-specific platforms
-    esg_platforms = ["sustainability", "esg", "csrhub", "msci.com", "sustainalytics",
-                    "cdp.net", "globalreporting.org", "sasb.org"]
+    # ===== PRIORITY 12: ESG-Specific Platforms =====
+    esg_platforms = [
+        "sustainability", "esg", "csrhub", "msci.com", "sustainalytics",
+        "cdp.net", "globalreporting.org", "sasb.org", "unpri.org",
+        "ceres.org", "ethicalcorporation.com"
+    ]
     if any(platform in url_lower for platform in esg_platforms):
         return "ESG Platform"
     
-    # Company sources
-    if any(term in name_lower for term in ["press release", "investor relations", "corporate", "company announcement"]):
+    # ===== PRIORITY 13: Industry/Trade Publications =====
+    industry_pubs = [
+        "greenbiz.com", "triplepundit.com", "environmentalleader.com",
+        "businessgreen.com", "cleantechnica.com", "renewablesnow.com"
+    ]
+    if any(pub in url_lower for pub in industry_pubs):
+        return "Industry Publication"
+    
+    # ===== PRIORITY 14: Company-Controlled Sources =====
+    company_indicators = [
+        "press release", "investor relations", "corporate", "company announcement",
+        "newsroom", "ir.", "/investors/", "/press/"
+    ]
+    if any(term in name_lower or term in url_lower for term in company_indicators):
         return "Company-Controlled"
     
-    # Sponsored
-    if any(term in name_lower for term in ["sponsored", "advertorial", "paid", "partner content"]):
+    # ===== PRIORITY 15: Sponsored Content =====
+    sponsored_indicators = [
+        "sponsored", "advertorial", "paid", "partner content",
+        "branded content", "promotional"
+    ]
+    if any(term in name_lower for term in sponsored_indicators):
         return "Sponsored Content"
     
+    # ===== DEFAULT: General Web Source =====
     return "Web Source"
 
 # Global instance

@@ -6,6 +6,7 @@ import os
 from typing import Literal
 from langchain_groq import ChatGroq
 from core.state_schema import ESGState
+from core.evidence_cache import evidence_cache
 
 class SupervisorAgent:
     def __init__(self):
@@ -88,7 +89,16 @@ Return ONLY a single float between 0.0 and 1.0, nothing else."""
 
 # Node functions for LangGraph
 def assess_complexity_node(state: ESGState) -> ESGState:
-    """Wrapper function for LangGraph node"""
+    """
+    Wrapper function for LangGraph node
+    CLEARS session cache at start of new analysis
+    """
+    company = state.get("company", "Unknown")
+    
+    # CLEAR SESSION CACHE for new analysis (keeps disk cache for reuse)
+    evidence_cache.clear_session_cache()
+    print(f"\n🔄 Starting analysis for {company} - session cache cleared\n")
+    
     supervisor = SupervisorAgent()
     return supervisor.assess_complexity(state)
 

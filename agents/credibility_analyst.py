@@ -24,12 +24,15 @@ class CredibilityAnalyst:
     def analyze_sources(self, evidence: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Analyze credibility and bias of all evidence sources
+        Works with evidence from cache (already fetched by EvidenceRetriever)
         """
         
         print(f"\n{'='*60}")
         print(f"🔍 AGENT 4: {self.name}")
         print(f"{'='*60}")
         print(f"Analyzing {len(evidence)} sources...")
+        print(f"📦 Using evidence from cache (zero additional API calls)")
+        
         
         source_analyses = []
         credibility_scores = []

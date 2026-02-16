@@ -11,6 +11,7 @@ from core.vector_store import vector_store
 from utils.enterprise_data_sources import enterprise_fetcher
 from utils.web_search import classify_source
 from config.agent_prompts import EVIDENCE_RETRIEVAL_PROMPT
+from core.evidence_cache import evidence_cache
 import time
 
 
@@ -20,11 +21,23 @@ class EvidenceRetriever:
         self.llm = llm_client
         self.vector_store = vector_store
         self.enterprise_fetcher = enterprise_fetcher
+        from utils.free_data_sources import free_data_aggregator
+        self.data_aggregator = free_data_aggregator
+        
+        # Try importing financial analyst
+        try:
+            from agents.financial_analyst import get_financial_context
+            self.financial_analyst_available = True
+            self.get_financial_context = get_financial_context
+        except ImportError:
+            self.financial_analyst_available = False
+            print("⚠️ FinancialAnalyst not available")
     
     def retrieve_evidence(self, claim: Dict[str, Any], company: str) -> Dict[str, Any]:
         """
         Gather LIVE multi-source evidence - ENTERPRISE GRADE
         With relevance filtering to prevent cross-contamination
+        WITH INTELLIGENT CACHING to prevent redundant API calls
         """
         
         claim_id = claim.get("claim_id")
@@ -38,6 +51,21 @@ class EvidenceRetriever:
         print(f"Claim: {claim_text[:100]}...")
         print(f"Category: {category}")
         
+        # ============================================================
+        # STEP 1: CHECK EVIDENCE CACHE
+        # ============================================================
+        cache_key = "main_evidence"
+        cached_result = evidence_cache.get_evidence(company, cache_key)
+        
+        if cached_result:
+            print(f"✅ Using cached evidence - ZERO API calls")
+            return cached_result
+        
+        # ============================================================
+        # STEP 2: CACHE MISS - Fetch from 14 sources (ONLY ONCE)
+        # ============================================================
+        print(f"🌐 CACHE MISS - Fetching from 15 sources for {company}...")
+        
         # Generate targeted search query
         query = f'"{company}" {category} {claim_text[:50]}'
         
@@ -48,20 +76,21 @@ class EvidenceRetriever:
         print(f"   Found: {len(vector_evidence)} stored documents")
         
         # 2. ENTERPRISE MULTI-SOURCE FETCH
-        print(f"\n🌐 Fetching from ENTERPRISE sources...")
-        source_dict = self.enterprise_fetcher.fetch_all_sources(
+        # REPLACE existing API calls with this:
+        print(f"\n🌐 Fetching from 15 FREE sources...")
+        all_sources = self.data_aggregator.fetch_all_sources(
             company=company,
-            query=query,
-            max_per_source=5
+            query=f"{company} {claim_text[:50]}",
+            max_per_source=3
         )
-        
-        # 3. Aggregate all sources
+
+        # Flatten all sources
         all_evidence = []
-        for source_type, results in source_dict.items():
-            for result in results:
-                all_evidence.append(result)
-        
-        print(f"\n📊 RAW EVIDENCE COLLECTED: {len(all_evidence)} sources")
+        for category, items in all_sources.items():
+            all_evidence.extend(items)
+
+        print(f"\n📊 RAW EVIDENCE COLLECTED: {len(all_evidence)} from 15 APIs")
+
         
         # 4. FILTER BY RELEVANCE (NEW - Prevents Apple for BP contamination)
         print(f"🔍 Filtering for relevance to {company}...")
@@ -90,7 +119,30 @@ class EvidenceRetriever:
         self._store_evidence_in_vectordb(structured_evidence, company, claim_id)
         
         # 7. Calculate comprehensive quality metrics
-        quality_metrics = self._calculate_quality_metrics(structured_evidence, source_dict)
+        quality_metrics = self._calculate_quality_metrics(structured_evidence, source_breakdown)
+        
+        # NEW: Add financial context analysis
+        financial_context = {}
+        if self.financial_analyst_available:
+            try:
+                print(f"\n💰 Fetching financial context...")
+                
+                # Extract ESG data from claim or use defaults
+                esg_data = {
+                    "CarbonEmissions": claim.get("carbon_emissions", 0),
+                    "WaterUsage": claim.get("water_usage", 0),
+                    "EnergyConsumption": claim.get("energy_consumption", 0),
+                    "ESG_Overall": claim.get("esg_score", 50)
+                }
+                
+                financial_context = self.get_financial_context(company, claim_text, esg_data)
+                
+                if financial_context.get("financial_data_available"):
+                    print(f"   ✅ Financial data retrieved")
+                    print(f"   Greenwashing flags: {financial_context.get('greenwashing_flag_count', 0)}")
+            except Exception as e:
+                print(f"   ⚠️ Financial analysis error: {e}")
+                financial_context = {"financial_data_available": False}
         
         print(f"\n✅ Evidence retrieval complete:")
         print(f"   Total sources: {len(structured_evidence)}")
@@ -100,14 +152,22 @@ class EvidenceRetriever:
         print(f"   Source diversity: {quality_metrics['source_diversity']} types")
         print(f"   Evidence gap: {'YES ⚠️' if quality_metrics['evidence_gap'] else 'NO ✓'}")
         
-        return {
+        result = {
             "claim_id": claim_id,
             "evidence": structured_evidence,
             "evidence_gap": quality_metrics['evidence_gap'],
             "quality_metrics": quality_metrics,
             "source_breakdown": source_breakdown,
+            "financial_context": financial_context,
             "retrieval_timestamp": datetime.now().isoformat()
         }
+        
+        # ============================================================
+        # STEP 3: STORE IN CACHE for other agents to reuse
+        # ============================================================
+        evidence_cache.store_evidence(company, result, cache_key)
+        
+        return result
     
     def _filter_relevant_evidence(self, evidence: List[Dict], company: str, claim_text: str) -> List[Dict]:
         """

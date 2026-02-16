@@ -12,6 +12,7 @@ import time
 import json  # Add this
 from core.vector_store import vector_store
 from utils.enterprise_data_sources import enterprise_fetcher
+from core.evidence_cache import evidence_cache
 
 
 class RealTimeMonitor:
@@ -49,6 +50,7 @@ class RealTimeMonitor:
     def scrape_and_store(self, company: str, hours_lookback: int = 24) -> Dict[str, Any]:
         """
         Scrape latest news and store in Chroma for real-time retrieval
+        REUSES cached evidence if fresh enough
         """
         
         print(f"\n{'='*60}")
@@ -56,6 +58,41 @@ class RealTimeMonitor:
         print(f"{'='*60}")
         print(f"Company: {company}")
         print(f"Looking back: {hours_lookback} hours")
+        
+        # ============================================================
+        # CHECK CACHE AGE - Only refetch if > 1 hour old
+        # ============================================================
+        cached_evidence = evidence_cache.get_evidence(company, "main_evidence")
+        
+        if cached_evidence:
+            # Check cache timestamp
+            cache_metadata = cached_evidence.get('_cache_metadata', {})
+            cached_at_str = cache_metadata.get('cached_at')
+            
+            if cached_at_str:
+                try:
+                    from dateutil import parser
+                    cached_at = parser.parse(cached_at_str)
+                    age_hours = (datetime.now() - cached_at).seconds / 3600
+                    
+                    if age_hours < 1:
+                        print(f"📦 Cache fresh ({age_hours:.1f}h) - using for realtime analysis")
+                        evidence_list = cached_evidence.get("evidence", [])
+                        
+                        return {
+                            "company": company,
+                            "articles_found": len(evidence_list),
+                            "articles": evidence_list[:10],
+                            "timestamp": datetime.now().isoformat(),
+                            "used_cache": True
+                        }
+                except:
+                    pass  # If parsing fails, continue to fetch fresh data
+        
+        # ============================================================
+        # CACHE STALE OR MISSING - Fetch fresh data
+        # ============================================================
+        print(f"🌐 Cache stale or missing - fetching fresh realtime data...")
         
         cutoff_time = datetime.now() - timedelta(hours=hours_lookback)
         
@@ -97,7 +134,8 @@ class RealTimeMonitor:
             "company": company,
             "articles_found": len(recent_articles),
             "articles": recent_articles,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "used_cache": False
         }
     
     def _scrape_rss_feeds(self, company: str) -> List[Dict]:

@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from core.llm_client import llm_client
 from utils.enterprise_data_sources import enterprise_fetcher
 from config.agent_prompts import HISTORICAL_ANALYSIS_PROMPT
+from core.evidence_cache import evidence_cache
 
 class HistoricalAnalyst:
     def __init__(self):
@@ -14,7 +15,7 @@ class HistoricalAnalyst:
     def analyze_company_history(self, company: str) -> Dict[str, Any]:
         """
         Analyze company's historical ESG track record
-        Search for violations, controversies, patterns
+        REUSES cached evidence to avoid redundant API calls
         """
         
         print(f"\n{'='*60}")
@@ -22,53 +23,137 @@ class HistoricalAnalyst:
         print(f"{'='*60}")
         print(f"Company: {company}")
         
-        result = {
-            "company": company,
-            "analysis_date": datetime.now().isoformat(),
-            "past_violations": [],
-            "greenwashing_history": {},
-            "positive_track_record": [],
-            "temporal_patterns": {},
-            "reputation_score": 50  # Default: neutral
-        }
+        # ============================================================
+        # STEP 1: TRY TO REUSE CACHED EVIDENCE
+        # ============================================================
+        cached_evidence = evidence_cache.get_evidence(company, "main_evidence")
         
-        # Search for violations and controversies
-        print("\n🔍 Searching for ESG violations...")
-        violations = self._search_violations(company)
-        result["past_violations"] = violations
+        violations = []
+        greenwashing = {}
+        achievements = []
         
-        print(f"📊 Found {len(violations)} documented violations")
+        if cached_evidence and cached_evidence.get("evidence"):
+            print(f"📦 Reusing cached evidence for historical analysis - ZERO API calls")
+            evidence_list = cached_evidence.get("evidence", [])
+            
+            # Extract violations, achievements from cached evidence
+            violations = self._extract_violations_from_cache(evidence_list)
+            achievements = self._extract_achievements_from_cache(evidence_list)
+            greenwashing = self._extract_greenwashing_from_cache(evidence_list)
+            
+        else:
+            # ============================================================
+            # STEP 2: CACHE MISS - Fetch historical data
+            # ============================================================
+            print(f"⚠️ No cached evidence - fetching historical data...")
+            
+            # Search for violations and controversies
+            print("\n🔍 Searching for ESG violations...")
+            violations = self._search_violations(company)
+            
+            print(f"📊 Found {len(violations)} documented violations")
+            
+            # Search for greenwashing accusations
+            print("\n🔍 Searching greenwashing history...")
+            greenwashing = self._search_greenwashing_history(company)
+            
+            print(f"📊 Found {greenwashing.get('prior_accusations', 0)} prior accusations")
+            
+            # Search for positive achievements
+            print("\n✅ Searching verified achievements...")
+            achievements = self._search_achievements(company)
+            
+            print(f"📊 Found {len(achievements)} verified achievements")
         
-        # Search for greenwashing accusations
-        print("\n🔍 Searching greenwashing history...")
-        greenwashing = self._search_greenwashing_history(company)
-        result["greenwashing_history"] = greenwashing
-        
-        print(f"📊 Found {greenwashing.get('prior_accusations', 0)} prior accusations")
-        
-        # Search for positive achievements
-        print("\n✅ Searching verified achievements...")
-        achievements = self._search_achievements(company)
-        result["positive_track_record"] = achievements
-        
-        print(f"📊 Found {len(achievements)} verified achievements")
-        
-        # Analyze temporal patterns
+        # ============================================================
+        # STEP 3: ANALYZE PATTERNS (same regardless of cache)
+        # ============================================================
         print("\n📈 Analyzing temporal patterns...")
         patterns = self._analyze_patterns(violations, greenwashing, achievements)
-        result["temporal_patterns"] = patterns
         
         # Calculate reputation score
         reputation = self._calculate_reputation_score(violations, greenwashing, achievements, patterns)
-        result["reputation_score"] = reputation
+        
+        result = {
+            "company": company,
+            "analysis_date": datetime.now().isoformat(),
+            "past_violations": violations,
+            "greenwashing_history": greenwashing,
+            "positive_track_record": achievements,
+            "temporal_patterns": patterns,
+            "reputation_score": reputation
+        }
         
         print(f"\n✅ Historical analysis complete:")
+        print(f"   Reputation Score: {reputation}/100")
         print(f"   Violations: {len(violations)}")
-        print(f"   Greenwashing accusations: {greenwashing.get('prior_accusations', 0)}")
-        print(f"   Positive achievements: {len(achievements)}")
-        print(f"   Reputation score: {reputation}/100")
+        print(f"   Achievements: {len(achievements)}")
         
         return result
+    
+    def _extract_violations_from_cache(self, evidence_list: List[Dict]) -> List[Dict]:
+        """Extract violations from cached evidence"""
+        violations = []
+        
+        violation_keywords = ["fine", "penalty", "violation", "lawsuit", "settled", "sued", "enforcement"]
+        
+        for ev in evidence_list:
+            text = (ev.get("relevant_text", "") + " " + ev.get("source_name", "")).lower()
+            
+            if any(kw in text for kw in violation_keywords):
+                violations.append({
+                    "year": self._extract_year(ev.get("date", "")),
+                    "type": self._classify_violation(text),
+                    "description": ev.get("relevant_text", "")[:200],
+                    "source": ev.get("source_name", "Unknown"),
+                    "url": ev.get("url", "")
+                })
+        
+        return violations[:10]
+    
+    def _extract_achievements_from_cache(self, evidence_list: List[Dict]) -> List[Dict]:
+        """Extract achievements from cached evidence"""
+        achievements = []
+        
+        achievement_keywords = ["certified", "award", "recognized", "achieved", "verified", "compliance"]
+        
+        for ev in evidence_list:
+            text = (ev.get("relevant_text", "") + " " + ev.get("source_name", "")).lower()
+            
+            if any(kw in text for kw in achievement_keywords):
+                achievements.append({
+                    "year": self._extract_year(ev.get("date", "")),
+                    "achievement": ev.get("relevant_text", "")[:150],
+                    "source": ev.get("source_name", ""),
+                    "credibility": ev.get("source_type", "")
+                })
+        
+        return achievements[:8]
+    
+    def _extract_greenwashing_from_cache(self, evidence_list: List[Dict]) -> Dict:
+        """Extract greenwashing accusations from cached evidence"""
+        accusations = []
+        
+        greenwashing_keywords = ["greenwashing", "misleading", "false claim", "exaggerated"]
+        
+        for ev in evidence_list:
+            text = (ev.get("relevant_text", "") + " " + ev.get("source_name", "")).lower()
+            
+            if any(kw in text for kw in greenwashing_keywords):
+                accusations.append({
+                    "year": self._extract_year(ev.get("date", "")),
+                    "description": ev.get("relevant_text", "")[:150],
+                    "source": ev.get("source_name", "")
+                })
+        
+        years = [acc["year"] for acc in accusations if acc["year"]]
+        pattern_detected = len(set(years)) >= 2
+        
+        return {
+            "prior_accusations": len(accusations),
+            "examples": accusations[:5],
+            "pattern_detected": pattern_detected
+        }
     
     def _search_violations(self, company: str) -> List[Dict[str, Any]]:
         """Search for regulatory violations, fines, penalties"""

@@ -31,6 +31,7 @@ class SentimentAnalyzer:
         """
         Analyze linguistic patterns in claim vs evidence
         Detect greenwashing language tactics
+        Works with evidence from cache (already fetched by EvidenceRetriever)
         """
         
         claim_text = claim.get("claim_text", "")
@@ -39,6 +40,7 @@ class SentimentAnalyzer:
         print(f"🔍 AGENT 5: {self.name}")
         print(f"{'='*60}")
         print(f"Analyzing claim {claim.get('claim_id')}: {claim_text[:80]}...")
+        print(f"📦 Using evidence from cache (zero additional API calls)")
         
         # Analyze claim sentiment
         print("\n📊 Analyzing claim language...")
