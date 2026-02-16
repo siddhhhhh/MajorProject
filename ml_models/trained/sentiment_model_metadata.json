@@ -1,0 +1,27 @@
+{
+  "model_type": "Linear",
+  "training_date": "2026-02-14T12:42:09.317376",
+  "dataset_size": 2000,
+  "train_size": 1600,
+  "test_size": 400,
+  "features": [
+    "news_sentiment",
+    "sentiment_volume",
+    "controversy_level",
+    "current_esg_score",
+    "industry_volatility",
+    "sentiment_intensity",
+    "controversy_sentiment",
+    "recovery_potential"
+  ],
+  "performance": {
+    "mae": 3.8560109961634303,
+    "rmse": 4.811115027125752,
+    "r2": 0.8987026409960057
+  },
+  "interpretation": {
+    "input": "News sentiment, volume, controversy, current ESG, industry volatility",
+    "output": "Predicted ESG score change over 6 months (-30 to +30 points)",
+    "use_case": "Predict ESG impact of media coverage and controversies"
+  }
+}
