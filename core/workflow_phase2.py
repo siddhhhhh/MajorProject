@@ -9,6 +9,10 @@ from core.supervisor_agent import assess_complexity_node, classify_workflow
 from core.agent_wrappers import (
     claim_extraction_node,
     evidence_retrieval_node,
+    carbon_extraction_node,
+    greenwishing_detection_node,
+    regulatory_scanning_node,
+    climatebert_analysis_node,
     contradiction_analysis_node,
     temporal_analysis_node,
     peer_comparison_node,
@@ -17,7 +21,8 @@ from core.agent_wrappers import (
     credibility_analysis_node,
     realtime_monitoring_node,
     confidence_scoring_node,
-    verdict_generation_node
+    verdict_generation_node,
+    explainability_node
 )
 from core.professional_report_generator import professional_report_generation_node as report_generation_node
 from core.debate_orchestrator import debate_node
@@ -112,10 +117,14 @@ def build_phase2_graph():
     workflow.add_node("fast_report", report_generation_node)
     
     # ============================================================
-    # STANDARD TRACK (11 agents - full pipeline)
+    # STANDARD TRACK (15 agents - full pipeline with new features)
     # ============================================================
     workflow.add_node("std_claim", claim_extraction_node)
     workflow.add_node("std_evidence", evidence_retrieval_node)
+    workflow.add_node("std_carbon", carbon_extraction_node)  # Carbon extraction
+    workflow.add_node("std_greenwishing", greenwishing_detection_node)  # NEW: Greenwishing detection
+    workflow.add_node("std_regulatory", regulatory_scanning_node)  # NEW: Regulatory scanning
+    workflow.add_node("std_climatebert", climatebert_analysis_node)  # NEW: ClimateBERT NLP
     workflow.add_node("std_contradiction", contradiction_analysis_node)
     workflow.add_node("std_temporal", temporal_analysis_node)
     workflow.add_node("std_peer", peer_comparison_node)
@@ -123,16 +132,21 @@ def build_phase2_graph():
     workflow.add_node("std_sentiment", sentiment_analysis_node)
     workflow.add_node("std_realtime", realtime_monitoring_node)
     workflow.add_node("std_risk", risk_scoring_node)
+    workflow.add_node("std_explainability", explainability_node)  # NEW: SHAP/LIME
     workflow.add_node("std_confidence", confidence_scoring_node)
     workflow.add_node("std_verdict", verdict_generation_node)
-    workflow.add_node("std_save_peer", save_peer_to_database_node)  # NEW: Save to peer DB
+    workflow.add_node("std_save_peer", save_peer_to_database_node)
     workflow.add_node("std_report", report_generation_node)
     
     # ============================================================
-    # DEEP ANALYSIS TRACK (Standard + Debate)
+    # DEEP ANALYSIS TRACK (Standard + Debate + All Features)
     # ============================================================
     workflow.add_node("deep_claim", claim_extraction_node)
     workflow.add_node("deep_evidence", evidence_retrieval_node)
+    workflow.add_node("deep_carbon", carbon_extraction_node)  # Carbon extraction
+    workflow.add_node("deep_greenwishing", greenwishing_detection_node)  # NEW: Greenwishing detection
+    workflow.add_node("deep_regulatory", regulatory_scanning_node)  # NEW: Regulatory scanning
+    workflow.add_node("deep_climatebert", climatebert_analysis_node)  # NEW: ClimateBERT NLP
     workflow.add_node("deep_contradiction", contradiction_analysis_node)
     workflow.add_node("deep_temporal", temporal_analysis_node)
     workflow.add_node("deep_peer", peer_comparison_node)
@@ -140,10 +154,11 @@ def build_phase2_graph():
     workflow.add_node("deep_sentiment", sentiment_analysis_node)
     workflow.add_node("deep_realtime", realtime_monitoring_node)
     workflow.add_node("deep_risk", risk_scoring_node)
+    workflow.add_node("deep_explainability", explainability_node)  # NEW: SHAP/LIME
     workflow.add_node("deep_confidence", confidence_scoring_node)
     workflow.add_node("deep_verdict", verdict_generation_node)
     workflow.add_node("deep_debate", debate_node)
-    workflow.add_node("deep_save_peer", save_peer_to_database_node)  # NEW: Save to peer DB
+    workflow.add_node("deep_save_peer", save_peer_to_database_node)
     workflow.add_node("deep_report", report_generation_node)
     
     # ============================================================
@@ -174,34 +189,44 @@ def build_phase2_graph():
     
     # Standard track path (linear - no loops)
     workflow.add_edge("std_claim", "std_evidence")
-    workflow.add_edge("std_evidence", "std_contradiction")
+    workflow.add_edge("std_evidence", "std_carbon")  # Carbon extraction
+    workflow.add_edge("std_carbon", "std_greenwishing")  # NEW: Greenwishing
+    workflow.add_edge("std_greenwishing", "std_regulatory")  # NEW: Regulatory
+    workflow.add_edge("std_regulatory", "std_climatebert")  # NEW: ClimateBERT
+    workflow.add_edge("std_climatebert", "std_contradiction")
     workflow.add_edge("std_contradiction", "std_temporal")
     workflow.add_edge("std_temporal", "std_peer")
     workflow.add_edge("std_peer", "std_credibility")
     workflow.add_edge("std_credibility", "std_sentiment")
     workflow.add_edge("std_sentiment", "std_realtime")
     workflow.add_edge("std_realtime", "std_risk")
-    workflow.add_edge("std_risk", "std_confidence")
+    workflow.add_edge("std_risk", "std_explainability")  # NEW: SHAP/LIME after risk
+    workflow.add_edge("std_explainability", "std_confidence")
     workflow.add_edge("std_confidence", "std_verdict")
-    workflow.add_edge("std_verdict", "std_save_peer")  # NEW: Save peer data
+    workflow.add_edge("std_verdict", "std_save_peer")
     workflow.add_edge("std_save_peer", "std_report")
-    workflow.add_edge("std_report", END)  # FIXED: Direct to END
+    workflow.add_edge("std_report", END)
     
     # Deep analysis path (linear with debate - no loops)
     workflow.add_edge("deep_claim", "deep_evidence")
-    workflow.add_edge("deep_evidence", "deep_contradiction")
+    workflow.add_edge("deep_evidence", "deep_carbon")  # Carbon extraction
+    workflow.add_edge("deep_carbon", "deep_greenwishing")  # NEW: Greenwishing
+    workflow.add_edge("deep_greenwishing", "deep_regulatory")  # NEW: Regulatory
+    workflow.add_edge("deep_regulatory", "deep_climatebert")  # NEW: ClimateBERT
+    workflow.add_edge("deep_climatebert", "deep_contradiction")
     workflow.add_edge("deep_contradiction", "deep_temporal")
     workflow.add_edge("deep_temporal", "deep_peer")
     workflow.add_edge("deep_peer", "deep_credibility")
     workflow.add_edge("deep_credibility", "deep_sentiment")
     workflow.add_edge("deep_sentiment", "deep_realtime")
     workflow.add_edge("deep_realtime", "deep_risk")
-    workflow.add_edge("deep_risk", "deep_confidence")
+    workflow.add_edge("deep_risk", "deep_explainability")  # NEW: SHAP/LIME after risk
+    workflow.add_edge("deep_explainability", "deep_confidence")
     workflow.add_edge("deep_confidence", "deep_verdict")
     workflow.add_edge("deep_verdict", "deep_debate")
-    workflow.add_edge("deep_debate", "deep_save_peer")  # NEW: Save peer data
+    workflow.add_edge("deep_debate", "deep_save_peer")
     workflow.add_edge("deep_save_peer", "deep_report")
-    workflow.add_edge("deep_report", END)  # FIXED: Direct to END
+    workflow.add_edge("deep_report", END)
     
     # Compile with memory checkpointer
     # Compile WITHOUT checkpointer (reduces duplicate state saves)

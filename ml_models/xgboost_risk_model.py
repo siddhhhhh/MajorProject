@@ -246,7 +246,23 @@ class XGBoostRiskModel:
             esg_vs_industry = peer_comp.get('esg_vs_industry', 0.0)
             revenue_vs_industry = peer_comp.get('revenue_vs_industry', 0.0)
             
-            # Create feature dict matching actual model (23 features from Colab)
+            # ================================================================
+            # NEW: Extract ESG PILLAR SCORES (0-100) - Normalized to 0-1
+            # ================================================================
+            pillar_scores = all_analyses.get('pillar_scores', {})
+            environmental_score = pillar_scores.get('environmental_score', 50.0) / 100.0
+            social_score = pillar_scores.get('social_score', 50.0) / 100.0
+            governance_score = pillar_scores.get('governance_score', 50.0) / 100.0
+            overall_esg_from_pillars = pillar_scores.get('overall_esg_score', 50.0) / 100.0
+            
+            print(f"   🔍 XGBoost Feature Extraction:")
+            print(f"      ESG Score (old method): {esg_score:.1f}/100")
+            print(f"      Environmental Pillar: {environmental_score*100:.1f}/100")
+            print(f"      Social Pillar: {social_score*100:.1f}/100")
+            print(f"      Governance Pillar: {governance_score*100:.1f}/100")
+            print(f"      Overall ESG Pillar: {overall_esg_from_pillars*100:.1f}/100")
+            
+            # Create feature dict matching actual model (23 features from Colab + 4 pillar features = 27)
             # This matches the original dataset columns
             features_dict = {
                 'ESG_Score': esg_score,
@@ -271,20 +287,29 @@ class XGBoostRiskModel:
                 'ESG_Controversies': 0,  # Default
                 'Industry_Sector': industry_encoded,
                 'Greenwashing_Risk': 2,  # Will be ignored (target variable)
-                'ESG_Disclosure_Level': esg_disclosure_count
+                'ESG_Disclosure_Level': esg_disclosure_count,
+                # NEW: Add pillar scores as features (normalized 0-100 scale)
+                'Environmental_Score_Pillar': environmental_score * 100,
+                'Social_Score_Pillar': social_score * 100,
+                'Governance_Score_Pillar': governance_score * 100,
+                'Overall_ESG_Pillar': overall_esg_from_pillars * 100
             }
             
             # If we have the actual feature names from the model, use those in order
             if self.feature_names:
                 # Build array in exact order of feature names
+                # Handle both old models (23 features) and new models (27 features)
                 feature_array = np.array([[
                     features_dict.get(fname, 0.0) for fname in self.feature_names
                 ]])
             else:
-                # Fallback: use default order
+                # Fallback: use default order (include new pillar features)
                 feature_array = np.array([[
                     features_dict[k] for k in sorted(features_dict.keys())
                 ]])
+            
+            print(f"      Feature array shape: {feature_array.shape}")
+            print(f"      Using {len(self.feature_names) if self.feature_names else 'default'} features")
             
             return feature_array
             

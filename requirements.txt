@@ -37,3 +37,26 @@ langgraph-checkpoint-sqlite>=1.0.0
 langchain-core>=0.3.0
 langchain-groq>=0.2.0
 langchain-google-genai>=2.0.0
+
+# =============================================
+# NEW: Enterprise ESG Features (2026)
+# =============================================
+
+# ClimateBERT NLP Integration
+transformers>=4.35.0
+torch>=2.0.0
+sentencepiece>=0.1.99
+
+# SHAP/LIME Explainability
+shap>=0.43.0
+lime>=0.2.0.1
+
+# Company Report Fetching & PDF Parsing
+pdfplumber>=0.10.0
+PyPDF2>=3.0.0
+
+# Indian Data Sources
+feedparser>=6.0.10  # Already included above, just noting
+
+# Additional NLP
+nltk>=3.8.0

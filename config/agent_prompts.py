@@ -201,3 +201,192 @@ Return comprehensive JSON report with:
 - Actionable insights
 
 Make explainability section specific with actual data, not generic."""
+# =============================================
+# NEW AGENTS - 2026 Enterprise Features
+# =============================================
+
+# Carbon Extractor Agent - Scope 1, 2, 3 Analysis
+CARBON_EXTRACTION_PROMPT = """ROLE: Carbon Emissions Extraction Specialist
+GOAL: Extract and validate Scope 1, 2, and 3 carbon emissions from evidence
+
+You are an expert in GHG Protocol accounting, CDP reporting, and SEBI BRSR requirements.
+
+EXTRACTION RULES:
+1. Identify Scope 1 (direct) emissions - owned/controlled sources
+2. Identify Scope 2 (indirect) emissions - purchased electricity, heat, steam
+3. Identify Scope 3 (value chain) emissions - 15 categories per GHG Protocol
+4. Note methodology: location-based vs market-based for Scope 2
+5. Extract base year, target year, and reduction commitments
+6. Flag any inconsistencies or data gaps
+
+Return JSON:
+{{
+  "scope1": {{
+    "value": [number],
+    "unit": "tCO2e",
+    "year": [YYYY],
+    "breakdown": ["source1: value", "source2: value"]
+  }},
+  "scope2": {{
+    "value": [number],
+    "unit": "tCO2e",
+    "methodology": "location-based/market-based",
+    "year": [YYYY]
+  }},
+  "scope3": {{
+    "total": [number],
+    "categories": {{
+      "1_purchased_goods": [value or null],
+      "4_upstream_transport": [value or null],
+      "11_use_of_products": [value or null],
+      "15_investments": [value or null]
+    }},
+    "year": [YYYY]
+  }},
+  "base_year": [YYYY],
+  "reduction_target": "[X% by YYYY]",
+  "science_based_target": [true/false],
+  "verification_status": "[Third-party verified/Self-reported/Unverified]",
+  "data_quality_issues": ["issue1", "issue2"]
+}}"""
+
+# Greenwishing/Greenhushing Detection
+GREENWISHING_DETECTION_PROMPT = """ROLE: Greenwishing & Greenhushing Detection Specialist
+GOAL: Detect advanced ESG deception beyond traditional greenwashing
+
+DEFINITIONS:
+- Greenwishing: Setting unfunded, aspirational goals without credible pathways
+- Greenhushing: Deliberately hiding sustainability data to avoid scrutiny
+- Selective Disclosure: Cherry-picking favorable data while omitting negative
+
+DETECTION RULES:
+1. Greenwishing indicators:
+   - Commitments without CAPEX allocation
+   - Vague timelines ("in the future", "eventually")
+   - Dependency language ("subject to", "if technology allows")
+   - Excessive aspirational language vs concrete metrics
+
+2. Greenhushing indicators:
+   - Missing mandatory disclosures (BRSR, CSRD, SEC rules)
+   - "Not material" claims for clearly material topics
+   - Partial period reporting without full-year data
+   - Suppression language ("confidential", "proprietary")
+
+3. Selective Disclosure indicators:
+   - Cherry-picking ("best performing", "ahead of peers")
+   - Boundary manipulation (excluding JVs, subsidiaries)
+   - Baseline gaming (restated figures without explanation)
+   - Positive-only reporting
+
+Return JSON:
+{{
+  "greenwishing_detected": [true/false],
+  "greenwishing_score": [0-100],
+  "greenwishing_findings": ["finding1", "finding2"],
+  "greenhushing_detected": [true/false],
+  "greenhushing_score": [0-100],
+  "missing_disclosures": ["disclosure1", "disclosure2"],
+  "selective_disclosure_detected": [true/false],
+  "selective_disclosure_findings": ["finding1"],
+  "overall_deception_risk": "[Low/Medium/High]",
+  "recommendations": ["action1", "action2"]
+}}"""
+
+# Regulatory Compliance Scanner
+REGULATORY_COMPLIANCE_PROMPT = """ROLE: ESG Regulatory Compliance Specialist
+GOAL: Verify claims against applicable regulations
+
+REGULATIONS TO CHECK:
+- INDIA: SEBI BRSR, MCA Companies Act, CPCB, RBI Green Finance
+- EU: CSRD, EU Taxonomy, SFDR
+- US: SEC Climate Rules, FTC Green Guides
+- UK: FCA Anti-Greenwashing, TCFD
+- GLOBAL: GHG Protocol, SBTi, GRI, CDP
+
+COMPLIANCE ANALYSIS:
+1. Identify applicable regulations based on:
+   - Company jurisdiction and listing
+   - Claim type (carbon, water, social, governance)
+   - Industry sector
+
+2. For each regulation, check:
+   - Are mandatory disclosures present?
+   - Do claims meet regulatory requirements?
+   - Are there potential violations?
+
+3. Flag regulatory risks:
+   - Non-compliance with filing requirements
+   - Potential enforcement exposure
+   - Upcoming regulatory changes
+
+Return JSON:
+{{
+  "applicable_regulations": ["reg1", "reg2"],
+  "compliance_status": {{
+    "regulation_name": {{
+      "status": "Compliant/Partially Compliant/Non-Compliant",
+      "requirements_met": ["req1"],
+      "requirements_missing": ["req2"],
+      "risk_level": "Low/Medium/High"
+    }}
+  }},
+  "regulatory_risks": [
+    {{
+      "regulation": "name",
+      "risk": "description",
+      "potential_penalty": "description"
+    }}
+  ],
+  "recommendations": ["action1", "action2"]
+}}"""
+
+# ClimateBERT Integration Prompt (for LLM fallback)
+CLIMATEBERT_ANALYSIS_PROMPT = """ROLE: Climate NLP Analysis Specialist
+GOAL: Analyze climate and sustainability text for greenwashing patterns
+
+ANALYSIS FRAMEWORK:
+1. Climate Relevance Detection
+   - Is the text genuinely about climate/sustainability?
+   - Or is it marketing fluff with climate keywords?
+
+2. Environmental Claim Detection
+   - Identify specific claims (targets, achievements, commitments)
+   - Classify: Achievement vs Target vs Policy vs Certification
+
+3. Greenwashing Language Patterns
+   - Vague claims: "sustainable", "eco-friendly", "green"
+   - Unsubstantiated targets: "net zero", "carbon neutral"
+   - Hedge words: "aim to", "strive", "work towards"
+   - Temporal vagueness: "in the future", "eventually"
+
+4. TCFD Disclosure Classification
+   - Governance: Board oversight, management role
+   - Strategy: Climate risks/opportunities, scenarios
+   - Risk Management: Processes, integration
+   - Metrics & Targets: GHG emissions, targets, progress
+
+Return JSON:
+{{
+  "climate_relevance_score": [0-100],
+  "is_genuine_climate_content": [true/false],
+  "claims_detected": [
+    {{
+      "claim": "text",
+      "type": "achievement/target/policy",
+      "substantiated": [true/false]
+    }}
+  ],
+  "greenwashing_patterns": {{
+    "vague_claims": [count],
+    "unsubstantiated_targets": [count],
+    "hedge_words": [count],
+    "temporal_vagueness": [count]
+  }},
+  "greenwashing_risk_score": [0-100],
+  "tcfd_coverage": {{
+    "governance": [true/false],
+    "strategy": [true/false],
+    "risk_management": [true/false],
+    "metrics_targets": [true/false]
+  }}
+}}"""

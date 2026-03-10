@@ -96,16 +96,26 @@ class FinancialAnalyst:
         print(f"Claim: {claim[:80]}...")
         
         if not YFINANCE_AVAILABLE:
+            print(f"❌ yfinance not installed - install with: pip install yfinance")
             return {
                 "financial_data_available": False,
                 "error": "yfinance not installed",
                 "greenwashing_flags": []
             }
         
+        # TEST MODE: Override with Microsoft for testing
+        original_company = company
+        test_mode = False
+        if company.lower() in ["test", "microsoft"]:
+            print(f"\n🧪 TEST MODE: Testing with Microsoft first...")
+            company = "Microsoft"
+            test_mode = True
+        
         # Step 1: Get stock ticker
         ticker_symbol = self._get_ticker(company)
         if not ticker_symbol:
             print(f"❌ Could not find stock ticker for {company}")
+            print(f"   Try adding to symbol_map or using exact ticker (e.g., MSFT)")
             return {
                 "financial_data_available": False,
                 "error": "Ticker not found",
@@ -114,12 +124,21 @@ class FinancialAnalyst:
         
         print(f"📈 Found ticker: {ticker_symbol}")
         
-        # Step 2: Fetch financial data
+        # Step 2: Fetch financial data (with extensive debug logging)
         print(f"⏳ Fetching financial data from Yahoo Finance...")
         financial_data = self._fetch_financial_data(ticker_symbol)
         
         if not financial_data.get("data_available"):
+            print(f"\n❌ FINAL FAILURE: Both Yahoo Finance and Alpha Vantage failed")
+            print(f"   Error: {financial_data.get('error', 'Unknown')}")
             return financial_data
+        
+        print(f"\n✅ Financial data fetch SUCCESSFUL")
+        print(f"   Source: {financial_data.get('data_source', 'Yahoo Finance')}")
+        
+        # Restore original company name
+        if test_mode:
+            company = original_company
         
         # Step 3: Calculate ESG-financial metrics
         print(f"\n📊 Calculating ESG-financial metrics...")
@@ -201,20 +220,51 @@ class FinancialAnalyst:
         return None
     
     def _fetch_financial_data(self, ticker_symbol: str) -> Dict[str, Any]:
-        """Fetch financial data from Yahoo Finance"""
+        """Fetch financial data from Yahoo Finance with debug logging"""
+        
+        print(f"\n{'='*60}")
+        print(f"🔍 DEBUG: Financial Data Fetch")
+        print(f"{'='*60}")
+        print(f"📌 Ticker Symbol: {ticker_symbol}")
         
         try:
+            # Step 1: Yahoo Finance (Primary)
+            print(f"\n[1] Attempting Yahoo Finance API for {ticker_symbol}...")
             ticker = yf.Ticker(ticker_symbol)
             info = ticker.info
+            
+            print(f"✅ Yahoo Finance Response Status: SUCCESS")
+            print(f"📊 Info Keys Available: {len(info)} keys")
+            print(f"📊 Key Fields Present: {list(info.keys())[:10]}...")
+            
+            # Debug revenue extraction
+            revenue_raw = info.get("totalRevenue", 0)
+            market_cap_raw = info.get("marketCap", 0)
+            
+            print(f"\n💰 Raw Financial Data:")
+            print(f"   Total Revenue (raw): {revenue_raw}")
+            print(f"   Market Cap (raw): {market_cap_raw}")
+            print(f"   Profit Margin (raw): {info.get('profitMargins', 'N/A')}")
+            print(f"   Sector: {info.get('sector', 'Unknown')}")
+            
+            if revenue_raw == 0 or revenue_raw is None:
+                print(f"\n⚠️ WARNING: Revenue is 0 or None")
+                revenue_keys = [k for k in info.keys() if 'revenue' in k.lower()]
+                print(f"   Available revenue keys: {revenue_keys}")
             
             # Get quarterly financials
             quarterly_financials = ticker.quarterly_financials
             quarterly_balance = ticker.quarterly_balance_sheet
             
+            print(f"\n📈 Quarterly Data:")
+            print(f"   Financials Shape: {quarterly_financials.shape if quarterly_financials is not None and hasattr(quarterly_financials, 'shape') else 'None'}")
+            print(f"   Balance Sheet Shape: {quarterly_balance.shape if quarterly_balance is not None and hasattr(quarterly_balance, 'shape') else 'None'}")
+            
             # Extract key metrics
             data = {
                 "data_available": True,
                 "ticker": ticker_symbol,
+                "data_source": "Yahoo Finance",
                 
                 # Core financials
                 "market_cap": info.get("marketCap", 0),
@@ -252,16 +302,158 @@ class FinancialAnalyst:
             if data["total_equity"] > 0:
                 data["debt_to_equity"] = data["total_debt"] / data["total_equity"]
             
-            print(f"   ✅ Fetched data:")
-            print(f"      Revenue (TTM): ${data['revenue_ttm']:,.0f}")
-            print(f"      Profit Margin: {data['profit_margin']:.1f}%")
-            print(f"      Debt/Equity: {data['debt_to_equity']:.2f}")
-            print(f"      Beta: {data['beta']:.2f}")
+            print(f"\n✅ Yahoo Finance Data Extraction Summary:")
+            print(f"   Revenue (TTM): ${data['revenue_ttm']:,.0f}")
+            print(f"   Profit Margin: {data['profit_margin']:.1f}%")
+            print(f"   Debt/Equity: {data['debt_to_equity']:.2f}")
+            print(f"   Beta: {data['beta']:.2f}")
+            
+            # Check if data is valid
+            if data['revenue_ttm'] == 0 or data['revenue_ttm'] is None:
+                print(f"\n❌ Financial data extraction FAILED - Revenue is 0")
+                print(f"   Reason: Yahoo Finance returned no revenue data")
+                print(f"   Available info dump (revenue-related): {json.dumps({k: v for k, v in info.items() if 'revenue' in k.lower() or 'total' in k.lower()}, indent=2, default=str)}")
+                
+                # Try Alpha Vantage fallback
+                print(f"\n[2] Falling back to Alpha Vantage API...")
+                alpha_data = self._fetch_alpha_vantage_fallback(ticker_symbol)
+                if alpha_data.get("data_available"):
+                    return alpha_data
             
             return data
             
         except Exception as e:
-            print(f"   ❌ Error fetching data: {e}")
+            print(f"\n❌ Yahoo Finance Error: {e}")
+            import traceback
+            print(f"   Traceback: {traceback.format_exc()}")
+            
+            # Try Alpha Vantage fallback
+            print(f"\n[2] Falling back to Alpha Vantage API...")
+            return self._fetch_alpha_vantage_fallback(ticker_symbol)
+    
+    def _fetch_alpha_vantage_fallback(self, ticker_symbol: str) -> Dict[str, Any]:
+        """
+        Fallback to Alpha Vantage API if Yahoo Finance fails
+        """
+        import os
+        import requests
+        
+        api_key = os.getenv("ALPHA_VANTAGE_KEY", "")
+        
+        print(f"\n{'='*60}")
+        print(f"🔍 DEBUG: Alpha Vantage Fallback")
+        print(f"{'='*60}")
+        print(f"📌 Ticker Symbol: {ticker_symbol}")
+        
+        if not api_key:
+            print(f"❌ Alpha Vantage Key: NOT SET")
+            return {
+                "data_available": False,
+                "error": "Alpha Vantage API key not configured",
+                "ticker": ticker_symbol
+            }
+        
+        print(f"✅ Alpha Vantage Key: {api_key[:5]}... (length: {len(api_key)})")
+        
+        try:
+            # Function 1: Company Overview (includes revenue, profit margin, etc.)
+            print(f"\n[Alpha Vantage] Attempting Company Overview...")
+            url = f"https://www.alphavantage.co/query?function=OVERVIEW&symbol={ticker_symbol}&apikey={api_key}"
+            
+            response = requests.get(url, timeout=15)
+            print(f"✅ API Response Status: {response.status_code}")
+            
+            if response.status_code != 200:
+                print(f"❌ HTTP Error: {response.status_code}")
+                return {"data_available": False, "error": f"HTTP {response.status_code}"}
+            
+            data_json = response.json()
+            print(f"📊 API Response Body (first 500 chars):")
+            print(f"   {json.dumps(data_json, indent=2)[:500]}...")
+            
+            # Check for API limit error
+            if "Note" in data_json or "Error Message" in data_json:
+                print(f"❌ API Error: {data_json}")
+                return {"data_available": False, "error": "Alpha Vantage rate limit or error"}
+            
+            # Extract revenue
+            revenue_str = data_json.get("RevenueTTM", "0")
+            revenue_value = float(revenue_str) if revenue_str and revenue_str != "None" else 0
+            
+            print(f"\n💰 Extracted Financial Data:")
+            print(f"   Revenue (TTM): ${revenue_value:,.0f}")
+            print(f"   Profit Margin: {data_json.get('ProfitMargin', 'N/A')}")
+            print(f"   Market Cap: {data_json.get('MarketCapitalization', 'N/A')}")
+            print(f"   Sector: {data_json.get('Sector', 'Unknown')}")
+            
+            if revenue_value == 0 or revenue_value is None:
+                print(f"\n❌ Financial data extraction FAILED - check API response format")
+                print(f"   All available keys: {list(data_json.keys())}")
+                return {"data_available": False, "error": "No revenue data in Alpha Vantage response"}
+            
+            # Build data structure
+            profit_margin_str = data_json.get("ProfitMargin", "0")
+            profit_margin = float(profit_margin_str) * 100 if profit_margin_str and profit_margin_str != "None" else 0
+            
+            operating_margin_str = data_json.get("OperatingMarginTTM", "0")
+            operating_margin = float(operating_margin_str) * 100 if operating_margin_str and operating_margin_str != "None" else 0
+            
+            revenue_growth_str = data_json.get("QuarterlyRevenueGrowthYOY", "0")
+            revenue_growth = float(revenue_growth_str) * 100 if revenue_growth_str and revenue_growth_str != "None" else 0
+            
+            earnings_growth_str = data_json.get("QuarterlyEarningsGrowthYOY", "0")
+            earnings_growth = float(earnings_growth_str) * 100 if earnings_growth_str and earnings_growth_str != "None" else 0
+            
+            beta_str = data_json.get("Beta", "1.0")
+            beta = float(beta_str) if beta_str and beta_str != "None" else 1.0
+            
+            market_cap_str = data_json.get("MarketCapitalization", "0")
+            market_cap = float(market_cap_str) if market_cap_str and market_cap_str != "None" else 0
+            
+            data = {
+                "data_available": True,
+                "ticker": ticker_symbol,
+                "data_source": "Alpha Vantage (fallback)",
+                
+                # Core financials
+                "market_cap": market_cap,
+                "revenue_ttm": revenue_value,
+                "profit_margin": profit_margin,
+                "operating_margin": operating_margin,
+                
+                # Balance sheet (not available in overview)
+                "total_debt": 0,
+                "total_equity": 0,
+                "debt_to_equity": 0,
+                "current_ratio": 0,
+                
+                # Growth
+                "revenue_growth": revenue_growth,
+                "earnings_growth": earnings_growth,
+                "beta": beta,
+                
+                # ESG (not available in Alpha Vantage)
+                "esg_scores": {},
+                "environment_score": None,
+                "social_score": None,
+                "governance_score": None,
+                
+                # Industry
+                "sector": data_json.get("Sector", "Unknown"),
+                "industry": data_json.get("Industry", "Unknown"),
+                
+                "quarterly_revenue_trend": [],
+                "quarterly_earnings_trend": []
+            }
+            
+            print(f"\n✅ Alpha Vantage Data Extraction SUCCESS")
+            return data
+            
+        except Exception as e:
+            print(f"\n❌ Alpha Vantage Error: {e}")
+            import traceback
+            print(f"   Traceback: {traceback.format_exc()}")
+            
             return {
                 "data_available": False,
                 "error": str(e),

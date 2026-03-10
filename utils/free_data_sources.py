@@ -159,13 +159,47 @@ class FreeDataAggregator:
         # ========================================
         results['historical'].extend(self._fetch_wayback_machine(company, None, max_per_source))
         
+        # ========================================
+        # INDIAN SOURCES (NEW) - 8+ sources
+        # ========================================
+        results = self._fetch_indian_sources(company, results, max_per_source)
+        
         # Count totals
         total = sum(len(v) for v in results.values())
-        print(f"✅ Fetched {total} results from 14 working sources\n")
+        print(f"✅ Fetched {total} results from 22+ working sources\n")
         
         # Generate and save source usage report
         source_tracker.save_report(company)
         source_tracker.print_summary()
+        
+        return results
+    
+    def _fetch_indian_sources(self, company: str, results: Dict, 
+                              max_per_source: int = 5) -> Dict:
+        """
+        Integrate Indian data sources for comprehensive coverage
+        """
+        try:
+            from utils.indian_data_sources import indian_data_aggregator
+            
+            print("\n🇮🇳 Fetching Indian sources...")
+            indian_results = indian_data_aggregator.fetch_all_indian_sources(company, max_per_source)
+            
+            # Merge Indian results
+            for category, items in indian_results.items():
+                if category in results:
+                    results[category].extend(items)
+                else:
+                    results[category] = items
+            
+            # Count Indian sources
+            indian_total = sum(len(v) for v in indian_results.values())
+            print(f"   ✅ Added {indian_total} results from Indian sources")
+            
+        except ImportError:
+            print("   ℹ️ Indian data sources not available")
+        except Exception as e:
+            print(f"   ⚠️ Indian sources error: {str(e)[:50]}")
         
         return results
     

@@ -82,6 +82,13 @@ class ESGGreenwashingDetectorLangGraph:
             "needs_revision": False,
             "financial_context": None,  # From Financial Analyst (Agent #14)
             "ml_prediction": None,  # From XGBoost risk model
+            "indian_financials": None,  # From IndianFinancialData
+            "company_reports": None,  # From CompanyReportFetcher
+            "carbon_extraction": None,  # Scope 1/2/3 carbon analysis
+            "greenwishing_analysis": None,  # NEW: Greenwishing/greenhushing detection
+            "regulatory_compliance": None,  # NEW: Regulatory horizon scanning
+            "climatebert_analysis": None,  # NEW: ClimateBERT NLP analysis
+            "explainability_report": None,  # NEW: SHAP/LIME explanations
             "final_verdict": {},
             "report": ""
         }
@@ -418,6 +425,10 @@ def run_esg_analysis(company: str, claim: str, industry: str) -> dict:
         "workflow_path": "standard_track",
         "needs_revision": False,
         "iteration_count": 0,
+        "financial_context": None,
+        "ml_prediction": None,
+        "indian_financials": None,  # NEW: From IndianFinancialData
+        "company_reports": None,  # NEW: From CompanyReportFetcher
         "final_verdict": {},
         "report": ""
     }

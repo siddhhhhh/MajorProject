@@ -71,6 +71,41 @@ class RiskScorer:
         else:
             print(f"ℹ️  Anomaly detector not available - skipping anomaly detection")
     
+    @staticmethod
+    def esg_score_to_rating(esg_score: float) -> tuple:
+        """
+        Convert ESG score (0-100) to MSCI-style rating and risk level
+        
+        Args:
+            esg_score: Overall ESG score from 0-100
+            
+        Returns:
+            tuple: (rating_grade, risk_level)
+            
+        Rating Scale (MSCI-style):
+            AAA: 90-100  (ESG Leaders)
+            AA:  85-89   (ESG Leaders)
+            A:   75-84   (Above Average)
+            BBB: 60-74   (Average)
+            BB:  50-59   (Below Average)
+            B:   35-49   (Laggards)
+            CCC: 0-34    (Laggards)
+        """
+        if esg_score >= 90:
+            return ('AAA', 'LOW')
+        elif esg_score >= 85:
+            return ('AA', 'LOW')
+        elif esg_score >= 75:
+            return ('A', 'LOW')
+        elif esg_score >= 60:
+            return ('BBB', 'MODERATE')
+        elif esg_score >= 50:
+            return ('BB', 'MODERATE')
+        elif esg_score >= 35:
+            return ('B', 'HIGH')
+        else:
+            return ('CCC', 'HIGH')
+    
     def _load_config(self) -> Dict:
         """Load industry configuration from external JSON file"""
         config_path = "config/industry_baselines.json"
@@ -280,7 +315,9 @@ class RiskScorer:
     
     def calculate_final_score(self, company: str, all_analyses: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Calculate final ESG score with ML + formula-based hybrid approach
+        Calculate final ESG score with PILLAR-PRIMARY approach
+        ESG pillar scores are the PRIMARY rating source (MSCI-aligned)
+        ML is used only for refinement in MODERATE range (50-74 ESG)
         """
         
         print(f"\n{'='*60}")
@@ -288,13 +325,73 @@ class RiskScorer:
         print(f"{'='*60}")
         print(f"Company: {company}")
         
-        # Step 1: Get ML prediction (if available)
+        # Step 0: Calculate ESG pillar scores FIRST (PRIMARY rating source)
+        pillar_scores = self.calculate_pillar_scores(all_analyses)
+        overall_esg_score = pillar_scores.get("overall_esg_score", 50)
+        
+        print(f"\n📊 ESG Pillar Scores Calculated:")
+        print(f"   Environmental: {pillar_scores['environmental_score']}/100")
+        print(f"   Social: {pillar_scores['social_score']}/100")
+        print(f"   Governance: {pillar_scores['governance_score']}/100")
+        print(f"   Overall ESG: {overall_esg_score}/100")
+        
+        # Step 0.5: Convert ESG score to MSCI-style rating (PRIMARY METHOD)
+        rating_grade, risk_level = self.esg_score_to_rating(overall_esg_score)
+        greenwashing_risk = 100 - overall_esg_score
+        
+        print(f"\n⭐ MSCI-Style Rating from ESG Score:")
+        print(f"   ESG Score: {overall_esg_score}/100")
+        print(f"   Rating Grade: {rating_grade}")
+        print(f"   Risk Level: {risk_level}")
+        print(f"   Greenwashing Risk: {greenwashing_risk:.1f}/100")
+        
+        # Track rating methodology
+        override_ml = False
+        risk_source = "ESG Pillar Score (MSCI-Aligned)"
+        confidence = 0.85
+        
+        # Step 1: Check for ESG Leaders (≥75) - bypass ML entirely
+        if overall_esg_score >= 85:
+            print(f"\n✅ ESG LEADER STATUS (AA/AAA) - ML Bypassed")
+            print(f"   Overall ESG: {overall_esg_score}/100")
+            print(f"   Rating: {rating_grade} (Best-in-class ESG performance)")
+            
+            override_ml = True
+            confidence = 0.90
+            risk_source = "ESG Pillar Override (ESG Leader)"
+            
+        elif overall_esg_score >= 75:
+            print(f"\n✅ STRONG ESG PERFORMANCE (A Rating) - ML Bypassed")
+            print(f"   Overall ESG: {overall_esg_score}/100")
+            print(f"   Rating: {rating_grade} (Above-average performance)")
+            
+            override_ml = True
+            confidence = 0.88
+            risk_source = "ESG Pillar Override (Strong Performance)"
+        
+        elif overall_esg_score < 50:
+            print(f"\n⚠️ ESG LAGGARD (B/CCC Rating) - ML Bypassed")
+            print(f"   Overall ESG: {overall_esg_score}/100")
+            print(f"   Rating: {rating_grade} (Significant ESG concerns)")
+            
+            override_ml = True
+            confidence = 0.85
+            risk_source = "ESG Pillar Score (Laggard)"
+        
+        # Step 2: Get ML prediction (ONLY for MODERATE range: 50-74 ESG)
         ml_prediction = None
         ml_confidence = 0.0
         use_ml_prediction = False
         
-        if self.use_ml:
-            print(f"\n🤖 Running ML prediction...")
+        if not override_ml and self.use_ml and 50 <= overall_esg_score < 75:
+            print(f"\n🤖 Running ML prediction for MODERATE range refinement...")
+            print(f"   ESG Score: {overall_esg_score}/100 (50-74 range)")
+            print(f"   Purpose: Refine BBB/BB rating boundary")
+            
+            # CRITICAL FIX: Inject pillar scores into all_analyses for XGBoost
+            all_analyses['pillar_scores'] = pillar_scores
+            print(f"   Pillar scores injected for ML feature extraction")
+            
             ml_result = self.ml_model.predict(all_analyses)
             
             if ml_result.get('ml_available'):
@@ -307,15 +404,31 @@ class RiskScorer:
                       f"MODERATE={ml_result['probabilities']['MODERATE']:.2%}, "
                       f"HIGH={ml_result['probabilities']['HIGH']:.2%}")
                 
-                # Use ML if confidence is high
+                # Use ML to refine rating ONLY in moderate range with high confidence
                 if ml_confidence >= 0.80:
                     use_ml_prediction = True
-                    print(f"   ✅ Using ML prediction (confidence ≥ 80%)")
+                    print(f"   ✅ Using ML to refine BBB/BB boundary (confidence ≥ 80%)")
+                    
+                    # ML can adjust rating within MODERATE range
+                    if ml_prediction == "LOW" and overall_esg_score >= 60:
+                        rating_grade = "BBB"
+                        risk_level = "MODERATE"
+                        greenwashing_risk = 35
+                        print(f"   ML refinement: Upgraded to BBB (low-moderate risk)")
+                    elif ml_prediction == "HIGH" and overall_esg_score < 60:
+                        rating_grade = "BB"
+                        risk_level = "MODERATE"
+                        greenwashing_risk = 55
+                        print(f"   ML refinement: Maintained BB (high-moderate risk)")
+                    # else keep pillar-based rating
+                    
+                    risk_source = "ESG Pillar + ML Refinement"
+                    confidence = (0.85 + ml_confidence) / 2
                 else:
-                    print(f"   ⚠️ ML confidence too low, using formula-based scoring")
+                    print(f"   ⚠️ ML confidence too low, using pillar-based rating")
         
-        # Step 2: Formula-based scoring (always calculate for comparison)
-        print(f"\n📐 Running formula-based scoring...")
+        # Step 3: Formula-based components (for explainability ONLY)
+        print(f"\n📐 Calculating formula components for explainability...")
         
         industry = self._identify_industry(company, all_analyses)
         industry_data = self.industry_baseline_risk.get(industry, self.industry_baseline_risk.get('unknown'))
@@ -346,9 +459,57 @@ class RiskScorer:
         final_risk = adjusted_risk + peer_modifier + debate_penalty
         greenwashing_risk_formula = max(0, min(100, final_risk))
         
+        print(f"   Formula Risk: {greenwashing_risk_formula:.1f}/100 (for component analysis)")
+        print(f"   Industry: {industry.replace('_', ' ').title()}")
+        print(f"   Industry Baseline: {industry_baseline}/100")
+        # Step 4: DOMAIN KNOWLEDGE OVERRIDES (highest priority)
+        # CRITICAL: Industry-specific greenwashing patterns override pillar scores
+        high_carbon_greenwashing_flag = False
+        
+        # Extract claim text for greenwashing check
+        claim_text = ""
+        if isinstance(all_analyses.get("claim"), dict):
+            claim_text = all_analyses["claim"].get("claim_text", "").lower()
+        elif isinstance(all_analyses.get("claim"), str):
+            claim_text = all_analyses["claim"].lower()
+        
+        # Define green keywords
+        green_keywords = ["renewable", "green", "carbon neutral", "net zero", "sustainable"]
+        has_green_claim = any(keyword in claim_text for keyword in green_keywords)
+        
+        # Calculate evidence quality score from components
+        evidence_quality_score = 100 - components.get('evidence_quality', 50)
+        
+        print(f'\n🔍 DOMAIN KNOWLEDGE CHECK:')
+        print(f'  Industry: {industry}')
+        print(f'  Green claim: {has_green_claim}')
+        print(f'  ESG Score: {overall_esg_score}/100')
+        
+        # CRITICAL: High-carbon sector greenwashing check
+        if industry == "oil_and_gas" and has_green_claim:
+            print(f"\n🔴 HIGH-CARBON SECTOR GREENWASHING CHECK")
+            print(f"   Industry: Oil & Gas")
+            print(f"   Green keywords: {[kw for kw in green_keywords if kw in claim_text]}")
+            print(f"   ESG Score: {overall_esg_score}/100")
+            
+            # Override rating if ESG score is LOW/MODERATE with green claims
+            if overall_esg_score < 60:
+                print(f"   🚨 DOMAIN OVERRIDE: Low ESG + Green Claims = Greenwashing")
+                
+                rating_grade = "BB"
+                risk_level = "HIGH"
+                greenwashing_risk = max(greenwashing_risk, 70)
+                high_carbon_greenwashing_flag = True
+                override_ml = True
+                risk_source = "Domain Knowledge Override (Oil & Gas Greenwashing)"
+                confidence = 0.92
+                
+                print(f"   Assigned Rating: {rating_grade} (forced HIGH risk)")
+        
+        # OLD HYBRID LOGIC (now deprecated - kept for reference)
         # Step 3: Hybrid decision with DOMAIN KNOWLEDGE PRIORITY
         # CRITICAL: Industry penalties and greenwashing flags MUST override ML predictions
-        if use_ml_prediction:
+        if False and not override_ml and use_ml_prediction:
             # Check if domain knowledge should override ML
             # Priority 1: Formula indicates HIGH risk (≥70) - ALWAYS override
             # Priority 2: High ML confidence (≥85%) - Use ML
@@ -389,24 +550,13 @@ class RiskScorer:
                 print(f"   ML Prediction: {ml_prediction} ({ml_risk_score}/100)")
                 print(f"   Formula Score: {greenwashing_risk_formula:.1f}/100")
                 print(f"   Weighted Average: {greenwashing_risk:.1f}/100")
-        else:
-            # Use formula-based scoring
-            greenwashing_risk = greenwashing_risk_formula
-            risk_source = "Formula-based"
-            
-            print(f"\n📐 USING FORMULA-BASED SCORING")
-            print(f"   Base Risk: {base_risk:.1f}/100")
-            print(f"   Industry Adj: {industry_adjustment:+.1f}")
-            print(f"   Industry Multiplier: ×{industry_multiplier}")
-            print(f"   Peer Adj: {peer_modifier:+.1f}")
-            print(f"   Final Risk: {greenwashing_risk:.1f}/100")
         
-        # Step 4: LightGBM ESG Score Prediction (if available)
+        # Step 5: LightGBM ESG Score Prediction (validation only)
         esg_prediction = None
-        formula_esg_score = 100 - greenwashing_risk
+        formula_esg_score = overall_esg_score
         
         if self.use_esg_predictor:
-            print(f"\n🔮 Running LightGBM ESG Score Prediction...")
+            print(f"\n🔮 Running LightGBM ESG Score Validation...")
             company_data = self._extract_esg_features(all_analyses)
             
             if company_data:
@@ -416,19 +566,18 @@ class RiskScorer:
                     predicted_esg = esg_pred_result['predicted_esg']
                     esg_prediction = esg_pred_result
                     
-                    print(f"   Formula-derived ESG: {formula_esg_score:.1f}/100")
-                    print(f"   LightGBM-predicted ESG: {predicted_esg:.1f}/100")
+                    print(f"   Pillar ESG: {formula_esg_score:.1f}/100")
+                    print(f"   LightGBM ESG: {predicted_esg:.1f}/100")
                     print(f"   Prediction Range: {esg_pred_result['prediction_range']}")
-                    print(f"   Model R²: {esg_pred_result['confidence_r2']:.3f}")
                     
-                    # Cross-validate: flag large discrepancies
+                    # Flag large discrepancies
                     discrepancy = abs(formula_esg_score - predicted_esg)
                     if discrepancy > 20:
                         print(f"   ⚠️ Large discrepancy ({discrepancy:.1f} points) - manual review recommended")
                     else:
                         print(f"   ✅ Scores aligned (discrepancy: {discrepancy:.1f} points)")
         
-        # Step 4.5: LSTM Trend Prediction
+        # Step 6: LSTM Trend Prediction (context only)
         lstm_trend = None
         if self.use_lstm:
             print(f"\n🔮 Running LSTM Trend Forecast...")
@@ -451,7 +600,7 @@ class RiskScorer:
                     greenwashing_risk = max(0, greenwashing_risk - 5)
                     print(f"   ✅ Improving ESG trend - risk reduced by 5 points")
         
-        # Step 4B: Anomaly Detection
+        # Step 7: Anomaly Detection (flagging only)
         anomaly_result = None
         if self.use_anomaly_detector:
             print(f"\n🔍 Running Anomaly Detection...")
@@ -468,127 +617,110 @@ class RiskScorer:
                     
                     print(f"   Anomaly Detected: {'YES' if is_anomaly else 'NO'}")
                     print(f"   Severity: {severity}")
-                    print(f"   Anomaly Score: {anomaly_result['anomaly_score']:.4f}")
                     
-                    # Adjust risk if anomaly detected
                     if is_anomaly:
-                        risk_increase = {'Low': 5, 'Moderate': 10, 'High': 15}[severity]
-                        greenwashing_risk += risk_increase
-                        greenwashing_risk = min(100, greenwashing_risk)
-                        print(f"   ⚠️ Anomaly detected - risk increased by {risk_increase} points")
-                        
-                        # Show top anomalous features
-                        if anomaly_result.get('anomalous_features'):
-                            print(f"   Top anomalous metrics:")
-                            for feat in anomaly_result['anomalous_features'][:3]:
-                                print(f"      • {feat['feature']}: {feat['value']:.6f} (z-score: {feat['z_score']})")
+                        print(f"   ⚠️ Anomaly flagged for review (does not alter rating)")
         
-        # Step 4C: Special greenwashing flag for high-carbon sectors with green claims
-        high_carbon_greenwashing_flag = False
+        # Step 8: Final ESG score determination
+        esg_score = overall_esg_score
         
-        # Extract claim text for greenwashing check
-        claim_text = ""
-        if isinstance(all_analyses.get("claim"), dict):
-            claim_text = all_analyses["claim"].get("claim_text", "").lower()
-        elif isinstance(all_analyses.get("claim"), str):
-            claim_text = all_analyses["claim"].lower()
+        # OLD GREENWASHING CHECK (now handled in Step 4)
+        # Step 4C: Special greenwashing flag for high-carbon sectors with green claims (skip if overridden)
+        # high_carbon_greenwashing_flag = False
         
-        # Define green keywords
-        green_keywords = ["renewable", "green", "carbon neutral", "net zero"]
-        has_green_claim = any(keyword in claim_text for keyword in green_keywords)
+        if False and not override_ml:
+            # Extract claim text for greenwashing check
+            claim_text = ""
+            if isinstance(all_analyses.get("claim"), dict):
+                claim_text = all_analyses["claim"].get("claim_text", "").lower()
+            elif isinstance(all_analyses.get("claim"), str):
+                claim_text = all_analyses["claim"].lower()
         
-        # Calculate evidence quality score from components
-        evidence_quality_score = 100 - components.get('evidence_quality', 50)
-        
-        # DEBUG: Print greenwashing check details
-        print(f'\n🔍 GREENWASHING CHECK DEBUG:')
-        print(f'  Industry detected: {industry}')
-        print(f'  Claim text: {claim_text[:100] if claim_text else "(no claim)"}')
-        print(f'  Green keywords found: {[kw for kw in green_keywords if kw in claim_text]}')
-        print(f'  Evidence quality score: {evidence_quality_score}')
-        print(f'  Has green claim: {has_green_claim}')
-        print(f'  Meets all conditions (industry=oil_and_gas AND green_claim AND evidence<90): {industry == "oil_and_gas" and has_green_claim and evidence_quality_score < 90}')
-        
-        if industry == "oil_and_gas" and has_green_claim:
-            # FIXED: Counterintuitive greenwashing pattern - MORE evidence can mean HIGHER risk
-            # Oil & Gas companies extensively document their "transitions" - this is sophisticated greenwashing
+            # Define green keywords
+            green_keywords = ["renewable", "green", "carbon neutral", "net zero"]
+            has_green_claim = any(keyword in claim_text for keyword in green_keywords)
             
-            if evidence_quality_score < 70:
-                # Low evidence quality - standard greenwashing (no documentation)
-                print(f"\n🔴 HIGH-CARBON SECTOR GREENWASHING FLAG TRIGGERED")
-                print(f"   Industry: {industry.replace('_', ' ').title()}")
-                print(f"   Green keywords detected: {[kw for kw in green_keywords if kw in claim_text]}")
-                print(f"   Evidence quality: {evidence_quality_score}/100 (Low evidence)")
-                print(f"   ESCALATING TO HIGH RISK")
-                
-                greenwashing_risk = max(greenwashing_risk, 70)  # Force minimum HIGH risk
-                high_carbon_greenwashing_flag = True
-                risk_source = "Domain Knowledge Override (Greenwashing Flag)"
-                
-            elif evidence_quality_score >= 70 and evidence_quality_score < 90:
-                # Moderate-high evidence quality - PARADOX: well-documented transition claims
-                print(f"\n⚠️ HIGH-QUALITY GREENWASHING EVIDENCE DETECTED (PARADOX)")
-                print(f"   Industry: Oil & Gas")
-                print(f"   Green keywords: {[kw for kw in green_keywords if kw in claim_text]}")
-                print(f"   Evidence quality: {evidence_quality_score}/100 (Well-documented)")
-                print(f"   PATTERN: Extensive documentation of transition = sophisticated greenwashing")
-                print(f"   APPLYING MODERATE PENALTY")
-                
-                greenwashing_risk = max(greenwashing_risk, 65)  # Moderate penalty
-                if "Override" not in risk_source:
-                    risk_source = "Domain Knowledge Override (Paradox Pattern)"
-                
-            elif evidence_quality_score >= 90:
-                # Extensive evidence quality - RED FLAG: over-documentation of green claims
-                print(f"\n🔴 EXTENSIVE GREENWASHING DOCUMENTATION DETECTED")
-                print(f"   Industry: Oil & Gas")
-                print(f"   Green keywords: {[kw for kw in green_keywords if kw in claim_text]}")
-                print(f"   Evidence quality: {evidence_quality_score}/100 (Extensively documented)")
-                print(f"   PATTERN: Over-documentation = Classic greenwashing tactic")
-                print(f"   APPLYING HIGH PENALTY - ESCALATING TO HIGH RISK")
-                
-                greenwashing_risk = max(greenwashing_risk, 72)  # High penalty
-                high_carbon_greenwashing_flag = True
-                risk_source = "Domain Knowledge Override (Over-documentation)"
+            # Calculate evidence quality score from components
+            evidence_quality_score = 100 - components.get('evidence_quality', 50)
         
-        # FINAL OVERRIDE CHECK: If greenwashing flag is set, ensure HIGH risk
-        if high_carbon_greenwashing_flag:
-            if greenwashing_risk < 70:
-                print(f"\n🔴 FINAL OVERRIDE: Greenwashing flag forcing HIGH risk")
-                print(f"   Previous score: {greenwashing_risk:.1f}/100")
-                print(f"   Adjusted score: 70/100 (HIGH threshold)")
-                greenwashing_risk = 70
+            # DEBUG: Print greenwashing check details
+            print(f'\n🔍 GREENWASHING CHECK DEBUG:')
+            print(f'  Industry detected: {industry}')
+            print(f'  Claim text: {claim_text[:100] if claim_text else "(no claim)"}')
+            print(f'  Green keywords found: {[kw for kw in green_keywords if kw in claim_text]}')
+            print(f'  Evidence quality score: {evidence_quality_score}')
+            print(f'  Has green claim: {has_green_claim}')
+            print(f'  Meets all conditions (industry=oil_and_gas AND green_claim AND evidence<90): {industry == "oil_and_gas" and has_green_claim and evidence_quality_score < 90}')
+            
+            if industry == "oil_and_gas" and has_green_claim:
+                # FIXED: Counterintuitive greenwashing pattern - MORE evidence can mean HIGHER risk
+                # Oil & Gas companies extensively document their "transitions" - this is sophisticated greenwashing
+                
+                if evidence_quality_score < 70:
+                    # Low evidence quality - standard greenwashing (no documentation)
+                    print(f"\n🔴 HIGH-CARBON SECTOR GREENWASHING FLAG TRIGGERED")
+                    print(f"   Industry: {industry.replace('_', ' ').title()}")
+                    print(f"   Green keywords detected: {[kw for kw in green_keywords if kw in claim_text]}")
+                    print(f"   Evidence quality: {evidence_quality_score}/100 (Low evidence)")
+                    print(f"   ESCALATING TO HIGH RISK")
+                    
+                    greenwashing_risk = max(greenwashing_risk, 70)  # Force minimum HIGH risk
+                    high_carbon_greenwashing_flag = True
+                    risk_source = "Domain Knowledge Override (Greenwashing Flag)"
+                    
+                elif evidence_quality_score >= 70 and evidence_quality_score < 90:
+                    # Moderate-high evidence quality - PARADOX: well-documented transition claims
+                    print(f"\n⚠️ HIGH-QUALITY GREENWASHING EVIDENCE DETECTED (PARADOX)")
+                    print(f"   Industry: Oil & Gas")
+                    print(f"   Green keywords: {[kw for kw in green_keywords if kw in claim_text]}")
+                    print(f"   Evidence quality: {evidence_quality_score}/100 (Well-documented)")
+                    print(f"   PATTERN: Extensive documentation of transition = sophisticated greenwashing")
+                    print(f"   APPLYING MODERATE PENALTY")
+                    
+                    greenwashing_risk = max(greenwashing_risk, 65)  # Moderate penalty
+                    if "Override" not in risk_source:
+                        risk_source = "Domain Knowledge Override (Paradox Pattern)"
+                    
+                elif evidence_quality_score >= 90:
+                    # Extensive evidence quality - RED FLAG: over-documentation of green claims
+                    print(f"\n🔴 EXTENSIVE GREENWASHING DOCUMENTATION DETECTED")
+                    print(f"   Industry: Oil & Gas")
+                    print(f"   Green keywords: {[kw for kw in green_keywords if kw in claim_text]}")
+                    print(f"   Evidence quality: {evidence_quality_score}/100 (Extensively documented)")
+                    print(f"   PATTERN: Over-documentation = Classic greenwashing tactic")
+                    print(f"   APPLYING HIGH PENALTY - ESCALATING TO HIGH RISK")
+                    
+                    greenwashing_risk = max(greenwashing_risk, 72)  # High penalty
+                    high_carbon_greenwashing_flag = True
+                    risk_source = "Domain Knowledge Override (Over-documentation)"
+            
+            # FINAL OVERRIDE CHECK: If greenwashing flag is set, ensure HIGH risk
+            if high_carbon_greenwashing_flag:
+                if greenwashing_risk < 70:
+                    print(f"\n🔴 FINAL OVERRIDE: Greenwashing flag forcing HIGH risk")
+                    print(f"   Previous score: {greenwashing_risk:.1f}/100")
+                    print(f"   Adjusted score: 70/100 (HIGH threshold)")
+                    greenwashing_risk = 70
         
-        # Step 5: Determine risk level
-        esg_score = formula_esg_score  # Use formula-derived ESG for risk level
-        risk_level, rating_grade = self._determine_risk_level(
-            greenwashing_risk, 
-            industry_baseline
-        )
-        
-        # Apply greenwashing flag override for rating
-        if high_carbon_greenwashing_flag:
-            risk_level = "HIGH"
-            if rating_grade in ["BBB", "A", "AA", "AAA"]:
-                rating_grade = "BB"
-                print(f"   Rating downgraded to {rating_grade} due to greenwashing flag")
-        
-        # Step 5: Calculate ESG pillar scores
-        pillar_scores = self.calculate_pillar_scores(all_analyses)
-        
-        # Step 6: Generate insights
+        # Step 9: Generate insights
         top_reasons = self._generate_top_reasons(
-            components, all_analyses, industry, greenwashing_risk
+            components, 
+            all_analyses, 
+            industry, 
+            greenwashing_risk
         )
         
         insights = self._generate_insights(
-            greenwashing_risk, risk_level, industry, company
+            greenwashing_risk, 
+            risk_level, 
+            industry, 
+            company
         )
         
         result = {
             "company": company,
             "analysis_timestamp": datetime.now().isoformat(),
-            "risk_source": risk_source,  # NEW: Indicates ML or formula
+            "risk_source": risk_source,
             "industry": industry,
             "industry_baseline_risk": industry_baseline,
             "industry_source": industry_data.get('source', 'Unknown'),
@@ -600,20 +732,22 @@ class RiskScorer:
             "risk_level": risk_level,
             "rating_grade": rating_grade,
             "component_scores": components,
-            "pillar_scores": pillar_scores,  # NEW: Add pillar scores
+            "pillar_scores": pillar_scores,
             "explainability_top_3_reasons": top_reasons,
             "actionable_insights": insights,
-            "confidence_level": 85,
-            "high_carbon_greenwashing_flag": high_carbon_greenwashing_flag  # NEW: Flag for domain knowledge lock
+            "confidence_level": round(confidence * 100, 1),
+            "high_carbon_greenwashing_flag": high_carbon_greenwashing_flag,
+            "esg_override_active": override_ml
         }
         
         # Add ML details if available
-        if ml_prediction:
+        if ml_prediction and use_ml_prediction:
             result["ml_prediction"] = {
                 "prediction": ml_prediction,
                 "confidence": ml_confidence,
                 "probabilities": ml_result.get('probabilities', {}),
-                "used_for_final": use_ml_prediction
+                "used_for_final": use_ml_prediction,
+                "role": "Rating refinement in MODERATE range (50-74 ESG)"
             }
         
         # Add LightGBM ESG prediction if available
@@ -622,9 +756,10 @@ class RiskScorer:
                 "predicted_esg": esg_prediction['predicted_esg'],
                 "confidence_r2": esg_prediction['confidence_r2'],
                 "prediction_range": esg_prediction['prediction_range'],
-                "formula_esg": formula_esg_score,
+                "pillar_esg": formula_esg_score,
                 "discrepancy": abs(formula_esg_score - esg_prediction['predicted_esg']),
-                "model_type": esg_prediction['model_type']
+                "model_type": esg_prediction['model_type'],
+                "role": "Validation only (does not affect rating)"
             }
         
         # Add LSTM trend prediction if available
@@ -634,7 +769,8 @@ class RiskScorer:
                 "trend": lstm_trend['trend'],
                 "change_pct": lstm_trend['change_pct'],
                 "confidence_mae": lstm_trend['confidence_mae'],
-                "model_type": lstm_trend['model_type']
+                "model_type": lstm_trend['model_type'],
+                "role": "Context only (does not affect rating)"
             }
         
         # Add anomaly detection result if available
@@ -645,13 +781,42 @@ class RiskScorer:
                 "anomaly_score": anomaly_result['anomaly_score'],
                 "confidence": anomaly_result['confidence'],
                 "anomalous_features": anomaly_result.get('anomalous_features', []),
-                "model_type": "Isolation Forest"
+                "model_type": "Isolation Forest",
+                "role": "Flagging only (does not affect rating)"
             }
         
         print(f"\n✅ Final Risk Assessment:")
         print(f"   Greenwashing Risk: {greenwashing_risk:.1f}/100 ({risk_source})")
         print(f"   ESG Score: {esg_score:.1f}/100 (Grade: {rating_grade})")
         print(f"   Risk Level: {risk_level}")
+        print(f"   Methodology: {'ESG Pillar Primary' if not use_ml_prediction else 'Pillar + ML Refinement'}")
+        
+        print(f"\n📊 ESG Pillar Breakdown:")
+        print(f"   Environmental: {pillar_scores['environmental_score']}/100 (35% weight)")
+        print(f"   Social: {pillar_scores['social_score']}/100 (30% weight)")
+        print(f"   Governance: {pillar_scores['governance_score']}/100 (35% weight)")
+        print(f"   Overall ESG: {pillar_scores['overall_esg_score']}/100")
+        
+        if ml_prediction:
+            print(f"\n🤖 XGBoost Risk Model:")
+            print(f"   Prediction: {ml_prediction}")
+            print(f"   Used: {'YES (refinement)' if use_ml_prediction else 'NO (pillar scores primary)'}")
+        
+        if esg_prediction:
+            print(f"\n🔮 LightGBM ESG Validator:")
+            print(f"   Predicted ESG: {esg_prediction['predicted_esg']:.1f}/100")
+            print(f"   Purpose: Validation check")
+        
+        if lstm_trend:
+            print(f"\n🔮 LSTM Trend Forecaster:")
+            print(f"   Trend: {lstm_trend['trend']}")
+            print(f"   Purpose: Contextual insight")
+        
+        if anomaly_result and anomaly_result.get('is_anomaly'):
+            print(f"\n⚠️  Anomaly Detector:")
+            print(f"   Status: ANOMALY DETECTED")
+            print(f"   Severity: {anomaly_result['severity']}")
+            print(f"   Purpose: Flagging for review")
         
         print(f"\n📊 ESG Pillar Breakdown:")
         print(f"   Environmental: {pillar_scores['environmental_score']}/100 (35% weight)")
@@ -912,30 +1077,13 @@ Industry:"""
     
     def _determine_risk_level(self, risk_score: float, industry_baseline: float) -> tuple:
         """
-        Determine risk level with industry-adjusted thresholds
-        Maps: risk >= 70 → BB/B (HIGH), 50-69 → BBB (MODERATE), < 50 → A/AA/AAA (LOW)
+        DEPRECATED: Use esg_score_to_rating() instead
+        This method kept for backward compatibility
+        Converts risk score to ESG score and uses MSCI-aligned rating
         """
-        
-        # Determine level based on standardized thresholds
-        if risk_score >= 70:
-            risk_level = "HIGH"
-            if risk_score >= 80:
-                rating_grade = "B"
-            else:
-                rating_grade = "BB"
-        elif risk_score >= 50:
-            risk_level = "MODERATE"
-            rating_grade = "BBB"
-        else:
-            risk_level = "LOW"
-            if risk_score <= 20:
-                rating_grade = "AAA"
-            elif risk_score <= 35:
-                rating_grade = "AA"
-            else:
-                rating_grade = "A"
-        
-        return risk_level, rating_grade
+        # Convert risk to ESG score
+        esg_score = 100 - risk_score
+        return self.esg_score_to_rating(esg_score)
     
     def _generate_top_reasons(self, components: Dict, analyses: Dict, 
                              industry: str, risk_score: float) -> List[str]:

@@ -36,6 +36,71 @@ class Settings(BaseModel):
         "contradiction_severity": 0.10
     }
     
+    # =============================================
+    # NEW: Regional Configuration (India-focused)
+    # =============================================
+    DEFAULT_JURISDICTION: str = os.getenv("DEFAULT_JURISDICTION", "India")
+    
+    # Indian regulatory settings
+    SEBI_BRSR_ENABLED: bool = True
+    MCA_COMPLIANCE_ENABLED: bool = True
+    CPCB_MONITORING_ENABLED: bool = True
+    
+    # Indian news sources
+    INDIAN_NEWS_SOURCES: list = [
+        "economic_times",
+        "business_standard", 
+        "livemint",
+        "moneycontrol",
+        "hindu_business"
+    ]
+    
+    # Indian grid emission factor (tCO2/MWh) - CEA 2025
+    INDIA_GRID_EMISSION_FACTOR: float = 0.71
+    
+    # =============================================
+    # NEW: ClimateBERT Configuration
+    # =============================================
+    CLIMATEBERT_ENABLED: bool = os.getenv("CLIMATEBERT_ENABLED", "true").lower() == "true"
+    CLIMATEBERT_USE_GPU: bool = os.getenv("CLIMATEBERT_USE_GPU", "false").lower() == "true"
+    
+    # =============================================
+    # NEW: Explainability Configuration
+    # =============================================
+    SHAP_ENABLED: bool = os.getenv("SHAP_ENABLED", "true").lower() == "true"
+    LIME_ENABLED: bool = os.getenv("LIME_ENABLED", "true").lower() == "true"
+    EXPLAINABILITY_TOP_FEATURES: int = 5
+    
+    # =============================================
+    # NEW: Carbon Accounting Configuration
+    # =============================================
+    CARBON_SCOPES_ENABLED: list = ["scope1", "scope2", "scope3"]
+    GHG_PROTOCOL_VERSION: str = "2024"
+    CDP_INTEGRATION_ENABLED: bool = True
+    SBTI_VALIDATION_ENABLED: bool = True
+    
+    # =============================================
+    # NEW: Regulatory Scanner Configuration
+    # =============================================
+    REGULATORY_FRAMEWORKS: list = [
+        # Indian
+        "SEBI_BRSR",
+        "MCA_COMPANIES_ACT",
+        "CPCB_EPA",
+        "RBI_GREEN_FINANCE",
+        "INDIA_BEE_PAT",
+        # Global
+        "GHG_PROTOCOL",
+        "SBTI",
+        "GRI_STANDARDS",
+        "CDP",
+        # International
+        "EU_CSRD",
+        "EU_TAXONOMY",
+        "SEC_CLIMATE",
+        "UK_FCA_ANTIGREENWASHING"
+    ]
+    
     class Config:
         env_file = ".env"
 

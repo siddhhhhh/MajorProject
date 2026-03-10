@@ -182,6 +182,49 @@ except ImportError as e:
     print(f"⚠️  ConflictResolver import failed: {e}")
     CONFLICT_RESOLVER_AVAILABLE = False
 
+try:
+    from carbon_extractor import CarbonExtractor
+    print("✅ CarbonExtractor loaded")
+    CARBON_EXTRACTOR_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️  CarbonExtractor import failed: {e}")
+    CARBON_EXTRACTOR_AVAILABLE = False
+
+try:
+    from greenwishing_detector import GreenwishingDetector
+    print("✅ GreenwishingDetector loaded")
+    GREENWISHING_DETECTOR_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️  GreenwishingDetector import failed: {e}")
+    GREENWISHING_DETECTOR_AVAILABLE = False
+
+try:
+    from regulatory_scanner import RegulatoryHorizonScanner
+    print("✅ RegulatoryHorizonScanner loaded")
+    REGULATORY_SCANNER_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️  RegulatoryHorizonScanner import failed: {e}")
+    REGULATORY_SCANNER_AVAILABLE = False
+
+try:
+    import sys
+    ml_models_path = Path(__file__).parent.parent / "ml_models"
+    sys.path.insert(0, str(ml_models_path))
+    from climatebert_analyzer import ClimateBERTAnalyzer
+    print("✅ ClimateBERTAnalyzer loaded")
+    CLIMATEBERT_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️  ClimateBERTAnalyzer import failed: {e}")
+    CLIMATEBERT_AVAILABLE = False
+
+try:
+    from explainability_engine import ESGExplainabilityEngine
+    print("✅ ESGExplainabilityEngine loaded")
+    EXPLAINABILITY_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️  ESGExplainabilityEngine import failed: {e}")
+    EXPLAINABILITY_AVAILABLE = False
+
 # ============================================================
 # LIVE NODE WRAPPERS WITH PROGRESS TRACKING
 # ============================================================
@@ -312,6 +355,13 @@ def evidence_retrieval_node(state: ESGState) -> ESGState:
         
         state["evidence"].extend(evidence_list)
         
+        # NEW: Store enrichment data at state level for report access
+        if isinstance(result, dict):
+            if result.get("indian_financials"):
+                state["indian_financials"] = result["indian_financials"]
+            if result.get("company_reports"):
+                state["company_reports"] = result["company_reports"]
+        
         state["agent_outputs"].append({
             "agent": "evidence_retrieval",
             "output": result,
@@ -330,6 +380,471 @@ def evidence_retrieval_node(state: ESGState) -> ESGState:
         traceback.print_exc()
         state["agent_outputs"].append({
             "agent": "evidence_retrieval",
+            "error": str(e),
+            "confidence": 0.3
+        })
+    
+    return state
+
+
+def carbon_extraction_node(state: ESGState) -> ESGState:
+    """
+    LIVE: CarbonExtractor - Extracts Scope 1/2/3 carbon emissions from evidence
+    Analyzes carbon claims and calculates emission metrics
+    """
+    print(f"\n{'🟢 LANGGRAPH NODE EXECUTING':=^70}")
+    print(f"Node: carbon_extraction (Scope 1/2/3 Analysis)")
+    print(f"Timestamp: {datetime.now().strftime('%H:%M:%S')}")
+    print("="*70)
+    
+    if not CARBON_EXTRACTOR_AVAILABLE:
+        print("⚠️ CarbonExtractor not available - skipping")
+        state["agent_outputs"].append({
+            "agent": "carbon_extraction",
+            "output": "Agent not available",
+            "confidence": 0.5
+        })
+        return state
+    
+    try:
+        extractor = CarbonExtractor()
+        
+        company = state.get("company", "")
+        claim_text = state.get("claim", "")
+        industry = state.get("industry", "")
+        evidence = state.get("evidence", [])
+        
+        print(f"🌍 Extracting carbon metrics for: {company}")
+        print(f"🏭 Industry: {industry}")
+        print(f"📊 Evidence items to analyze: {len(evidence)}")
+        
+        # Create claim dict for carbon extractor
+        claim_dict = {
+            "claim_id": "C1",
+            "claim_text": claim_text,
+            "category": "carbon"
+        }
+        
+        # Extract carbon data from evidence
+        result = extractor.extract_carbon_data(
+            company=company,
+            evidence=evidence,
+            claim=claim_dict
+        )
+        
+        if isinstance(result, dict):
+            # Store carbon extraction results in state
+            state["carbon_extraction"] = result
+            
+            # Display results
+            scope1 = result.get("scope_1", {})
+            scope2 = result.get("scope_2", {})
+            scope3 = result.get("scope_3", {})
+            
+            print(f"\n📊 CARBON EXTRACTION RESULTS:")
+            print(f"   Scope 1 (Direct): {scope1.get('emissions_tco2e', 'N/A')} tCO2e")
+            print(f"   Scope 2 (Energy): {scope2.get('emissions_tco2e', 'N/A')} tCO2e")
+            print(f"   Scope 3 (Value Chain): {scope3.get('emissions_tco2e', 'N/A')} tCO2e")
+            print(f"   Total: {result.get('total_emissions_tco2e', 'N/A')} tCO2e")
+            print(f"   Carbon Intensity: {result.get('carbon_intensity', 'N/A')}")
+            print(f"   Net Zero Target: {result.get('net_zero_target', 'N/A')}")
+            print(f"   Data Quality: {result.get('data_quality', 'N/A')}")
+            
+            confidence = result.get("confidence", 0.7)
+        else:
+            confidence = 0.5
+        
+        state["agent_outputs"].append({
+            "agent": "carbon_extraction",
+            "output": result,
+            "confidence": confidence,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        print(f"{'✅ NODE COMPLETED':^70}")
+        
+    except Exception as e:
+        print(f"❌ CarbonExtractor error: {e}")
+        import traceback
+        traceback.print_exc()
+        state["agent_outputs"].append({
+            "agent": "carbon_extraction",
+            "error": str(e),
+            "confidence": 0.3
+        })
+    
+    return state
+
+
+def greenwishing_detection_node(state: ESGState) -> ESGState:
+    """
+    LIVE: GreenwishingDetector - Detects greenwishing, greenhushing, selective disclosure
+    """
+    print(f"\n{'🟢 LANGGRAPH NODE EXECUTING':=^70}")
+    print(f"Node: greenwishing_detection")
+    print(f"Timestamp: {datetime.now().strftime('%H:%M:%S')}")
+    print("="*70)
+    
+    if not GREENWISHING_DETECTOR_AVAILABLE:
+        print("⚠️ GreenwishingDetector not available - skipping")
+        state["agent_outputs"].append({
+            "agent": "greenwishing_detection",
+            "output": "Agent not available",
+            "confidence": 0.5
+        })
+        return state
+    
+    try:
+        detector = GreenwishingDetector()
+        
+        company = state.get("company", "")
+        claim_text = state.get("claim", "")
+        evidence = state.get("evidence", [])
+        
+        print(f"🎯 Detecting greenwishing/greenhushing for: {company}")
+        
+        claim_dict = {
+            "claim_id": "C1",
+            "claim_text": claim_text,
+            "category": "sustainability"
+        }
+        
+        result = detector.detect_deception_tactics(
+            company=company,
+            claim=claim_dict,
+            evidence=evidence
+        )
+        
+        if isinstance(result, dict):
+            state["greenwishing_analysis"] = result
+            
+            deception_risk = result.get("overall_deception_risk", {})
+            print(f"\n🎭 DECEPTION DETECTION RESULTS:")
+            print(f"   Greenwishing Risk: {result.get('greenwishing', {}).get('risk_level', 'N/A')}")
+            print(f"   Greenhushing Risk: {result.get('greenhushing', {}).get('risk_level', 'N/A')}")
+            print(f"   Selective Disclosure: {result.get('selective_disclosure', {}).get('detected', 'N/A')}")
+            print(f"   Overall Deception Score: {deception_risk.get('score', 'N/A')}/100")
+            
+            confidence = result.get("confidence", 0.75)
+        else:
+            confidence = 0.5
+        
+        state["agent_outputs"].append({
+            "agent": "greenwishing_detection",
+            "output": result,
+            "confidence": confidence,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        print(f"{'✅ NODE COMPLETED':^70}")
+        
+    except Exception as e:
+        print(f"❌ GreenwishingDetector error: {e}")
+        import traceback
+        traceback.print_exc()
+        state["agent_outputs"].append({
+            "agent": "greenwishing_detection",
+            "error": str(e),
+            "confidence": 0.3
+        })
+    
+    return state
+
+
+def regulatory_scanning_node(state: ESGState) -> ESGState:
+    """
+    LIVE: RegulatoryHorizonScanner - Scans against SEBI BRSR, CSRD, SEC, etc.
+    """
+    print(f"\n{'🟢 LANGGRAPH NODE EXECUTING':=^70}")
+    print(f"Node: regulatory_scanning")
+    print(f"Timestamp: {datetime.now().strftime('%H:%M:%S')}")
+    print("="*70)
+    
+    if not REGULATORY_SCANNER_AVAILABLE:
+        print("⚠️ RegulatoryHorizonScanner not available - skipping")
+        state["agent_outputs"].append({
+            "agent": "regulatory_scanning",
+            "output": "Agent not available",
+            "confidence": 0.5
+        })
+        return state
+    
+    try:
+        scanner = RegulatoryHorizonScanner()
+        
+        company = state.get("company", "")
+        claim_text = state.get("claim", "")
+        evidence = state.get("evidence", [])
+        industry = state.get("industry", "")
+        
+        print(f"⚖️ Scanning regulatory compliance for: {company}")
+        
+        claim_dict = {
+            "claim_id": "C1",
+            "claim_text": claim_text,
+            "category": "sustainability"
+        }
+        
+        # Determine jurisdiction based on company (Indian companies get India focus)
+        indian_companies = ["reliance", "tata", "infosys", "hdfc", "icici", "wipro", "bharti", 
+                          "bajaj", "mahindra", "adani", "larsen", "maruti", "asian paints"]
+        jurisdiction = "India" if any(c in company.lower() for c in indian_companies) else "Global"
+        
+        result = scanner.scan_regulatory_compliance(
+            company=company,
+            claim=claim_dict,
+            evidence=evidence,
+            jurisdiction=jurisdiction
+        )
+        
+        if isinstance(result, dict):
+            state["regulatory_compliance"] = result
+            
+            print(f"\n⚖️ REGULATORY COMPLIANCE RESULTS:")
+            print(f"   Jurisdiction: {result.get('jurisdiction', 'N/A')}")
+            print(f"   Applicable Regulations: {len(result.get('applicable_regulations', []))}")
+            print(f"   Compliance Score: {result.get('compliance_score', 'N/A')}/100")
+            print(f"   Risk Level: {result.get('risk_level', 'N/A')}")
+            
+            # Show top regulations
+            for reg in result.get('applicable_regulations', [])[:3]:
+                print(f"   - {reg}")
+            
+            confidence = result.get("confidence", 0.8)
+        else:
+            confidence = 0.5
+        
+        state["agent_outputs"].append({
+            "agent": "regulatory_scanning",
+            "output": result,
+            "confidence": confidence,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        print(f"{'✅ NODE COMPLETED':^70}")
+        
+    except Exception as e:
+        print(f"❌ RegulatoryHorizonScanner error: {e}")
+        import traceback
+        traceback.print_exc()
+        state["agent_outputs"].append({
+            "agent": "regulatory_scanning",
+            "error": str(e),
+            "confidence": 0.3
+        })
+    
+    return state
+
+
+def climatebert_analysis_node(state: ESGState) -> ESGState:
+    """
+    LIVE: ClimateBERTAnalyzer - Transformer-based climate text analysis
+    """
+    print(f"\n{'🟢 LANGGRAPH NODE EXECUTING':=^70}")
+    print(f"Node: climatebert_analysis")
+    print(f"Timestamp: {datetime.now().strftime('%H:%M:%S')}")
+    print("="*70)
+    
+    if not CLIMATEBERT_AVAILABLE:
+        print("⚠️ ClimateBERTAnalyzer not available - skipping")
+        state["agent_outputs"].append({
+            "agent": "climatebert_analysis",
+            "output": "Agent not available",
+            "confidence": 0.5
+        })
+        return state
+    
+    try:
+        analyzer = ClimateBERTAnalyzer()
+        
+        claim_text = state.get("claim", "")
+        evidence = state.get("evidence", [])
+        
+        print(f"🤖 Running ClimateBERT NLP analysis...")
+        
+        # Extract evidence texts for comparison
+        evidence_texts = []
+        for ev in evidence[:10]:  # Limit to first 10
+            if isinstance(ev, dict):
+                text = ev.get("content", ev.get("text", ev.get("snippet", "")))
+                if text:
+                    evidence_texts.append(text[:500])
+        
+        result = analyzer.analyze_claim_for_greenwashing(
+            claim_text=claim_text,
+            evidence_texts=evidence_texts if evidence_texts else None
+        )
+        
+        if isinstance(result, dict):
+            state["climatebert_analysis"] = result
+            
+            claim_analysis = result.get("claim_analysis", {})
+            gw_detection = claim_analysis.get("greenwashing_detection", {})
+            
+            print(f"\n🧠 CLIMATEBERT ANALYSIS RESULTS:")
+            print(f"   Climate Relevance: {claim_analysis.get('climate_relevance', {}).get('score', 'N/A')}")
+            print(f"   Greenwashing Risk: {gw_detection.get('risk_score', 'N/A')}/100")
+            print(f"   Risk Level: {gw_detection.get('risk_level', 'N/A')}")
+            
+            # Show detected patterns
+            patterns = gw_detection.get("detected_patterns", [])
+            if patterns:
+                print(f"   Detected Patterns: {', '.join(patterns[:3])}")
+            
+            confidence = 0.85  # ClimateBERT is high confidence
+        else:
+            confidence = 0.5
+        
+        state["agent_outputs"].append({
+            "agent": "climatebert_analysis",
+            "output": result,
+            "confidence": confidence,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        print(f"{'✅ NODE COMPLETED':^70}")
+        
+    except Exception as e:
+        print(f"❌ ClimateBERTAnalyzer error: {e}")
+        import traceback
+        traceback.print_exc()
+        state["agent_outputs"].append({
+            "agent": "climatebert_analysis",
+            "error": str(e),
+            "confidence": 0.3
+        })
+    
+    return state
+
+
+def explainability_node(state: ESGState) -> ESGState:
+    """
+    LIVE: ESGExplainabilityEngine - SHAP/LIME explanations for ML predictions
+    Runs AFTER risk_scoring to explain the ML model's decision
+    """
+    print(f"\n{'🟢 LANGGRAPH NODE EXECUTING':=^70}")
+    print(f"Node: explainability (SHAP/LIME)")
+    print(f"Timestamp: {datetime.now().strftime('%H:%M:%S')}")
+    print("="*70)
+    
+    if not EXPLAINABILITY_AVAILABLE:
+        print("⚠️ ESGExplainabilityEngine not available - skipping")
+        state["agent_outputs"].append({
+            "agent": "explainability",
+            "output": "Agent not available",
+            "confidence": 0.5
+        })
+        return state
+    
+    try:
+        engine = ESGExplainabilityEngine()
+        
+        # Get ML prediction from risk scorer
+        ml_prediction = state.get("ml_prediction", {})
+        
+        print(f"📊 Generating SHAP/LIME explanations...")
+        
+        # If we have ML feature data, explain it
+        if ml_prediction and isinstance(ml_prediction, dict):
+            features = ml_prediction.get("features")
+            feature_names = ml_prediction.get("feature_names")
+            
+            if features is not None and feature_names:
+                import numpy as np
+                features_array = np.array(features).reshape(1, -1) if not isinstance(features, np.ndarray) else features
+                
+                # Generate SHAP explanation
+                result = engine.explain_xgboost_prediction(
+                    model=None,  # Will use fallback
+                    features=features_array,
+                    feature_names=feature_names
+                )
+            else:
+                # Generate mock explanation based on available data
+                result = {
+                    "method": "Heuristic",
+                    "top_factors": [
+                        {"feature": "esg_score", "impact": "high", "direction": "decreases risk"},
+                        {"feature": "environmental_score", "impact": "moderate", "direction": "decreases risk"},
+                        {"feature": "controversy_score", "impact": "low", "direction": "increases risk"}
+                    ],
+                    "human_readable_explanation": "Risk assessment based on ESG pillar scores and controversy indicators."
+                }
+        else:
+            # Generate basic explanation from agent outputs
+            risk_outputs = [o for o in state.get("agent_outputs", []) if o.get("agent") == "risk_scoring"]
+            
+            if risk_outputs:
+                risk_result = risk_outputs[-1].get("output", {})
+                pillar_scores = risk_result.get("pillar_scores", {})
+                
+                factors = []
+                if pillar_scores.get("environmental"):
+                    factors.append({
+                        "feature": "Environmental Score",
+                        "value": pillar_scores["environmental"],
+                        "impact": "high" if pillar_scores["environmental"] > 70 else "moderate",
+                        "direction": "decreases risk" if pillar_scores["environmental"] > 50 else "increases risk"
+                    })
+                if pillar_scores.get("social"):
+                    factors.append({
+                        "feature": "Social Score",
+                        "value": pillar_scores["social"],
+                        "impact": "moderate",
+                        "direction": "decreases risk" if pillar_scores["social"] > 50 else "increases risk"
+                    })
+                if pillar_scores.get("governance"):
+                    factors.append({
+                        "feature": "Governance Score",
+                        "value": pillar_scores["governance"],
+                        "impact": "moderate",
+                        "direction": "decreases risk" if pillar_scores["governance"] > 50 else "increases risk"
+                    })
+                
+                result = {
+                    "method": "ESG Pillar Analysis",
+                    "top_factors": factors,
+                    "human_readable_explanation": f"Risk is primarily driven by Environmental ({pillar_scores.get('environmental', 'N/A')}), Social ({pillar_scores.get('social', 'N/A')}), and Governance ({pillar_scores.get('governance', 'N/A')}) scores."
+                }
+            else:
+                result = {
+                    "method": "Basic",
+                    "top_factors": [],
+                    "human_readable_explanation": "Unable to generate detailed explanation - ML prediction data not available."
+                }
+        
+        if isinstance(result, dict):
+            state["explainability_report"] = result
+            
+            print(f"\n📈 EXPLAINABILITY RESULTS:")
+            print(f"   Method: {result.get('method', 'N/A')}")
+            print(f"   Top Factors: {len(result.get('top_factors', []))}")
+            
+            for factor in result.get("top_factors", [])[:3]:
+                print(f"   - {factor.get('feature')}: {factor.get('impact')} impact, {factor.get('direction')}")
+            
+            if result.get("human_readable_explanation"):
+                print(f"\n   📝 {result['human_readable_explanation'][:100]}...")
+            
+            confidence = 0.8
+        else:
+            confidence = 0.5
+        
+        state["agent_outputs"].append({
+            "agent": "explainability",
+            "output": result,
+            "confidence": confidence,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        print(f"{'✅ NODE COMPLETED':^70}")
+        
+    except Exception as e:
+        print(f"❌ ESGExplainabilityEngine error: {e}")
+        import traceback
+        traceback.print_exc()
+        state["agent_outputs"].append({
+            "agent": "explainability",
             "error": str(e),
             "confidence": 0.3
         })
@@ -512,6 +1027,7 @@ def risk_scoring_node(state: ESGState) -> ESGState:
         print(f"⚖️ Calculating risk score for {state['industry']} industry...")
         if scorer.use_ml:
             print(f"🤖 ML model loaded - using hybrid ML + formula approach")
+            print(f"   NOTE: XGBoost now has visibility into ESG pillar scores")
         else:
             print(f"📐 Using formula-based scoring only")
         
@@ -539,6 +1055,7 @@ def risk_scoring_node(state: ESGState) -> ESGState:
             risk_source = result.get("risk_source", "Formula-based")
             high_carbon_flag = result.get("high_carbon_greenwashing_flag", False)
             pillar_scores = result.get("pillar_scores", {})
+            esg_override_active = result.get("esg_override_active", False)
             
             print(f"✅ Risk Level: {risk_level}")
             print(f"   Rating Grade: {rating_grade}")
@@ -552,14 +1069,20 @@ def risk_scoring_node(state: ESGState) -> ESGState:
                 print(f"      S: {pillar_scores.get('social_score', 0):.1f}/100")
                 print(f"      G: {pillar_scores.get('governance_score', 0):.1f}/100")
             
+            if esg_override_active:
+                print(f"   🔒 ESG PILLAR OVERRIDE ACTIVE (bypassed ML)")
+            
             if high_carbon_flag:
                 print(f"   🚨 High-Carbon Greenwashing Flag: ACTIVE")
             
             # Show ML contribution if available
-            if "ml_prediction" in result:
+            if "ml_prediction" in result and not esg_override_active:
                 ml_info = result["ml_prediction"]
                 print(f"   ML Prediction: {ml_info['prediction']} (confidence: {ml_info['confidence']:.1%})")
                 print(f"   ML Used: {'YES' if ml_info['used_for_final'] else 'NO'}")
+                print(f"   ML saw pillar scores: E={pillar_scores.get('environmental_score', 0):.0f}, "
+                      f"S={pillar_scores.get('social_score', 0):.0f}, "
+                      f"G={pillar_scores.get('governance_score', 0):.0f}")
         else:
             risk_level = "MODERATE"
             rating_grade = "BBB"
@@ -845,12 +1368,66 @@ def verdict_generation_node(state: ESGState) -> ESGState:
     print("="*70)
     
     # ============================================================
-    # CRITICAL: CHECK IF RISK SCORER LOCKED THE DECISION
+    # PRIORITY 0: CHECK FOR ESG PILLAR OVERRIDE (HIGHEST PRIORITY)
+    # ============================================================
+    risk_scorer_outputs = [o for o in state.get("agent_outputs", []) if o.get("agent") == "risk_scoring"]
+    
+    if risk_scorer_outputs:
+        risk_scorer_result = risk_scorer_outputs[-1].get("output", {})
+        esg_override_active = risk_scorer_result.get("esg_override_active", False)
+        
+        if esg_override_active:
+            print(f"\n✅ ESG PILLAR OVERRIDE DETECTED - Strong Performance")
+            print(f"   ESG Score: {risk_scorer_result.get('esg_score', 0)}/100")
+            print(f"   Rating: {risk_scorer_result.get('rating_grade', 'A')}")
+            print(f"   This override takes HIGHEST PRIORITY")
+            
+            # Lock the verdict to ESG pillar-based assessment
+            locked_risk_level = risk_scorer_result.get("risk_level", "LOW")
+            locked_rating = risk_scorer_result.get("rating_grade", "A")
+            locked_confidence = risk_scorer_result.get("confidence_level", 90) / 100
+            
+            state["risk_level"] = locked_risk_level
+            state["rating_grade"] = locked_rating
+            state["confidence"] = locked_confidence
+            state["verdict_locked"] = True
+            
+            verdict_data = {
+                "company": state["company"],
+                "claim": state["claim"],
+                "risk_level": locked_risk_level,
+                "rating_grade": locked_rating,
+                "final_confidence": locked_confidence,
+                "evidence_count": len(state["evidence"]),
+                "timestamp": datetime.now().isoformat(),
+                "locked_by": "esg_pillar_override",
+                "lock_reason": f"Strong ESG performance (ESG >= 75) - {risk_scorer_result.get('risk_source')}"
+            }
+            
+            state["agent_outputs"].append({
+                "agent": "verdict_generation",
+                "output": verdict_data,
+                "confidence": locked_confidence,
+                "timestamp": datetime.now().isoformat(),
+                "verdict_locked": True
+            })
+            
+            state["final_verdict"] = verdict_data
+            
+            print(f"\n🔒 VERDICT LOCKED BY ESG PILLAR OVERRIDE")
+            print(f"   Risk Level: {locked_risk_level}")
+            print(f"   Rating: {locked_rating}")
+            print(f"   Confidence: {locked_confidence:.1%}")
+            print(f"{'✅ NODE COMPLETED':^70}")
+            
+            return state
+    
+    # ============================================================
+    # PRIORITY 1: CHECK IF RISK SCORER LOCKED THE DECISION (Domain Knowledge)
     # ============================================================
     # If risk_scorer already determined HIGH risk for oil_and_gas greenwashing,
     # DO NOT override - this is domain knowledge that must be preserved
     
-    risk_scorer_outputs = [o for o in state.get("agent_outputs", []) if o.get("agent") == "risk_scoring"]
     if risk_scorer_outputs:
         risk_scorer_result = risk_scorer_outputs[-1].get("output", {})
         high_carbon_flag = risk_scorer_result.get("high_carbon_greenwashing_flag", False)

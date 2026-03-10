@@ -38,6 +38,17 @@ class ESGState(TypedDict):
     # ML model metadata
     ml_prediction: Optional[Dict[str, Any]]  # From XGBoost risk model
     
+    # NEW: Data Enrichment (2026 Features)
+    indian_financials: Optional[Dict[str, Any]]  # Revenue, profit from Screener/Yahoo/NSE
+    company_reports: Optional[Dict[str, Any]]  # PDF reports with extracted ESG metrics
+    carbon_extraction: Optional[Dict[str, Any]]  # Scope 1/2/3 carbon analysis
+    
+    # NEW: Advanced Detection (2026 Features)
+    greenwishing_analysis: Optional[Dict[str, Any]]  # Greenwishing/greenhushing detection
+    regulatory_compliance: Optional[Dict[str, Any]]  # Regulatory horizon scanning
+    climatebert_analysis: Optional[Dict[str, Any]]  # ClimateBERT NLP analysis  
+    explainability_report: Optional[Dict[str, Any]]  # SHAP/LIME explanations
+    
     # Final output
     final_verdict: Dict[str, Any]
     report: str

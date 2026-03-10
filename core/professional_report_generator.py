@@ -147,6 +147,7 @@ BB - CCC  : High Risk (Significant ESG concerns)
 
 {'='*80}
 {self._generate_quantitative_metrics_section(state)}
+{self._generate_data_enrichment_section(state)}
 {'='*80}
 KEY FINDINGS
 {'='*80}
@@ -750,10 +751,108 @@ KEY PERFORMANCE METRICS
 
 """
         
-        # === CARBON METRICS ===
-        has_carbon_data = False
+        # === CARBON EXTRACTION DATA (from CarbonExtractor agent) ===
+        carbon_data = state.get("carbon_extraction")
+        has_carbon_extraction = False
         
-        if financial_context and isinstance(financial_context, dict):
+        if carbon_data and isinstance(carbon_data, dict):
+            has_carbon_extraction = True
+            
+            section += "CARBON EMISSIONS (Scope 1/2/3 Analysis)\n"
+            section += f"{'─'*80}\n\n"
+            
+            # Get emissions data - support both formats
+            emissions = carbon_data.get("emissions", {})
+            scope1 = emissions.get("scope1", carbon_data.get("scope_1", {}))
+            scope2 = emissions.get("scope2", carbon_data.get("scope_2", {}))
+            scope3 = emissions.get("scope3", carbon_data.get("scope_3", {}))
+            
+            section += f"| {'Scope':<20} | {'Emissions (tCO2e)':<20} | {'Year':<10} | {'Source':<25} |\n"
+            section += f"|{'-'*22}|{'-'*22}|{'-'*12}|{'-'*27}|\n"
+            
+            # Scope 1 - Direct emissions
+            scope1_value = scope1.get("value") or scope1.get("emissions_tco2e")
+            scope1_year = scope1.get("year", "")
+            scope1_source = scope1.get("source", "BRSR/CDP")
+            if scope1_value is not None and scope1_value != "N/A":
+                section += f"| {'Scope 1 (Direct)':<20} | {scope1_value:>18,} | {str(scope1_year):<10} | {str(scope1_source)[:23]:<25} |\n"
+            else:
+                section += f"| {'Scope 1 (Direct)':<20} | {'Not disclosed':<20} | {'':<10} | {'':<25} |\n"
+            
+            # Scope 2 - Energy indirect
+            scope2_value = scope2.get("value") or scope2.get("emissions_tco2e")
+            scope2_year = scope2.get("year", "")
+            scope2_source = scope2.get("source", scope2.get("methodology", ""))
+            if scope2_value is not None and scope2_value != "N/A":
+                section += f"| {'Scope 2 (Energy)':<20} | {scope2_value:>18,} | {str(scope2_year):<10} | {str(scope2_source)[:23]:<25} |\n"
+            else:
+                section += f"| {'Scope 2 (Energy)':<20} | {'Not disclosed':<20} | {'':<10} | {'':<25} |\n"
+            
+            # Scope 3 - Value chain
+            scope3_value = scope3.get("total") or scope3.get("value") or scope3.get("emissions_tco2e")
+            scope3_year = scope3.get("year", "")
+            scope3_cats = scope3.get("categories", {})
+            scope3_source = f"{len(scope3_cats)} categories" if scope3_cats else "Value Chain"
+            if scope3_value is not None and scope3_value != "N/A":
+                section += f"| {'Scope 3 (Value Chain)':<20} | {scope3_value:>18,} | {str(scope3_year):<10} | {str(scope3_source)[:23]:<25} |\n"
+            else:
+                section += f"| {'Scope 3 (Value Chain)':<20} | {'Not disclosed':<20} | {'':<10} | {'':<25} |\n"
+            
+            section += "\n"
+            
+            # Total emissions and intensity
+            total_emissions = emissions.get("total") or carbon_data.get("total_emissions_tco2e")
+            # Handle if total_emissions is a dict (from _calculate_total)
+            if isinstance(total_emissions, dict):
+                total_emissions = total_emissions.get("all_scopes") or total_emissions.get("scope1_2") or total_emissions.get("value")
+            carbon_intensity = carbon_data.get("carbon_intensity") or carbon_data.get("intensity_metrics", {}).get("carbon_intensity")
+            if isinstance(carbon_intensity, dict):
+                carbon_intensity = carbon_intensity.get("value")
+            net_zero_target = carbon_data.get("net_zero_target")
+            renewable_pct = carbon_data.get("renewable_energy_percentage")
+            sbt = carbon_data.get("science_based_target")
+            verification = carbon_data.get("verification_status")
+            data_source = carbon_data.get("data_source")
+            data_quality = carbon_data.get("data_quality", {})
+            
+            # Display summary metrics
+            if total_emissions and isinstance(total_emissions, (int, float)):
+                section += f"Total Emissions: {int(total_emissions):,} tCO2e\n"
+            if carbon_intensity and isinstance(carbon_intensity, (int, float)):
+                section += f"Carbon Intensity: {carbon_intensity} tCO2e/unit\n"
+            elif carbon_intensity:
+                section += f"Carbon Intensity: {carbon_intensity}\n"
+            if net_zero_target:
+                section += f"Net Zero Target: {net_zero_target}\n"
+            if renewable_pct:
+                section += f"Renewable Energy: {renewable_pct}\n"
+            if sbt:
+                section += f"Science-Based Target: ✅ Yes (SBTi approved)\n"
+            if verification:
+                section += f"Verification: {verification}\n"
+            if data_source:
+                section += f"Data Source: {data_source}\n"
+            
+            # Data quality assessment
+            if isinstance(data_quality, dict):
+                quality_score = data_quality.get("overall_score", 0)
+                confidence = data_quality.get("data_confidence", "Unknown")
+                section += f"Data Quality Score: {quality_score}/100 ({confidence} confidence)\n"
+            else:
+                section += f"Data Quality: {data_quality}\n"
+            
+            section += "\n"
+            
+            # Grid emission factor used
+            grid_factor = carbon_data.get("grid_emission_factor")
+            country = carbon_data.get("country_detected", "Unknown")
+            if grid_factor:
+                section += f"Grid Emission Factor: {grid_factor} tCO2/MWh ({country})\n\n"
+        
+        # === CARBON METRICS (from Financial Analyst - fallback) ===
+        has_carbon_data = has_carbon_extraction
+        
+        if financial_context and isinstance(financial_context, dict) and not has_carbon_extraction:
             esg_metrics = financial_context.get("esg_financial_metrics", {})
             
             # Check for carbon intensity
@@ -943,6 +1042,364 @@ KEY PERFORMANCE METRICS
         }
         
         return json.dumps(export, indent=2)
+    
+    def _generate_data_enrichment_section(self, state: Dict[str, Any]) -> str:
+        """
+        Generate section showing results from NEW enterprise features:
+        - Indian Financial Data (revenue, profit, market cap)
+        - Company Reports (PDF extraction)
+        - Carbon Extractor (Scope 1/2/3)
+        - Greenwishing/Greenhushing Detection
+        - Regulatory Compliance Status
+        """
+        section = ""
+        has_data = False
+        
+        # Extract data from agent outputs
+        agent_outputs = state.get("agent_outputs", [])
+        evidence_output = None
+        
+        for output in agent_outputs:
+            if output.get("agent") == "evidence_retrieval":
+                evidence_output = output.get("output", {})
+                break
+        
+        # === INDIAN FINANCIAL DATA ===
+        indian_financials = {}
+        if evidence_output:
+            indian_financials = evidence_output.get("indian_financials", {})
+        
+        # Also check state directly
+        if not indian_financials:
+            indian_financials = state.get("indian_financials", {})
+        
+        if indian_financials and indian_financials.get("financials"):
+            has_data = True
+            fin = indian_financials.get("financials", {})
+            ratios = indian_financials.get("ratios", {})
+            sources = indian_financials.get("sources", [])
+            
+            section += f"""
+INDIAN COMPANY FINANCIALS (Live Data)
+{'─'*80}
+
+| {'Metric':<30} | {'Value':<25} | {'Source':<20} |
+|{'-'*32}|{'-'*27}|{'-'*22}|
+"""
+            if fin.get("revenue"):
+                section += f"| {'Revenue (Annual)':<30} | {'₹{:,.0f} Cr'.format(fin['revenue']):<25} | {'Screener/Yahoo':<20} |\n"
+            if fin.get("net_profit"):
+                section += f"| {'Net Profit (Annual)':<30} | {'₹{:,.0f} Cr'.format(fin['net_profit']):<25} | {'Screener/Yahoo':<20} |\n"
+            if fin.get("market_cap"):
+                section += f"| {'Market Cap':<30} | {'₹{:,.0f} Cr'.format(fin['market_cap']):<25} | {'NSE/Yahoo':<20} |\n"
+            if fin.get("current_price"):
+                section += f"| {'Current Price':<30} | {'₹{:,.2f}'.format(fin['current_price']):<25} | {'NSE India':<20} |\n"
+            if ratios.get("pe_ratio"):
+                section += f"| {'P/E Ratio':<30} | {'{:.2f}'.format(ratios['pe_ratio']):<25} | {'Screener':<20} |\n"
+            if ratios.get("roe"):
+                section += f"| {'Return on Equity (ROE)':<30} | {'{:.1f}%'.format(ratios['roe']*100 if ratios['roe'] < 1 else ratios['roe']):<25} | {'Screener':<20} |\n"
+            if ratios.get("roce"):
+                section += f"| {'Return on Capital (ROCE)':<30} | {'{:.1f}%'.format(ratios['roce']):<25} | {'Screener':<20} |\n"
+            
+            if sources:
+                section += f"\nData Sources: {', '.join(sources)}\n"
+            section += "\n"
+        
+        # === COMPANY REPORTS (PDF EXTRACTION) ===
+        company_reports = {}
+        if evidence_output:
+            company_reports = evidence_output.get("company_reports", {})
+        
+        if not company_reports:
+            company_reports = state.get("company_reports", {})
+        
+        if company_reports:
+            reports_found = company_reports.get("reports_found", [])
+            extracted_data = company_reports.get("extracted_data", {})
+            
+            if reports_found or extracted_data:
+                has_data = True
+                section += f"""
+OFFICIAL COMPANY REPORTS (PDF Extraction)
+{'─'*80}
+
+"""
+                if reports_found:
+                    section += "Reports Downloaded:\n"
+                    for i, report in enumerate(reports_found[:5], 1):
+                        rtype = report.get("type", "unknown").replace("_", " ").title()
+                        rtitle = report.get("title", "Unknown")[:50]
+                        pages = report.get("pages", "?")
+                        section += f"  {i}. [{rtype}] {rtitle}... ({pages} pages)\n"
+                    section += "\n"
+                
+                if extracted_data:
+                    section += "ESG Metrics Extracted from PDFs:\n"
+                    section += f"| {'Metric':<35} | {'Value':<30} |\n"
+                    section += f"|{'-'*37}|{'-'*32}|\n"
+                    
+                    # Carbon metrics
+                    if extracted_data.get("scope_1_emissions"):
+                        section += f"| {'Scope 1 Emissions':<35} | {extracted_data['scope_1_emissions']:,.0f} tCO2e{'':<17} |\n"
+                    if extracted_data.get("scope_2_emissions"):
+                        section += f"| {'Scope 2 Emissions':<35} | {extracted_data['scope_2_emissions']:,.0f} tCO2e{'':<17} |\n"
+                    if extracted_data.get("scope_3_emissions"):
+                        section += f"| {'Scope 3 Emissions':<35} | {extracted_data['scope_3_emissions']:,.0f} tCO2e{'':<17} |\n"
+                    if extracted_data.get("total_emissions"):
+                        section += f"| {'Total GHG Emissions':<35} | {extracted_data['total_emissions']:,.0f} tCO2e{'':<17} |\n"
+                    
+                    # Energy metrics
+                    if extracted_data.get("renewable_energy_pct"):
+                        section += f"| {'Renewable Energy %':<35} | {extracted_data['renewable_energy_pct']:.1f}%{'':<25} |\n"
+                    if extracted_data.get("energy_consumption"):
+                        section += f"| {'Energy Consumption':<35} | {extracted_data['energy_consumption']:,.0f} GWh{'':<19} |\n"
+                    
+                    # Water metrics
+                    if extracted_data.get("water_consumption"):
+                        section += f"| {'Water Consumption':<35} | {extracted_data['water_consumption']:,.0f} ML{'':<20} |\n"
+                    if extracted_data.get("water_recycled_pct"):
+                        section += f"| {'Water Recycled %':<35} | {extracted_data['water_recycled_pct']:.1f}%{'':<25} |\n"
+                    
+                    # Workforce metrics
+                    if extracted_data.get("total_employees"):
+                        section += f"| {'Total Employees':<35} | {extracted_data['total_employees']:,}{'':<22} |\n"
+                    if extracted_data.get("women_employees_pct"):
+                        section += f"| {'Women Employees %':<35} | {extracted_data['women_employees_pct']:.1f}%{'':<25} |\n"
+                    if extracted_data.get("women_leadership_pct"):
+                        section += f"| {'Women in Leadership %':<35} | {extracted_data['women_leadership_pct']:.1f}%{'':<25} |\n"
+                    
+                    # Governance metrics
+                    if extracted_data.get("board_independence_pct"):
+                        section += f"| {'Board Independence %':<35} | {extracted_data['board_independence_pct']:.1f}%{'':<25} |\n"
+                    if extracted_data.get("independent_directors"):
+                        section += f"| {'Independent Directors':<35} | {extracted_data['independent_directors']}{'':<26} |\n"
+                    
+                    # Targets
+                    if extracted_data.get("net_zero_target_year"):
+                        section += f"| {'Net Zero Target Year':<35} | {extracted_data['net_zero_target_year']}{'':<26} |\n"
+                    
+                    # Financial from reports
+                    if extracted_data.get("revenue"):
+                        section += f"| {'Revenue (from report)':<35} | ₹{extracted_data['revenue']:,.0f} Cr{'':<17} |\n"
+                    if extracted_data.get("csr_spend"):
+                        section += f"| {'CSR Spend':<35} | ₹{extracted_data['csr_spend']:,.0f} Cr{'':<17} |\n"
+                    
+                    section += "\n"
+        
+        # === GREENWISHING/GREENHUSHING ANALYSIS ===
+        greenwishing = state.get("greenwishing_analysis", {})
+        if greenwishing and isinstance(greenwishing, dict):
+            has_data = True
+            section += f"""
+GREENWISHING & GREENHUSHING DETECTION
+{'─'*80}
+
+"""
+            gw = greenwishing.get("greenwishing", {})
+            gh = greenwishing.get("greenhushing", {})
+            sd = greenwishing.get("selective_disclosure", {})
+            overall = greenwishing.get("overall_deception_risk", {})
+            
+            section += f"| {'Tactic':<30} | {'Risk Level':<15} | {'Score':<10} | {'Details':<25} |\n"
+            section += f"|{'-'*32}|{'-'*17}|{'-'*12}|{'-'*27}|\n"
+            
+            if gw:
+                gw_risk = gw.get("risk_level", "N/A")
+                gw_score = gw.get("score", "N/A")
+                gw_indicators = len(gw.get("indicators_found", []))
+                section += f"| {'Greenwishing (Unfunded Goals)':<30} | {gw_risk:<15} | {gw_score:<10} | {f'{gw_indicators} indicators':<25} |\n"
+            
+            if gh:
+                gh_risk = gh.get("risk_level", "N/A")
+                gh_score = gh.get("score", "N/A")
+                gh_missing = len(gh.get("missing_disclosures", []))
+                section += f"| {'Greenhushing (Hidden Data)':<30} | {gh_risk:<15} | {gh_score:<10} | {f'{gh_missing} missing fields':<25} |\n"
+            
+            if sd:
+                sd_detected = "Yes" if sd.get("detected") else "No"
+                sd_patterns = len(sd.get("patterns", []))
+                section += f"| {'Selective Disclosure':<30} | {sd_detected:<15} | {'N/A':<10} | {f'{sd_patterns} patterns':<25} |\n"
+            
+            if overall:
+                section += f"\n{'Overall Deception Risk Score':<30}: {overall.get('score', 'N/A')}/100 ({overall.get('level', 'N/A')})\n"
+            
+            # Show top indicators
+            indicators = gw.get("indicators_found", [])[:3]
+            if indicators:
+                section += "\nTop Greenwishing Indicators:\n"
+                for ind in indicators:
+                    section += f"  ⚠️  {ind}\n"
+            
+            section += "\n"
+        
+        # === REGULATORY COMPLIANCE ===
+        regulatory = state.get("regulatory_compliance", {})
+        if regulatory and isinstance(regulatory, dict):
+            has_data = True
+            section += f"""
+REGULATORY COMPLIANCE ASSESSMENT
+{'─'*80}
+
+"""
+            jurisdiction = regulatory.get("jurisdiction", "N/A")
+            compliance_score = regulatory.get("compliance_score", "N/A")
+            risk_level = regulatory.get("risk_level", "N/A")
+            applicable_regs = regulatory.get("applicable_regulations", [])
+            
+            section += f"Jurisdiction: {jurisdiction}\n"
+            section += f"Compliance Score: {compliance_score}/100\n"
+            section += f"Risk Level: {risk_level}\n\n"
+            
+            if applicable_regs:
+                section += "Applicable Regulations:\n"
+                for reg in applicable_regs[:6]:
+                    section += f"  ✓ {reg}\n"
+                if len(applicable_regs) > 6:
+                    section += f"  ... and {len(applicable_regs) - 6} more\n"
+                section += "\n"
+            
+            # Compliance results
+            compliance_results = regulatory.get("compliance_results", [])
+            if compliance_results:
+                section += f"| {'Regulation':<35} | {'Status':<12} | {'Gaps':<15} |\n"
+                section += f"|{'-'*37}|{'-'*14}|{'-'*17}|\n"
+                for result in compliance_results[:5]:
+                    reg_name = result.get("regulation", "Unknown")[:35]
+                    status = "✅ Compliant" if result.get("compliant") else "⚠️ Gap Found"
+                    gaps = len(result.get("gaps", []))
+                    section += f"| {reg_name:<35} | {status:<12} | {gaps} issue(s){'':<7} |\n"
+                section += "\n"
+            
+            # Regulatory risks
+            risks = regulatory.get("regulatory_risks", [])
+            if risks:
+                section += "Regulatory Risks Identified:\n"
+                for risk in risks[:3]:
+                    section += f"  🚨 {risk.get('risk', 'Unknown')}: {risk.get('description', '')[:50]}\n"
+                section += "\n"
+        
+        # === CLIMATEBERT NLP ANALYSIS ===
+        climatebert = state.get("climatebert_analysis", {})
+        if climatebert and isinstance(climatebert, dict):
+            has_data = True
+            section += f"""
+CLIMATEBERT NLP ANALYSIS
+{'─'*80}
+
+"""
+            claim_analysis = climatebert.get("claim_analysis", {})
+            comparison = climatebert.get("comparison", {})
+            verdict = climatebert.get("final_verdict", {})
+            
+            # Climate relevance
+            climate_rel = claim_analysis.get("climate_relevance", {})
+            if climate_rel:
+                section += f"Climate Relevance Score: {climate_rel.get('score', 'N/A')}/100\n"
+                section += f"Classification: {climate_rel.get('classification', 'N/A')}\n\n"
+            
+            # Greenwashing detection
+            gw_detect = claim_analysis.get("greenwashing_detection", {})
+            if gw_detect:
+                section += f"Greenwashing Risk (NLP): {gw_detect.get('risk_score', 'N/A')}/100\n"
+                section += f"Risk Level: {gw_detect.get('risk_level', 'N/A')}\n"
+                
+                patterns = gw_detect.get("detected_patterns", [])
+                if patterns:
+                    section += f"Detected Patterns: {', '.join(patterns[:4])}\n"
+                section += "\n"
+            
+            # Claim vs Evidence comparison
+            if comparison:
+                section += "Claim vs Evidence Comparison:\n"
+                section += f"  • Claim Greenwashing Score: {comparison.get('claim_greenwashing_score', 'N/A')}\n"
+                section += f"  • Evidence Greenwashing Score: {comparison.get('evidence_greenwashing_score', 'N/A')}\n"
+                section += f"  • Interpretation: {comparison.get('interpretation', 'N/A')}\n\n"
+            
+            # Final verdict
+            if verdict:
+                section += f"ClimateBERT Verdict: {verdict.get('verdict', 'N/A')}\n"
+                section += f"Confidence: {verdict.get('confidence', 'N/A')}\n"
+            
+            section += "\n"
+        
+        # === EXPLAINABILITY (SHAP/LIME) ===
+        explainability = state.get("explainability_report", {})
+        if explainability and isinstance(explainability, dict):
+            has_data = True
+            section += f"""
+ML EXPLAINABILITY (SHAP/LIME)
+{'─'*80}
+
+"""
+            method = explainability.get("method", "N/A")
+            section += f"Explanation Method: {method}\n\n"
+            
+            top_factors = explainability.get("top_factors", [])
+            if top_factors:
+                section += "Key Factors Driving Risk Assessment:\n"
+                section += f"| {'Factor':<30} | {'Impact':<12} | {'Direction':<20} |\n"
+                section += f"|{'-'*32}|{'-'*14}|{'-'*22}|\n"
+                
+                for factor in top_factors[:5]:
+                    name = factor.get("feature", factor.get("description", "Unknown"))[:30]
+                    impact = factor.get("impact", "N/A")
+                    direction = factor.get("direction", "N/A")
+                    section += f"| {name:<30} | {impact:<12} | {direction:<20} |\n"
+                section += "\n"
+            
+            # Human-readable explanation
+            narrative = explainability.get("human_readable_explanation", "")
+            if narrative:
+                section += f"AI Explanation:\n{narrative}\n"
+            
+            section += "\n"
+        
+        # === FINANCIAL CONTEXT FLAGS (Greenwashing Indicators) ===
+        financial_context = {}
+        if evidence_output:
+            financial_context = evidence_output.get("financial_context", {})
+        
+        if not financial_context:
+            financial_context = state.get("financial_context", {})
+        
+        if financial_context:
+            report_metrics = financial_context.get("report_metrics", {})
+            greenwashing_flags = financial_context.get("greenwashing_flags", [])
+            
+            if report_metrics:
+                has_data = True
+                section += f"""
+ADDITIONAL METRICS FROM REPORTS
+{'─'*80}
+
+"""
+                for key, value in list(report_metrics.items())[:10]:
+                    key_display = key.replace("_", " ").title()
+                    if isinstance(value, (int, float)):
+                        section += f"  • {key_display}: {value:,.2f}\n"
+                    else:
+                        section += f"  • {key_display}: {value}\n"
+                section += "\n"
+        
+        # === NO DATA FOUND ===
+        if not has_data:
+            section += f"""
+DATA ENRICHMENT STATUS
+{'─'*80}
+
+⚠️  Indian Financial Data: Not available (company may not be in database)
+⚠️  Company Reports: No official PDFs could be fetched
+⚠️  PDF Metrics: No data extracted
+
+Note: This may occur when:
+  • Company is not in the 50+ Indian companies database
+  • Investor relations page structure is not recognized
+  • PDF reports are not publicly accessible
+  • Non-Indian company without configured IR URL
+
+"""
+        
+        return section
 
 
 # LangGraph node wrapper

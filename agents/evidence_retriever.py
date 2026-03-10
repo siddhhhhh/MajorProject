@@ -32,6 +32,24 @@ class EvidenceRetriever:
         except ImportError:
             self.financial_analyst_available = False
             print("⚠️ FinancialAnalyst not available")
+        
+        # Company report fetcher for PDF reports
+        try:
+            from utils.company_report_fetcher import get_report_fetcher
+            self.report_fetcher = get_report_fetcher()
+            self.report_fetcher_available = True
+        except ImportError:
+            self.report_fetcher_available = False
+            print("⚠️ CompanyReportFetcher not available")
+        
+        # Indian financial data for revenue
+        try:
+            from utils.indian_financial_data import get_indian_financial_data
+            self.indian_financial = get_indian_financial_data()
+            self.indian_financial_available = True
+        except ImportError:
+            self.indian_financial_available = False
+            print("⚠️ IndianFinancialData not available")
     
     def retrieve_evidence(self, claim: Dict[str, Any], company: str) -> Dict[str, Any]:
         """
@@ -81,7 +99,7 @@ class EvidenceRetriever:
         all_sources = self.data_aggregator.fetch_all_sources(
             company=company,
             query=f"{company} {claim_text[:50]}",
-            max_per_source=3
+            max_per_source=10
         )
 
         # Flatten all sources
@@ -144,6 +162,61 @@ class EvidenceRetriever:
                 print(f"   ⚠️ Financial analysis error: {e}")
                 financial_context = {"financial_data_available": False}
         
+        # NEW: Fetch company reports (PDF) from official website
+        company_reports = {}
+        if self.report_fetcher_available:
+            try:
+                print(f"\n📄 Fetching official company reports...")
+                company_reports = self.report_fetcher.fetch_company_reports(
+                    company, 
+                    report_types=["annual_report", "sustainability_report", "brsr_report"],
+                    max_reports=3
+                )
+                
+                if company_reports.get("reports_found"):
+                    print(f"   ✅ Found {len(company_reports['reports_found'])} reports")
+                    # Add extracted metrics to financial context
+                    if company_reports.get("extracted_data"):
+                        financial_context["report_metrics"] = company_reports["extracted_data"]
+                        print(f"   📊 Extracted {len(company_reports['extracted_data'])} metrics from PDFs")
+                else:
+                    print(f"   ⚠️ No official reports found")
+            except Exception as e:
+                print(f"   ⚠️ Report fetcher error: {e}")
+        
+        # NEW: Fetch Indian financial data (revenue, profit)
+        indian_financials = {}
+        if self.indian_financial_available:
+            try:
+                # Check if likely Indian company
+                indian_indicators = ['reliance', 'tata', 'infosys', 'wipro', 'hdfc', 'icici', 
+                                     'bharti', 'airtel', 'adani', 'mahindra', 'bajaj', 'jsw',
+                                     'vedanta', 'hindalco', 'ultratech', 'asian paints', 'titan',
+                                     'nestle india', 'maruti', 'ntpc', 'ongc', 'coal india',
+                                     'sbi', 'kotak', 'axis', 'itc', 'hindustan', 'larsen']
+                
+                company_lower = company.lower()
+                is_indian = any(ind in company_lower for ind in indian_indicators)
+                
+                if is_indian:
+                    print(f"\n🇮🇳 Fetching Indian financial data...")
+                    indian_financials = self.indian_financial.get_company_financials(company)
+                    
+                    if indian_financials.get("financials"):
+                        fin = indian_financials["financials"]
+                        print(f"   ✅ Financial data retrieved")
+                        if fin.get("revenue"):
+                            print(f"   📈 Revenue: ₹{fin['revenue']:,.0f} Cr")
+                        if fin.get("net_profit"):
+                            print(f"   💰 Net Profit: ₹{fin['net_profit']:,.0f} Cr")
+                        if fin.get("market_cap"):
+                            print(f"   📊 Market Cap: ₹{fin['market_cap']:,.0f} Cr")
+                        
+                        # Add to financial context
+                        financial_context["indian_financials"] = indian_financials
+            except Exception as e:
+                print(f"   ⚠️ Indian financial data error: {e}")
+        
         print(f"\n✅ Evidence retrieval complete:")
         print(f"   Total sources: {len(structured_evidence)}")
         print(f"   Independent sources: {quality_metrics['independent_sources']}")
@@ -151,6 +224,10 @@ class EvidenceRetriever:
         print(f"   Avg freshness: {quality_metrics['avg_freshness_days']:.1f} days")
         print(f"   Source diversity: {quality_metrics['source_diversity']} types")
         print(f"   Evidence gap: {'YES ⚠️' if quality_metrics['evidence_gap'] else 'NO ✓'}")
+        if company_reports.get("reports_found"):
+            print(f"   Official reports: {len(company_reports['reports_found'])} PDF(s)")
+        if indian_financials.get("financials"):
+            print(f"   Indian financials: Available")
         
         result = {
             "claim_id": claim_id,
@@ -159,6 +236,8 @@ class EvidenceRetriever:
             "quality_metrics": quality_metrics,
             "source_breakdown": source_breakdown,
             "financial_context": financial_context,
+            "company_reports": company_reports,
+            "indian_financials": indian_financials,
             "retrieval_timestamp": datetime.now().isoformat()
         }
         
