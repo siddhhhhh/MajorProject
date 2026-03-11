@@ -670,18 +670,18 @@ Analyze regulatory compliance risks. Return JSON."""
         for result in compliance_results:
             if result["compliance_status"] == "Non-Compliant":
                 recommendations.append(
-                    f"🔴 {result['regulation_name']}: Address unverified requirements immediately"
+                    f"[CRITICAL] {result['regulation_name']}: Address unverified requirements immediately"
                 )
             elif result["compliance_status"] == "Partially Compliant":
                 for req in result["requirements_unverified"][:2]:
                     recommendations.append(
-                        f"🟡 {result['regulation_name']}: {req['requirement']}"
+                        f"[PARTIAL] {result['regulation_name']}: {req['requirement']}"
                     )
         
         # Add proactive recommendations
         if not recommendations:
-            recommendations.append("✅ Current disclosures appear compliant with applicable regulations")
-            recommendations.append("📋 Consider voluntary third-party assurance for enhanced credibility")
+            recommendations.append("[OK] Current disclosures appear compliant with applicable regulations")
+            recommendations.append("[RECOMMEND] Consider voluntary third-party assurance for enhanced credibility")
         
         return recommendations[:10]
     

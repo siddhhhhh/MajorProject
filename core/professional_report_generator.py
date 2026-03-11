@@ -40,7 +40,7 @@ class ProfessionalReportGenerator:
             risk_source = risk_scorer_result.get("risk_source", "Formula-based")
             pillar_scores = risk_scorer_result.get("pillar_scores", {})  # NEW: Extract pillar scores
             
-            print(f"📊 Report using Risk Scorer output:")
+            print(f"[INFO] Report using Risk Scorer output:")
             print(f"   Risk Level: {risk_level}")
             print(f"   Rating Grade: {rating_grade}")
             print(f"   Source: {risk_source}")
@@ -201,11 +201,11 @@ REGULATORY COMPLIANCE & STANDARDS
 {'='*80}
 
 This report aligns with the following ESG frameworks:
-  ✓ MSCI ESG Ratings Methodology
-  ✓ Sustainalytics ESG Risk Ratings
-  ✓ GRI (Global Reporting Initiative) Standards
-  ✓ SASB (Sustainability Accounting Standards Board)
-  ✓ TCFD (Task Force on Climate-related Financial Disclosures)
+  - MSCI ESG Ratings Methodology
+  - Sustainalytics ESG Risk Ratings
+  - GRI (Global Reporting Initiative) Standards
+  - SASB (Sustainability Accounting Standards Board)
+  - TCFD (Task Force on Climate-related Financial Disclosures)
 
 {'='*80}
 DISCLAIMERS & LIMITATIONS
@@ -253,56 +253,56 @@ Redistribution requires explicit authorization.
         
         # Risk-specific findings
         if risk_level == "HIGH":
-            findings.append("⚠ HIGH GREENWASHING RISK DETECTED")
-            findings.append("  • Claim lacks sufficient evidence or contains contradictions")
-            findings.append("  • Peer comparison shows below-industry-average performance")
-            findings.append("  • Historical data reveals inconsistent ESG commitments")
-            findings.append("  • Recommended Action: Deep due diligence required before engagement")
+            findings.append("[ALERT] HIGH GREENWASHING RISK DETECTED")
+            findings.append("  - Claim lacks sufficient evidence or contains contradictions")
+            findings.append("  - Peer comparison shows below-industry-average performance")
+            findings.append("  - Historical data reveals inconsistent ESG commitments")
+            findings.append("  - Recommended Action: Deep due diligence required before engagement")
         elif risk_level == "MODERATE":
-            findings.append("⚡ MODERATE GREENWASHING RISK IDENTIFIED")
-            findings.append("  • Claim partially supported by available evidence")
-            findings.append("  • Some contradictions or ambiguities detected")
-            findings.append("  • Mixed signals from historical performance")
-            findings.append("  • Recommended Action: Additional verification and monitoring")
+            findings.append("[MODERATE] GREENWASHING RISK IDENTIFIED")
+            findings.append("  - Claim partially supported by available evidence")
+            findings.append("  - Some contradictions or ambiguities detected")
+            findings.append("  - Mixed signals from historical performance")
+            findings.append("  - Recommended Action: Additional verification and monitoring")
         else:
-            findings.append("✓ LOW GREENWASHING RISK")
-            findings.append("  • Claim well-supported by multiple credible sources")
-            findings.append("  • Consistent with historical ESG performance")
-            findings.append("  • Aligns with industry best practices")
-            findings.append("  • Recommended Action: Standard monitoring protocols")
+            findings.append("[OK] LOW GREENWASHING RISK")
+            findings.append("  - Claim well-supported by multiple credible sources")
+            findings.append("  - Consistent with historical ESG performance")
+            findings.append("  - Aligns with industry best practices")
+            findings.append("  - Recommended Action: Standard monitoring protocols")
         
         findings.append("")
         
         # Confidence-based findings
         if confidence >= 0.8:
-            findings.append("✓ HIGH CONFIDENCE ASSESSMENT")
-            findings.append("  • Robust evidence base from multiple independent sources")
-            findings.append("  • Agent consensus achieved across analytical dimensions")
-            findings.append("  • Low uncertainty in risk classification")
+            findings.append("[OK] HIGH CONFIDENCE ASSESSMENT")
+            findings.append("  - Robust evidence base from multiple independent sources")
+            findings.append("  - Agent consensus achieved across analytical dimensions")
+            findings.append("  - Low uncertainty in risk classification")
         elif confidence >= 0.6:
-            findings.append("⚡ MODERATE CONFIDENCE ASSESSMENT")
-            findings.append("  • Adequate evidence but some information gaps identified")
-            findings.append("  • Partial agent consensus with minor disagreements")
-            findings.append("  • Moderate uncertainty in final assessment")
+            findings.append("[MODERATE] CONFIDENCE ASSESSMENT")
+            findings.append("  - Adequate evidence but some information gaps identified")
+            findings.append("  - Partial agent consensus with minor disagreements")
+            findings.append("  - Moderate uncertainty in final assessment")
         else:
-            findings.append("⚠ LIMITED CONFIDENCE")
-            findings.append("  • Insufficient evidence for definitive assessment")
-            findings.append("  • Significant information gaps remain")
-            findings.append("  • Further investigation strongly recommended")
+            findings.append("[LIMITED] CONFIDENCE")
+            findings.append("  - Insufficient evidence for definitive assessment")
+            findings.append("  - Significant information gaps remain")
+            findings.append("  - Further investigation strongly recommended")
         
         findings.append("")
         
         # Evidence coverage findings
         if evidence_count >= 10:
-            findings.append("✓ COMPREHENSIVE EVIDENCE COVERAGE")
-            findings.append(f"  • {evidence_count} independent sources analyzed")
+            findings.append("[OK] COMPREHENSIVE EVIDENCE COVERAGE")
+            findings.append(f"  - {evidence_count} independent sources analyzed")
         elif evidence_count >= 5:
-            findings.append("⚡ ADEQUATE EVIDENCE COVERAGE")
-            findings.append(f"  • {evidence_count} sources analyzed")
+            findings.append("[MODERATE] ADEQUATE EVIDENCE COVERAGE")
+            findings.append(f"  - {evidence_count} sources analyzed")
         else:
-            findings.append("⚠ LIMITED EVIDENCE AVAILABILITY")
-            findings.append(f"  • Only {evidence_count} sources available")
-            findings.append("  • Assessment reliability may be affected")
+            findings.append("[LIMITED] EVIDENCE AVAILABILITY")
+            findings.append(f"  - Only {evidence_count} sources available")
+            findings.append("  - Assessment reliability may be affected")
         
         return "\n".join(findings)
     
@@ -390,7 +390,7 @@ with real peer data from the historical database.
 """
             
             section += """Legend:
-  ⭐ = Target company
+  * = Target company
   E  = Environmental Score (0-100)
   S  = Social Score (0-100)
   G  = Governance Score (0-100)
@@ -407,15 +407,15 @@ Rating Scale:
             if overall_esg and industry_avg.get('esg'):
                 delta = overall_esg - industry_avg.get('esg')
                 if delta >= 10:
-                    section += f"✅ OUTPERFORMING: {company} exceeds industry average by {delta:.1f} points\n"
+                    section += f"[OUTPERFORMING] {company} exceeds industry average by {delta:.1f} points\n"
                 elif delta >= 5:
-                    section += f"⚡ ABOVE AVERAGE: {company} performs {delta:.1f} points above peers\n"
+                    section += f"[ABOVE AVERAGE] {company} performs {delta:.1f} points above peers\n"
                 elif delta >= -5:
-                    section += f"➖ INDUSTRY AVERAGE: {company} aligns with peer performance\n"
+                    section += f"[INDUSTRY AVERAGE] {company} aligns with peer performance\n"
                 elif delta >= -10:
-                    section += f"⚠️ BELOW AVERAGE: {company} lags industry by {abs(delta):.1f} points\n"
+                    section += f"[BELOW AVERAGE] {company} lags industry by {abs(delta):.1f} points\n"
                 else:
-                    section += f"🚨 UNDERPERFORMING: {company} significantly trails peers by {abs(delta):.1f} points\n"
+                    section += f"[UNDERPERFORMING] {company} significantly trails peers by {abs(delta):.1f} points\n"
             
             return section
             
@@ -536,9 +536,9 @@ Technical Error: {str(e)[:100]}
             output = agent_summaries["contradiction_analysis"][0]
             contradictions = output.get("contradictions_count", 0)
             if contradictions > 0:
-                sections.append(f"⚠ Claim Consistency:    {contradictions} contradiction(s) detected")
+                sections.append(f"[WARN] Claim Consistency:    {contradictions} contradiction(s) detected")
             else:
-                sections.append(f"✓ Claim Consistency:    No contradictions found")
+                sections.append(f"[OK] Claim Consistency:    No contradictions found")
         
         if "evidence_retrieval" in agent_summaries:
             output = agent_summaries["evidence_retrieval"][0]
@@ -827,7 +827,7 @@ KEY PERFORMANCE METRICS
             if renewable_pct:
                 section += f"Renewable Energy: {renewable_pct}\n"
             if sbt:
-                section += f"Science-Based Target: ✅ Yes (SBTi approved)\n"
+                section += f"Science-Based Target: Yes (SBTi approved)\n"
             if verification:
                 section += f"Verification: {verification}\n"
             if data_source:
@@ -881,7 +881,7 @@ KEY PERFORMANCE METRICS
                     industry_key = industry.lower().replace(" ", "_").replace("&", "and")
                     industry_avg = carbon_benchmarks.get(industry_key, 0.01)
                     
-                    status = "⚠️ Above Avg" if carbon_intensity > industry_avg else "✅ Below Avg"
+                    status = "Above Avg" if carbon_intensity > industry_avg else "Below Avg"
                     section += f"| {'Carbon Intensity':<30} | {carbon_intensity:.6f} tCO2/${'':>8} | {status:<15} |\n"
                     section += f"| {'  Industry Average':<30} | {industry_avg:.6f} tCO2/${'':>8} | {'':>15} |\n"
                 
@@ -894,7 +894,7 @@ KEY PERFORMANCE METRICS
                     industry_key = industry.lower().replace(" ", "_").replace("&", "and")
                     industry_avg = water_benchmarks.get(industry_key, 0.001)
                     
-                    status = "⚠️ Above Avg" if water_efficiency > industry_avg else "✅ Below Avg"
+                    status = "Above Avg" if water_efficiency > industry_avg else "Below Avg"
                     section += f"| {'Water Intensity':<30} | {water_efficiency:.6f} L/${'':>10} | {status:<15} |\n"
                 
                 # Energy Efficiency
@@ -906,7 +906,7 @@ KEY PERFORMANCE METRICS
                     industry_key = industry.lower().replace(" ", "_").replace("&", "and")
                     industry_avg = energy_benchmarks.get(industry_key, 0.0015)
                     
-                    status = "⚠️ Above Avg" if energy_efficiency > industry_avg else "✅ Below Avg"
+                    status = "Above Avg" if energy_efficiency > industry_avg else "Below Avg"
                     section += f"| {'Energy Intensity':<30} | {energy_efficiency:.6f} kWh/${'':>8} | {status:<15} |\n"
                 
                 section += "\n"
@@ -918,9 +918,9 @@ KEY PERFORMANCE METRICS
         if not has_carbon_data:
             section += "ENVIRONMENTAL METRICS\n"
             section += f"{'─'*80}\n\n"
-            section += "⚠️ Carbon Metrics: Not publicly disclosed (Transparency Gap)\n"
-            section += "⚠️ Water Usage: Not publicly disclosed\n"
-            section += "⚠️ Energy Consumption: Not publicly disclosed\n\n"
+            section += "[NOTE] Carbon Metrics: Not publicly disclosed (Transparency Gap)\n"
+            section += "[NOTE] Water Usage: Not publicly disclosed\n"
+            section += "[NOTE] Energy Consumption: Not publicly disclosed\n\n"
             section += "Note: Lack of environmental data disclosure may indicate:\n"
             section += "  • Limited ESG reporting maturity\n"
             section += "  • Private company without disclosure requirements\n"
@@ -940,15 +940,15 @@ KEY PERFORMANCE METRICS
             board_independence = gov_metrics.get("board_independence")
         
         if board_independence:
-            status = "✅ Strong" if board_independence > 60 else "⚠️ Weak" if board_independence < 40 else "➖ Average"
+            status = "Strong" if board_independence > 60 else "Weak" if board_independence < 40 else "Average"
             section += f"| {'Board Independence Score':<35} | {board_independence:.1f}/100{'':>13} | {status:<15} |\n"
         
         # Controversy Count
-        controversy_status = "✅ Clean" if controversy_count == 0 else "⚠️ Concerns" if controversy_count <= 3 else "🚨 High Risk"
+        controversy_status = "Clean" if controversy_count == 0 else "Concerns" if controversy_count <= 3 else "High Risk"
         section += f"| {'Controversy Count':<35} | {controversy_count} issue(s){'':>11} | {controversy_status:<15} |\n"
         
         # Disclosure Score (using unique sources)
-        disclosure_status = "✅ Excellent" if unique_disclosure_pct >= 70 else "⚡ Good" if unique_disclosure_pct >= 50 else "⚠️ Limited"
+        disclosure_status = "Excellent" if unique_disclosure_pct >= 70 else "Good" if unique_disclosure_pct >= 50 else "Limited"
         section += f"| {'Disclosure Score':<35} | {unique_source_count}/{max_possible_sources} sources ({unique_disclosure_pct:.0f}%){'':>3} | {disclosure_status:<15} |\n"
         
         section += "\n"
@@ -970,8 +970,8 @@ KEY PERFORMANCE METRICS
                     if isinstance(flag, dict):
                         severity = flag.get("severity", "Low")
                         description = flag.get("description", "")
-                        icon = "🚨" if severity == "High" else "⚠️" if severity == "Moderate" else "⚡"
-                        section += f"{icon} {severity} Risk: {description}\n"
+                        marker = "[ALERT]" if severity == "High" else "[WARN]" if severity == "Moderate" else "[NOTE]"
+                        section += f"{marker} {severity} Risk: {description}\n"
                 
                 section += "\n"
         
@@ -1228,7 +1228,7 @@ GREENWISHING & GREENHUSHING DETECTION
             if indicators:
                 section += "\nTop Greenwishing Indicators:\n"
                 for ind in indicators:
-                    section += f"  ⚠️  {ind}\n"
+                    section += f"  [NOTE] {ind}\n"
             
             section += "\n"
         
@@ -1253,29 +1253,31 @@ REGULATORY COMPLIANCE ASSESSMENT
             if applicable_regs:
                 section += "Applicable Regulations:\n"
                 for reg in applicable_regs[:6]:
-                    section += f"  ✓ {reg}\n"
+                    section += f"  - {reg}\n"
                 if len(applicable_regs) > 6:
                     section += f"  ... and {len(applicable_regs) - 6} more\n"
                 section += "\n"
             
-            # Compliance results
+            # Compliance results - only show if data is valid
             compliance_results = regulatory.get("compliance_results", [])
-            if compliance_results:
+            valid_results = [r for r in compliance_results if r.get("regulation") and r.get("regulation") != "Unknown"]
+            if valid_results:
                 section += f"| {'Regulation':<35} | {'Status':<12} | {'Gaps':<15} |\n"
                 section += f"|{'-'*37}|{'-'*14}|{'-'*17}|\n"
-                for result in compliance_results[:5]:
-                    reg_name = result.get("regulation", "Unknown")[:35]
-                    status = "✅ Compliant" if result.get("compliant") else "⚠️ Gap Found"
+                for result in valid_results[:5]:
+                    reg_name = result.get("regulation", "")[:35]
+                    status = "[COMPLIANT]" if result.get("compliant") else "[GAP FOUND]"
                     gaps = len(result.get("gaps", []))
                     section += f"| {reg_name:<35} | {status:<12} | {gaps} issue(s){'':<7} |\n"
                 section += "\n"
             
-            # Regulatory risks
+            # Regulatory risks - only show if data is valid
             risks = regulatory.get("regulatory_risks", [])
-            if risks:
+            valid_risks = [r for r in risks if r.get('risk') and r.get('risk') != 'Unknown' and r.get('description')]
+            if valid_risks:
                 section += "Regulatory Risks Identified:\n"
-                for risk in risks[:3]:
-                    section += f"  🚨 {risk.get('risk', 'Unknown')}: {risk.get('description', '')[:50]}\n"
+                for risk in valid_risks[:3]:
+                    section += f"  [ALERT] {risk.get('risk')}: {risk.get('description', '')[:50]}\n"
                 section += "\n"
         
         # === CLIMATEBERT NLP ANALYSIS ===
@@ -1387,15 +1389,15 @@ ADDITIONAL METRICS FROM REPORTS
 DATA ENRICHMENT STATUS
 {'─'*80}
 
-⚠️  Indian Financial Data: Not available (company may not be in database)
-⚠️  Company Reports: No official PDFs could be fetched
-⚠️  PDF Metrics: No data extracted
+[NOTE] Indian Financial Data: Not available (company may not be in database)
+[NOTE] Company Reports: No official PDFs could be fetched
+[NOTE] PDF Metrics: No data extracted
 
 Note: This may occur when:
-  • Company is not in the 50+ Indian companies database
-  • Investor relations page structure is not recognized
-  • PDF reports are not publicly accessible
-  • Non-Indian company without configured IR URL
+  - Company is not in the 50+ Indian companies database
+  - Investor relations page structure is not recognized
+  - PDF reports are not publicly accessible
+  - Non-Indian company without configured IR URL
 
 """
         
@@ -1405,7 +1407,7 @@ Note: This may occur when:
 # LangGraph node wrapper
 def professional_report_generation_node(state):
     """Generate professional enterprise report - Node wrapper for LangGraph"""
-    print(f"\n{'🟢 GENERATING PROFESSIONAL REPORT':=^70}")
+    print(f"\n{'== GENERATING PROFESSIONAL REPORT':=^70}")
     
     generator = ProfessionalReportGenerator()
     
@@ -1417,8 +1419,8 @@ def professional_report_generation_node(state):
     json_export = generator.export_json(state)
     state["json_export"] = json_export
     
-    print(f"✅ Professional report generated ({len(professional_report)} characters)")
-    print(f"✅ JSON export generated ({len(json_export)} characters)")
+    print(f"[OK] Professional report generated ({len(professional_report)} characters)")
+    print(f"[OK] JSON export generated ({len(json_export)} characters)")
     
     state["agent_outputs"].append({
         "agent": "professional_report_generation",
