@@ -1,0 +1,10 @@
+{
+  "mae": 2.1487665801048283,
+  "rmse": 2.743944115598925,
+  "mape": 4.399364698000788,
+  "seq_length": 5,
+  "forecast_length": 6,
+  "train_samples": 800,
+  "test_samples": 200,
+  "trend_accuracy": 80.0
+}

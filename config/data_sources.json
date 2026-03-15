@@ -1,0 +1,301 @@
+{
+  "data_sources": {
+    "news_api": {
+      "enabled": true,
+      "rate_limit": 100,
+      "cache_hours": 1,
+      "priority": 1
+    },
+    "newsdata_io": {
+      "enabled": true,
+      "rate_limit": 200,
+      "cache_hours": 1,
+      "priority": 2
+    },
+    "reuters_sustainability": {
+      "enabled": true,
+      "rate_limit": 60,
+      "cache_hours": 2,
+      "priority": 3
+    },
+    "sec_edgar": {
+      "enabled": true,
+      "rate_limit": 10,
+      "cache_hours": 24,
+      "priority": 4
+    },
+    "epa_enforcement": {
+      "enabled": true,
+      "rate_limit": 5,
+      "cache_hours": 168,
+      "priority": 5
+    },
+    "osha_violations": {
+      "enabled": true,
+      "rate_limit": 5,
+      "cache_hours": 168,
+      "priority": 6
+    },
+    "duckduckgo": {
+      "enabled": true,
+      "rate_limit": 30,
+      "cache_hours": 1,
+      "priority": 9
+    },
+    "gdelt": {
+      "enabled": true,
+      "rate_limit": 10,
+      "cache_hours": 6,
+      "priority": 8,
+      "description": "GDELT Global Database - 300+ news sources",
+      "api_endpoint": "https://api.gdeltproject.org/api/v2/doc/doc"
+    },
+    "courtlistener": {
+      "enabled": true,
+      "rate_limit": 5,
+      "cache_hours": 168,
+      "priority": 10,
+      "description": "CourtListener - Federal and state court cases",
+      "api_endpoint": "https://www.courtlistener.com/api/rest/v3/search/"
+    },
+    "opensanctions": {
+      "enabled": true,
+      "rate_limit": 1,
+      "cache_hours": 168,
+      "priority": 9,
+      "description": "OpenSanctions - Global sanctions and compliance",
+      "data_url": "https://data.opensanctions.org/datasets/latest/default/entities.ftm.json",
+      "cache_days": 7
+    },
+    "worldbank": {
+      "enabled": true,
+      "rate_limit": 10,
+      "cache_hours": 720,
+      "priority": 6,
+      "description": "World Bank - Country environmental indicators",
+      "api_endpoint": "https://api.worldbank.org/v2/country",
+      "indicators": ["EN.ATM.CO2E.PC", "EG.FEC.RNEW.ZS", "EN.ATM.GHGT.KT.CE"]
+    },
+    "ourworldindata": {
+      "enabled": true,
+      "rate_limit": 5,
+      "cache_hours": 168,
+      "priority": 7,
+      "description": "Our World in Data - Research statistics",
+      "base_url": "https://ourworldindata.org/search"
+    },
+    "ftc_enforcement": {
+      "enabled": true,
+      "rate_limit": 3,
+      "cache_hours": 168,
+      "priority": 9,
+      "description": "FTC - Federal Trade Commission enforcement",
+      "search_endpoint": "https://www.ftc.gov/enforcement/cases-proceedings?search="
+    },
+    "greenpeace": {
+      "enabled": true,
+      "rate_limit": 2,
+      "cache_hours": 168,
+      "priority": 7,
+      "description": "Greenpeace - NGO investigations",
+      "search_endpoint": "https://www.greenpeace.org/international/?s="
+    },
+    "carbon_tracker": {
+      "enabled": true,
+      "rate_limit": 2,
+      "cache_hours": 168,
+      "priority": 8,
+      "description": "Carbon Tracker - Climate risk analysis",
+      "search_endpoint": "https://carbontracker.org/?s="
+    },
+    "wikipedia": {
+      "enabled": true,
+      "rate_limit": 10,
+      "cache_hours": 24,
+      "priority": 11,
+      "description": "Wikipedia - Company page edit history",
+      "api_endpoint": "https://en.wikipedia.org/w/api.php"
+    },
+    "wayback_machine": {
+      "enabled": true,
+      "rate_limit": 5,
+      "cache_hours": 720,
+      "priority": 12,
+      "description": "Internet Archive - Historical website snapshots",
+      "api_endpoint": "https://web.archive.org/cdx/search/cdx"
+    },
+    "google_patents": {
+      "enabled": true,
+      "rate_limit": 5,
+      "cache_hours": 168,
+      "priority": 10,
+      "description": "Google Patents - Green technology validation"
+    },
+    "doj_environmental": {
+      "enabled": true,
+      "rate_limit": 3,
+      "cache_hours": 168,
+      "priority": 9,
+      "description": "DOJ Environment Division - Criminal prosecutions"
+    },
+    "sec_full": {
+      "enabled": true,
+      "rate_limit": 5,
+      "cache_hours": 24,
+      "priority": 5,
+      "description": "Enhanced SEC - 10-K, 8-K, proxy statements"
+    },
+    "uk_cma": {
+      "enabled": true,
+      "rate_limit": 2,
+      "cache_hours": 168,
+      "priority": 9,
+      "description": "UK CMA - Competition & greenwashing cases"
+    },
+    "uk_asa": {
+      "enabled": true,
+      "rate_limit": 2,
+      "cache_hours": 168,
+      "priority": 9,
+      "description": "UK ASA - Advertising standards rulings"
+    },
+    "eu_enforcement": {
+      "enabled": true,
+      "rate_limit": 2,
+      "cache_hours": 168,
+      "priority": 8,
+      "description": "EU Commission - Environmental enforcement"
+    },
+    "changing_markets": {
+      "enabled": true,
+      "rate_limit": 2,
+      "cache_hours": 168,
+      "priority": 8,
+      "description": "Changing Markets - Greenwashing investigations"
+    },
+    "clientearth": {
+      "enabled": true,
+      "rate_limit": 2,
+      "cache_hours": 168,
+      "priority": 9,
+      "description": "ClientEarth - Environmental legal cases"
+    },
+    "hrw": {
+      "enabled": true,
+      "rate_limit": 2,
+      "cache_hours": 168,
+      "priority": 8,
+      "description": "Human Rights Watch - Labor violations"
+    },
+    "unfccc": {
+      "enabled": true,
+      "rate_limit": 2,
+      "cache_hours": 720,
+      "priority": 7,
+      "description": "UNFCCC - Corporate climate pledges"
+    },
+    "oecd_cases": {
+      "enabled": true,
+      "rate_limit": 2,
+      "cache_hours": 720,
+      "priority": 8,
+      "description": "OECD - Multinational complaints"
+    },
+    "ilo": {
+      "enabled": true,
+      "rate_limit": 2,
+      "cache_hours": 720,
+      "priority": 7,
+      "description": "ILO - International labor standards"
+    },
+    "open_apparel": {
+      "enabled": true,
+      "rate_limit": 5,
+      "cache_hours": 168,
+      "priority": 7,
+      "description": "Open Apparel Registry - Supply chain transparency"
+    }
+  },
+  "rss_feeds": [
+    {
+      "name": "Reuters Sustainability",
+      "url": "https://www.reuters.com/arc/outboundfeeds/v1/rss/?outputType=xml&size=25&feedName=sustainability",
+      "type": "tier1_media"
+    },
+    {
+      "name": "Guardian Environment",
+      "url": "https://www.theguardian.com/environment/rss",
+      "type": "media"
+    },
+    {
+      "name": "Edie Sustainability",
+      "url": "https://www.edie.net/feed/",
+      "type": "esg_platform"
+    },
+    {
+      "name": "GreenBiz",
+      "url": "https://www.greenbiz.com/feed",
+      "type": "esg_platform"
+    }
+  ],
+  "social_media_apis": {
+    "twitter_bearer_token": "${TWITTER_BEARER_TOKEN}",
+    "reddit_client_id": "${REDDIT_CLIENT_ID}",
+    "reddit_client_secret": "${REDDIT_CLIENT_SECRET}"
+  },
+  "source_credibility_weights": {
+    "Academic": 1.0,
+    "Government/Regulatory": 0.95,
+    "Legal/Court Documents": 0.95,
+    "Government/International Data": 0.92,
+    "Compliance/Sanctions Database": 0.9,
+    "Climate NGO": 0.9,
+    "NGO": 0.88,
+    "Tier-1 Financial Media": 0.85,
+    "Research/Data Platform": 0.8,
+    "Global News Aggregator": 0.75,
+    "ESG Platform": 0.75,
+    "General Media": 0.7,
+    "Industry Publication": 0.65,
+    "Web Source": 0.5,
+    "Company-Controlled": 0.35,
+    "Sponsored Content": 0.2
+  },
+  "rate_limiting": {
+    "default_interval_seconds": 1.0,
+    "burst_limit": 5,
+    "respect_429_retry_after": true,
+    "exponential_backoff": true,
+    "max_retries": 3
+  },
+  "api_keys_required": {
+    "news_api": true,
+    "newsdata_io": true,
+    "gdelt": false,
+    "courtlistener": false,
+    "opensanctions": false,
+    "worldbank": false,
+    "ourworldindata": false,
+    "ftc_enforcement": false,
+    "greenpeace": false,
+    "carbon_tracker": false,
+    "wikipedia": false,
+    "wayback_machine": false,
+    "google_patents": false,
+    "doj_environmental": false,
+    "sec_full": false,
+    "uk_cma": false,
+    "uk_asa": false,
+    "eu_enforcement": false,
+    "changing_markets": false,
+    "clientearth": false,
+    "hrw": false,
+    "unfccc": false,
+    "oecd_cases": false,
+    "ilo": false,
+    "open_apparel": false
+  },
+  "version": "3.0.0",
+  "total_sources": 40,
+  "last_updated": "2026-02-03"
+}

@@ -1,0 +1,350 @@
+
+{
+  "greenwashing_sensitivity": {
+    "Energy": {
+      "vague_claim_threshold": 2,
+      "escalate_moderate_to_high": true,
+      "high_risk_keywords": ["leader in clean", "climate leader", "pioneer in sustainability"]
+    },
+    "Automotive": {
+      "vague_claim_threshold": 2,
+      "escalate_moderate_to_high": true,
+      "high_risk_keywords": ["emissions free", "completely green", "zero pollution"]
+    },
+    "Consumer Goods": {
+      "vague_claim_threshold": 3,
+      "escalate_moderate_to_high": false,
+      "high_risk_keywords": ["100% sustainable", "perfectly green", "completely natural"]
+    },
+    "Technology": {
+      "vague_claim_threshold": 3,
+      "escalate_moderate_to_high": false,
+      "high_risk_keywords": ["carbon negative", "zero waste", "perfectly sustainable"]
+    },
+    "Financial Services": {
+      "vague_claim_threshold": 3,
+      "escalate_moderate_to_high": false,
+      "high_risk_keywords": ["purely sustainable", "completely ethical", "100% responsible"]
+    }
+  },
+  "industry_baseline_risk": {
+    "oil_and_gas": {
+      "baseline": 75,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "High carbon intensity, environmental impact, regulatory scrutiny",
+      "baseline_esg": 45,
+      "baseline_env": 35,
+      "baseline_social": 48,
+      "baseline_gov": 52,
+      "peer_estimation_enabled": true,
+      "typical_peer_count": 5,
+      "peer_variance_range": [10, 15]
+    },
+    "coal": {
+      "baseline": 80,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Highest carbon intensity, phase-out pressure, stranded assets",
+      "baseline_esg": 38,
+      "baseline_env": 28,
+      "baseline_social": 42,
+      "baseline_gov": 45,
+      "peer_estimation_enabled": true,
+      "typical_peer_count": 5,
+      "peer_variance_range": [8, 12]
+    },
+    "mining": {
+      "baseline": 70,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Environmental degradation, water usage, community displacement",
+      "baseline_esg": 46,
+      "baseline_env": 38,
+      "baseline_social": 48,
+      "baseline_gov": 52,
+      "peer_estimation_enabled": true,
+      "typical_peer_count": 5,
+      "peer_variance_range": [10, 15]
+    },
+    "chemicals": {
+      "baseline": 65,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Toxic waste, pollution, chemical safety concerns",
+      "baseline_esg": 50,
+      "baseline_env": 42,
+      "baseline_social": 52,
+      "baseline_gov": 56,
+      "peer_estimation_enabled": true,
+      "typical_peer_count": 5,
+      "peer_variance_range": [8, 12]
+    },
+    "aviation": {
+      "baseline": 70,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "High emissions, hard-to-abate sector, noise pollution",
+      "baseline_esg": 48,
+      "baseline_env": 40,
+      "baseline_social": 52,
+      "baseline_gov": 52,
+      "peer_estimation_enabled": true,
+      "typical_peer_count": 5,
+      "peer_variance_range": [10, 12]
+    },
+    "automotive": {
+      "baseline": 60,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Supply chain complexity, emissions transition challenges",
+      "baseline_esg": 58,
+      "baseline_env": 55,
+      "baseline_social": 58,
+      "baseline_gov": 61,
+      "peer_estimation_enabled": true,
+      "typical_peer_count": 5,
+      "peer_variance_range": [12, 18]
+    },
+    "fast_fashion": {
+      "baseline": 65,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Labor practices, waste, water usage, microplastics",
+      "baseline_esg": 52,
+      "baseline_env": 48,
+      "baseline_social": 54,
+      "baseline_gov": 54,
+      "peer_estimation_enabled": true,
+      "typical_peer_count": 5,
+      "peer_variance_range": [10, 15]
+    },
+    "tobacco": {
+      "baseline": 75,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Public health impact, marketing ethics, addiction",
+      "baseline_esg": 35,
+      "baseline_env": 45,
+      "baseline_social": 28,
+      "baseline_gov": 32,
+      "peer_estimation_enabled": true,
+      "typical_peer_count": 4,
+      "peer_variance_range": [5, 10]
+    },
+    "defense": {
+      "baseline": 60,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Weapons proliferation, ethical concerns, dual-use technology",
+      "baseline_esg": 48,
+      "baseline_env": 52,
+      "baseline_social": 42,
+      "baseline_gov": 50,
+      "peer_estimation_enabled": true,
+      "typical_peer_count": 5,
+      "peer_variance_range": [8, 12]
+    },
+    "consumer_goods": {
+      "baseline": 50,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Packaging waste, supply chain transparency",
+      "baseline_esg": 56,
+      "baseline_env": 54,
+      "baseline_social": 56,
+      "baseline_gov": 58,
+      "peer_estimation_enabled": true,
+      "typical_peer_count": 5,
+      "peer_variance_range": [10, 15]
+    },
+    "retail": {
+      "baseline": 45,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Labor practices, scope 3 emissions, waste management",
+      "baseline_esg": 54,
+      "baseline_env": 52,
+      "baseline_social": 54,
+      "baseline_gov": 56,
+      "peer_estimation_enabled": true,
+      "typical_peer_count": 5,
+      "peer_variance_range": [12, 18]
+    },
+    "food_beverage": {
+      "baseline": 50,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Water usage, agricultural supply chains, nutrition",
+      "baseline_esg": 54,
+      "baseline_env": 52,
+      "baseline_social": 54,
+      "baseline_gov": 56,
+      "peer_estimation_enabled": true,
+      "typical_peer_count": 5,
+      "peer_variance_range": [10, 15]
+    },
+    "pharmaceuticals": {
+      "baseline": 55,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Drug pricing, clinical trial ethics, access to medicine",
+      "baseline_esg": 58,
+      "baseline_env": 55,
+      "baseline_social": 58,
+      "baseline_gov": 61,
+      "peer_estimation_enabled": true,
+      "typical_peer_count": 5,
+      "peer_variance_range": [10, 15]
+    },
+    "banking": {
+      "baseline": 50,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Fossil fuel financing, financial inclusion, data privacy",
+      "baseline_esg": 58,
+      "baseline_env": 54,
+      "baseline_social": 60,
+      "baseline_gov": 61,
+      "peer_estimation_enabled": true,
+      "typical_peer_count": 5,
+      "peer_variance_range": [8, 12]
+    },
+    "real_estate": {
+      "baseline": 45,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Energy efficiency, tenant wellbeing, gentrification",
+      "baseline_esg": 56,
+      "baseline_env": 58,
+      "baseline_social": 54,
+      "baseline_gov": 56,
+      "peer_estimation_enabled": true,
+      "typical_peer_count": 5,
+      "peer_variance_range": [10, 15]
+    },
+    "transportation": {
+      "baseline": 55,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Emissions, safety, infrastructure impact",
+      "baseline_esg": 52,
+      "baseline_env": 48,
+      "baseline_social": 54,
+      "baseline_gov": 54,
+      "peer_estimation_enabled": true,
+      "typical_peer_count": 5,
+      "peer_variance_range": [10, 15]
+    },
+    "hospitality": {
+      "baseline": 45,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Labor practices, water usage, waste",
+      "baseline_esg": 54,
+      "baseline_env": 52,
+      "baseline_social": 54,
+      "baseline_gov": 56,
+      "peer_estimation_enabled": true,
+      "typical_peer_count": 5,
+      "peer_variance_range": [10, 15]
+    },
+    "technology": {
+      "baseline": 35,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Data privacy, e-waste, labor conditions in supply chain",
+      "baseline_esg": 68,
+      "baseline_env": 65,
+      "baseline_social": 68,
+      "baseline_gov": 71,
+      "peer_estimation_enabled": true,
+      "typical_peer_count": 5,
+      "peer_variance_range": [12, 20]
+    },
+    "software": {
+      "baseline": 30,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Lower environmental footprint, data security focus",
+      "baseline_esg": 72,
+      "baseline_env": 70,
+      "baseline_social": 72,
+      "baseline_gov": 74,
+      "peer_estimation_enabled": true,
+      "typical_peer_count": 5,
+      "peer_variance_range": [10, 18]
+    },
+    "healthcare_services": {
+      "baseline": 35,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Patient care quality, data privacy, healthcare access",
+      "baseline_esg": 62,
+      "baseline_env": 58,
+      "baseline_social": 64,
+      "baseline_gov": 64,
+      "peer_estimation_enabled": true,
+      "typical_peer_count": 5,
+      "peer_variance_range": [10, 15]
+    },
+    "telecommunications": {
+      "baseline": 40,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Digital divide, data privacy, infrastructure emissions",
+      "baseline_esg": 60,
+      "baseline_env": 56,
+      "baseline_social": 62,
+      "baseline_gov": 62,
+      "peer_estimation_enabled": true,
+      "typical_peer_count": 5,
+      "peer_variance_range": [10, 15]
+    },
+    "renewable_energy": {
+      "baseline": 25,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Positive climate impact, some land use concerns",
+      "baseline_esg": 72,
+      "baseline_env": 78,
+      "baseline_social": 68,
+      "baseline_gov": 70,
+      "peer_estimation_enabled": true,
+      "typical_peer_count": 5,
+      "peer_variance_range": [10, 15]
+    },
+    "education": {
+      "baseline": 30,
+      "source": "MSCI ESG Industry Materiality Map 2024",
+      "rationale": "Access equity, student outcomes, fair pricing",
+      "baseline_esg": 65,
+      "baseline_env": 60,
+      "baseline_social": 68,
+      "baseline_gov": 67,
+      "peer_estimation_enabled": true,
+      "typical_peer_count": 5,
+      "peer_variance_range": [10, 15]
+    },
+    "unknown": {
+      "baseline": 50,
+      "source": "Default neutral baseline",
+      "rationale": "Insufficient data for classification",
+      "baseline_esg": 50,
+      "baseline_env": 50,
+      "baseline_social": 50,
+      "baseline_gov": 50,
+      "peer_estimation_enabled": false,
+      "typical_peer_count": 0,
+      "peer_variance_range": [0, 0]
+    }
+  },
+  "component_weights": {
+    "claim_verification": 0.30,
+    "evidence_quality": 0.15,
+    "source_credibility": 0.15,
+    "sentiment_divergence": 0.10,
+    "historical_pattern": 0.15,
+    "contradiction_severity": 0.15
+  },
+  "risk_thresholds": {
+    "very_high_risk_industries": {
+      "baseline_threshold": 70,
+      "high_risk": 45,
+      "moderate_risk": 30
+    },
+    "high_risk_industries": {
+      "baseline_threshold": 60,
+      "high_risk": 55,
+      "moderate_risk": 35
+    },
+    "moderate_risk_industries": {
+      "baseline_threshold": 50,
+      "high_risk": 65,
+      "moderate_risk": 40
+    },
+    "low_risk_industries": {
+      "baseline_threshold": 0,
+      "high_risk": 70,
+      "moderate_risk": 45
+    }
+  }
+}

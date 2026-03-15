@@ -1,0 +1,908 @@
+================================================================================
+ESG PROJECT - DATASET EXPLORATION REPORT
+================================================================================
+Generated: 2026-02-05 17:11:56
+Total CSV files found: 10
+================================================================================
+
+SUMMARY STATISTICS
+--------------------------------------------------------------------------------
+Successfully analyzed: 10 files
+Failed to analyze: 0 files
+Total rows across all files: 61,676
+Average columns per file: 61.1
+
+================================================================================
+FILE 1: company_esg_financial_dataset.csv
+================================================================================
+Path: data\company_esg_financial_dataset.csv
+Size: 1.17 MB
+Rows: 11,000
+Columns: 16
+
+COLUMNS AND DATA TYPES
+--------------------------------------------------------------------------------
+  CompanyID                      | int64           | Missing:      0 (  0.0%)
+  CompanyName                    | object          | Missing:      0 (  0.0%)
+  Industry                       | object          | Missing:      0 (  0.0%)
+  Region                         | object          | Missing:      0 (  0.0%)
+  Year                           | int64           | Missing:      0 (  0.0%)
+  Revenue                        | float64         | Missing:      0 (  0.0%)
+  ProfitMargin                   | float64         | Missing:      0 (  0.0%)
+  MarketCap                      | float64         | Missing:      0 (  0.0%)
+  GrowthRate                     | float64         | Missing:   1000 (  9.1%)
+  ESG_Overall                    | float64         | Missing:      0 (  0.0%)
+  ESG_Environmental              | float64         | Missing:      0 (  0.0%)
+  ESG_Social                     | float64         | Missing:      0 (  0.0%)
+  ESG_Governance                 | float64         | Missing:      0 (  0.0%)
+  CarbonEmissions                | float64         | Missing:      0 (  0.0%)
+  WaterUsage                     | float64         | Missing:      0 (  0.0%)
+  EnergyConsumption              | float64         | Missing:      0 (  0.0%)
+
+IDENTIFIED ESG-RELATED COLUMNS
+--------------------------------------------------------------------------------
+  Company Name:  CompanyID
+  ESG Score:     ESG_Overall
+  Industry:      Industry
+  Date:          Year
+
+SAMPLE DATA (First 5 rows)
+--------------------------------------------------------------------------------
+   CompanyID CompanyName Industry         Region  Year  ...  ESG_Social  ESG_Governance  CarbonEmissions  WaterUsage  EnergyConsumption
+0          1   Company_1   Retail  Latin America  2015  ...        33.5            76.8          35577.4     17788.7            71154.7
+1          1   Company_1   Retail  Latin America  2016  ...        32.8            78.5          37314.7     18657.4            74629.4
+2          1   Company_1   Retail  Latin America  2017  ...        34.0            77.8          45006.4     22503.2            90012.9
+3          1   Company_1   Retail  Latin America  2018  ...        33.4            78.3          42650.1     21325.1            85300.2
+4          1   Company_1   Retail  Latin America  2019  ...        30.0            76.1          41799.4     20899.7            83598.8
+
+
+================================================================================
+FILE 2: data.csv
+================================================================================
+Path: data\data.csv
+Size: 175.15 KB
+Rows: 722
+Columns: 21
+
+COLUMNS AND DATA TYPES
+--------------------------------------------------------------------------------
+  ticker                         | object          | Missing:      0 (  0.0%)
+  name                           | object          | Missing:      0 (  0.0%)
+  currency                       | object          | Missing:      0 (  0.0%)
+  exchange                       | object          | Missing:      0 (  0.0%)
+  industry                       | object          | Missing:     13 (  1.8%)
+  logo                           | object          | Missing:     20 (  2.8%)
+  weburl                         | object          | Missing:     16 (  2.2%)
+  environment_grade              | object          | Missing:      0 (  0.0%)
+  environment_level              | object          | Missing:      0 (  0.0%)
+  social_grade                   | object          | Missing:      0 (  0.0%)
+  social_level                   | object          | Missing:      0 (  0.0%)
+  governance_grade               | object          | Missing:      0 (  0.0%)
+  governance_level               | object          | Missing:      0 (  0.0%)
+  environment_score              | int64           | Missing:      0 (  0.0%)
+  social_score                   | int64           | Missing:      0 (  0.0%)
+  governance_score               | int64           | Missing:      0 (  0.0%)
+  total_score                    | int64           | Missing:      0 (  0.0%)
+  last_processing_date           | object          | Missing:      0 (  0.0%)
+  total_grade                    | object          | Missing:      0 (  0.0%)
+  total_level                    | object          | Missing:      0 (  0.0%)
+  cik                            | int64           | Missing:      0 (  0.0%)
+
+IDENTIFIED ESG-RELATED COLUMNS
+--------------------------------------------------------------------------------
+  Company Name:  name
+  ESG Score:     environment_score
+  Industry:      industry
+  Date:          last_processing_date
+
+SAMPLE DATA (First 5 rows)
+--------------------------------------------------------------------------------
+  ticker                           name currency                       exchange                            industry  ... total_score last_processing_date total_grade total_level      cik
+0    dis                 Walt Disney Co      USD  NEW YORK STOCK EXCHANGE, INC.                               Media  ...        1147           19-04-2022         BBB        High  1744489
+1     gm              General Motors Co      USD  NEW YORK STOCK EXCHANGE, INC.                         Automobiles  ...        1068           17-04-2022         BBB        High  1467858
+2    gww                WW Grainger Inc      USD  NEW YORK STOCK EXCHANGE, INC.  Trading Companies and Distributors  ...         880           19-04-2022          BB      Medium   277135
+3    mhk          Mohawk Industries Inc      USD  NEW YORK STOCK EXCHANGE, INC.                   Consumer products  ...        1171           18-04-2022         BBB        High   851968
+4    lyv  Live Nation Entertainment Inc      USD  NEW YORK STOCK EXCHANGE, INC.                               Media  ...        1052           18-04-2022         BBB        High  1335258
+
+
+================================================================================
+FILE 3: ESGCountry-Series.csv
+================================================================================
+Path: data\ESGCountry-Series.csv
+Size: 123.71 KB
+Rows: 1,349
+Columns: 4
+
+COLUMNS AND DATA TYPES
+--------------------------------------------------------------------------------
+  CountryCode                    | object          | Missing:      0 (  0.0%)
+  SeriesCode                     | object          | Missing:      0 (  0.0%)
+  DESCRIPTION                    | object          | Missing:      0 (  0.0%)
+  Unnamed: 3                     | float64         | Missing:   1349 (100.0%)
+
+IDENTIFIED ESG-RELATED COLUMNS
+--------------------------------------------------------------------------------
+  Company Name:  Unnamed: 3
+  ESG Score:     Not found
+  Industry:      Not found
+  Date:          Not found
+
+SAMPLE DATA (First 5 rows)
+--------------------------------------------------------------------------------
+  CountryCode         SeriesCode                                                                                        DESCRIPTION  Unnamed: 3
+0         AFG  EG.EGY.PRIM.PP.KD  Sources: Estimated based on UN Energy Statistics (2014); World Development Indicators, WDI (2014)         NaN
+1         AFG     EG.ELC.RNEW.ZS                                                               Sources: UN Energy Statistics (2014)         NaN
+2         AFG     EG.FEC.RNEW.ZS                                                               Sources: UN Energy Statistics (2014)         NaN
+3         AFG     IT.NET.USER.ZS                    Ministry of Communications. Ministry of Communications & Information Technology         NaN
+4         AFG        SM.POP.NETM                                             Data source: United Nations World Population Prospects         NaN
+
+
+================================================================================
+FILE 4: ESGCountry.csv
+================================================================================
+Path: data\ESGCountry.csv
+Size: 117.44 KB
+Rows: 239
+Columns: 31
+
+COLUMNS AND DATA TYPES
+--------------------------------------------------------------------------------
+  Country Code                   | object          | Missing:      0 (  0.0%)
+  Short Name                     | object          | Missing:      0 (  0.0%)
+  Table Name                     | object          | Missing:      0 (  0.0%)
+  Long Name                      | object          | Missing:      0 (  0.0%)
+  2-alpha code                   | object          | Missing:      1 (  0.4%)
+  Currency Unit                  | object          | Missing:     46 ( 19.2%)
+  Special Notes                  | object          | Missing:    148 ( 61.9%)
+  Region                         | object          | Missing:     46 ( 19.2%)
+  Income Group                   | object          | Missing:     46 ( 19.2%)
+  WB-2 code                      | object          | Missing:      1 (  0.4%)
+  National accounts base year    | object          | Missing:     47 ( 19.7%)
+  National accounts reference year | float64         | Missing:    173 ( 72.4%)
+  SNA price valuation            | object          | Missing:     47 ( 19.7%)
+  Lending category               | object          | Missing:     96 ( 40.2%)
+  Other groups                   | object          | Missing:    180 ( 75.3%)
+  System of National Accounts    | object          | Missing:     49 ( 20.5%)
+  Alternative conversion factor  | object          | Missing:    192 ( 80.3%)
+  PPP survey year                | float64         | Missing:    239 (100.0%)
+  Balance of Payments Manual in use | object          | Missing:     51 ( 21.3%)
+  External debt Reporting status | object          | Missing:    121 ( 50.6%)
+  System of trade                | object          | Missing:     53 ( 22.2%)
+  Government Accounting concept  | object          | Missing:     83 ( 34.7%)
+  IMF data dissemination standard | object          | Missing:     58 ( 24.3%)
+  Latest population census       | object          | Missing:     48 ( 20.1%)
+  Latest household survey        | object          | Missing:     91 ( 38.1%)
+  Source of most recent Income and expenditure data | object          | Missing:     73 ( 30.5%)
+  Vital registration complete    | object          | Missing:    141 ( 59.0%)
+  Latest agricultural census     | object          | Missing:    118 ( 49.4%)
+  Latest industrial data         | float64         | Missing:     96 ( 40.2%)
+  Latest trade data              | float64         | Missing:      7 (  2.9%)
+  Unnamed: 30                    | float64         | Missing:    239 (100.0%)
+
+IDENTIFIED ESG-RELATED COLUMNS
+--------------------------------------------------------------------------------
+  Company Name:  Short Name
+  ESG Score:     Not found
+  Industry:      Lending category
+  Date:          National accounts base year
+
+SAMPLE DATA (First 5 rows)
+--------------------------------------------------------------------------------
+  Country Code   Short Name   Table Name                     Long Name 2-alpha code  ... Vital registration complete Latest agricultural census Latest industrial data Latest trade data Unnamed: 30
+0          AFG  Afghanistan  Afghanistan  Islamic State of Afghanistan           AF  ...                         NaN                        NaN                    NaN            2017.0         NaN
+1          AGO       Angola       Angola   People's Republic of Angola           AO  ...                         NaN                        NaN                    NaN            2017.0         NaN
+2          ALB      Albania      Albania           Republic of Albania           AL  ...                         Yes                       2012                 2013.0            2017.0         NaN
+3          AND      Andorra      Andorra       Principality of Andorra           AD  ...                         Yes                        NaN                    NaN               NaN         NaN
+4          ARB   Arab World   Arab World                    Arab World           1A  ...                         NaN                        NaN                    NaN            2016.0         NaN
+
+
+================================================================================
+FILE 5: ESGData.csv
+================================================================================
+Path: data\ESGData.csv
+Size: 8.45 MB
+Rows: 16,013
+Columns: 67
+
+COLUMNS AND DATA TYPES
+--------------------------------------------------------------------------------
+  Country Name                   | object          | Missing:      0 (  0.0%)
+  Country Code                   | object          | Missing:      0 (  0.0%)
+  Indicator Name                 | object          | Missing:      0 (  0.0%)
+  Indicator Code                 | object          | Missing:      0 (  0.0%)
+  1960                           | float64         | Missing:  14661 ( 91.6%)
+  1961                           | float64         | Missing:  14067 ( 87.8%)
+  1962                           | float64         | Missing:  13828 ( 86.4%)
+  1963                           | float64         | Missing:  14054 ( 87.8%)
+  1964                           | float64         | Missing:  14042 ( 87.7%)
+  1965                           | float64         | Missing:  14001 ( 87.4%)
+  1966                           | float64         | Missing:  14000 ( 87.4%)
+  1967                           | float64         | Missing:  13759 ( 85.9%)
+  1968                           | float64         | Missing:  13982 ( 87.3%)
+  1969                           | float64         | Missing:  13970 ( 87.2%)
+  1970                           | float64         | Missing:  12925 ( 80.7%)
+  1971                           | float64         | Missing:  12417 ( 77.5%)
+  1972                           | float64         | Missing:  12174 ( 76.0%)
+  1973                           | float64         | Missing:  12420 ( 77.6%)
+  1974                           | float64         | Missing:  12409 ( 77.5%)
+  1975                           | float64         | Missing:  12071 ( 75.4%)
+  1976                           | float64         | Missing:  12112 ( 75.6%)
+  1977                           | float64         | Missing:  11857 ( 74.0%)
+  1978                           | float64         | Missing:  12100 ( 75.6%)
+  1979                           | float64         | Missing:  12089 ( 75.5%)
+  1980                           | float64         | Missing:  11807 ( 73.7%)
+  1981                           | float64         | Missing:  11778 ( 73.6%)
+  1982                           | float64         | Missing:  11578 ( 72.3%)
+  1983                           | float64         | Missing:  11843 ( 74.0%)
+  1984                           | float64         | Missing:  11804 ( 73.7%)
+  1985                           | float64         | Missing:  11706 ( 73.1%)
+  1986                           | float64         | Missing:  11713 ( 73.1%)
+  1987                           | float64         | Missing:  11409 ( 71.2%)
+  1988                           | float64         | Missing:  11721 ( 73.2%)
+  1989                           | float64         | Missing:  11671 ( 72.9%)
+  1990                           | float64         | Missing:   9417 ( 58.8%)
+  1991                           | float64         | Missing:   9502 ( 59.3%)
+  1992                           | float64         | Missing:   9095 ( 56.8%)
+  1993                           | float64         | Missing:   9316 ( 58.2%)
+  1994                           | float64         | Missing:   9264 ( 57.9%)
+  1995                           | float64         | Missing:   8986 ( 56.1%)
+  1996                           | float64         | Missing:   8050 ( 50.3%)
+  1997                           | float64         | Missing:   8714 ( 54.4%)
+  1998                           | float64         | Missing:   7767 ( 48.5%)
+  1999                           | float64         | Missing:   8793 ( 54.9%)
+  2000                           | float64         | Missing:   6201 ( 38.7%)
+  2001                           | float64         | Missing:   7663 ( 47.9%)
+  2002                           | float64         | Missing:   6104 ( 38.1%)
+  2003                           | float64         | Missing:   6456 ( 40.3%)
+  2004                           | float64         | Missing:   6276 ( 39.2%)
+  2005                           | float64         | Missing:   5946 ( 37.1%)
+  2006                           | float64         | Missing:   6191 ( 38.7%)
+  2007                           | float64         | Missing:   5824 ( 36.4%)
+  2008                           | float64         | Missing:   6236 ( 38.9%)
+  2009                           | float64         | Missing:   6060 ( 37.8%)
+  2010                           | float64         | Missing:   5704 ( 35.6%)
+  2011                           | float64         | Missing:   5947 ( 37.1%)
+  2012                           | float64         | Missing:   5675 ( 35.4%)
+  2013                           | float64         | Missing:   6268 ( 39.1%)
+  2014                           | float64         | Missing:   6154 ( 38.4%)
+  2015                           | float64         | Missing:   6420 ( 40.1%)
+  2016                           | float64         | Missing:   7447 ( 46.5%)
+  2017                           | float64         | Missing:   8592 ( 53.7%)
+  2018                           | float64         | Missing:   9315 ( 58.2%)
+  2019                           | float64         | Missing:  11753 ( 73.4%)
+  2020                           | float64         | Missing:  15550 ( 97.1%)
+  2050                           | float64         | Missing:  15241 ( 95.2%)
+  Unnamed: 66                    | float64         | Missing:  16013 (100.0%)
+
+IDENTIFIED ESG-RELATED COLUMNS
+--------------------------------------------------------------------------------
+  Company Name:  Country Name
+  ESG Score:     Not found
+  Industry:      Not found
+  Date:          Not found
+
+SAMPLE DATA (First 5 rows)
+--------------------------------------------------------------------------------
+  Country Name Country Code                                                        Indicator Name     Indicator Code  1960  ...       2018  2019  2020  2050  Unnamed: 66
+0   Arab World          ARB  Access to clean fuels and technologies for cooking (% of population)     EG.CFT.ACCS.ZS   NaN  ...        NaN   NaN   NaN   NaN          NaN
+1   Arab World          ARB                               Access to electricity (% of population)     EG.ELC.ACCS.ZS   NaN  ...  89.286856   NaN   NaN   NaN          NaN
+2   Arab World          ARB              Adjusted savings: natural resources depletion (% of GNI)  NY.ADJ.DRES.GN.ZS   NaN  ...   8.190277   NaN   NaN   NaN          NaN
+3   Arab World          ARB                     Adjusted savings: net forest depletion (% of GNI)  NY.ADJ.DFOR.GN.ZS   NaN  ...   0.047916   NaN   NaN   NaN          NaN
+4   Arab World          ARB                                    Agricultural land (% of land area)     AG.LND.AGRI.ZS   NaN  ...        NaN   NaN   NaN   NaN          NaN
+
+
+================================================================================
+FILE 6: ESGFootNote.csv
+================================================================================
+Path: data\ESGFootNote.csv
+Size: 2.37 MB
+Rows: 31,423
+Columns: 5
+
+COLUMNS AND DATA TYPES
+--------------------------------------------------------------------------------
+  CountryCode                    | object          | Missing:      0 (  0.0%)
+  SeriesCode                     | object          | Missing:      0 (  0.0%)
+  Year                           | object          | Missing:      0 (  0.0%)
+  DESCRIPTION                    | object          | Missing:      0 (  0.0%)
+  Unnamed: 4                     | float64         | Missing:  31423 (100.0%)
+
+IDENTIFIED ESG-RELATED COLUMNS
+--------------------------------------------------------------------------------
+  Company Name:  Unnamed: 4
+  ESG Score:     Not found
+  Industry:      Not found
+  Date:          Year
+
+SAMPLE DATA (First 5 rows)
+--------------------------------------------------------------------------------
+  CountryCode      SeriesCode    Year                          DESCRIPTION  Unnamed: 4
+0         AFG  IT.NET.USER.ZS  YR1990  Source: Ministry of Communications.         NaN
+1         AFG  IT.NET.USER.ZS  YR2001                Source: ITU estimate.         NaN
+2         AFG  IT.NET.USER.ZS  YR2002  Source: Ministry of Communications.         NaN
+3         AFG  IT.NET.USER.ZS  YR2003  Source: Ministry of Communications.         NaN
+4         AFG  IT.NET.USER.ZS  YR2004  Source: Ministry of Communications.         NaN
+
+
+================================================================================
+FILE 7: ESGSeries-Time.csv
+================================================================================
+Path: data\ESGSeries-Time.csv
+Size: 2.01 KB
+Rows: 19
+Columns: 4
+
+COLUMNS AND DATA TYPES
+--------------------------------------------------------------------------------
+  SeriesCode                     | object          | Missing:      0 (  0.0%)
+  Year                           | object          | Missing:      0 (  0.0%)
+  DESCRIPTION                    | object          | Missing:      0 (  0.0%)
+  Unnamed: 3                     | float64         | Missing:     19 (100.0%)
+
+IDENTIFIED ESG-RELATED COLUMNS
+--------------------------------------------------------------------------------
+  Company Name:  Unnamed: 3
+  ESG Score:     Not found
+  Industry:      Not found
+  Date:          Year
+
+SAMPLE DATA (First 5 rows)
+--------------------------------------------------------------------------------
+    SeriesCode    Year                                                                      DESCRIPTION  Unnamed: 3
+0  SM.POP.NETM  YR1962  The data refer to five-year periods running from 1 July, 1960 to 30 June, 1965.         NaN
+1  SM.POP.NETM  YR1967  The data refer to five-year periods running from 1 July, 1965 to 30 June, 1970.         NaN
+2  SM.POP.NETM  YR1972  The data refer to five-year periods running from 1 July, 1970 to 30 June, 1975.         NaN
+3  SM.POP.NETM  YR1977  The data refer to five-year periods running from 1 July, 1975 to 30 June, 1980.         NaN
+4  SM.POP.NETM  YR1982  The data refer to five-year periods running from 1 July, 1980 to 30 June, 1985.         NaN
+
+
+================================================================================
+FILE 8: ESGSeries.csv
+================================================================================
+Path: data\ESGSeries.csv
+Size: 203.60 KB
+Rows: 67
+Columns: 21
+
+COLUMNS AND DATA TYPES
+--------------------------------------------------------------------------------
+  Series Code                    | object          | Missing:      0 (  0.0%)
+  Topic                          | object          | Missing:      0 (  0.0%)
+  Indicator Name                 | object          | Missing:      0 (  0.0%)
+  Short definition               | object          | Missing:     63 ( 94.0%)
+  Long definition                | object          | Missing:      0 (  0.0%)
+  Unit of measure                | object          | Missing:     64 ( 95.5%)
+  Periodicity                    | object          | Missing:      6 (  9.0%)
+  Base Period                    | object          | Missing:     66 ( 98.5%)
+  Other notes                    | object          | Missing:     63 ( 94.0%)
+  Aggregation method             | object          | Missing:     21 ( 31.3%)
+  Limitations and exceptions     | object          | Missing:     21 ( 31.3%)
+  Notes from original source     | object          | Missing:     66 ( 98.5%)
+  General comments               | object          | Missing:     43 ( 64.2%)
+  Source                         | object          | Missing:      0 (  0.0%)
+  Statistical concept and methodology | object          | Missing:     14 ( 20.9%)
+  Development relevance          | object          | Missing:     26 ( 38.8%)
+  Related source links           | object          | Missing:     66 ( 98.5%)
+  Other web links                | float64         | Missing:     67 (100.0%)
+  Related indicators             | float64         | Missing:     67 (100.0%)
+  License Type                   | object          | Missing:      0 (  0.0%)
+  Unnamed: 20                    | float64         | Missing:     67 (100.0%)
+
+IDENTIFIED ESG-RELATED COLUMNS
+--------------------------------------------------------------------------------
+  Company Name:  Indicator Name
+  ESG Score:     Not found
+  Industry:      Not found
+  Date:          Periodicity
+
+SAMPLE DATA (First 5 rows)
+--------------------------------------------------------------------------------
+      Series Code                                 Topic                                                         Indicator Name Short definition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       Long definition  ... Related source links Other web links Related indicators License Type Unnamed: 20
+0  AG.LND.AGRI.ZS                 Environment: Land use                                     Agricultural land (% of land area)              NaN  Agricultural land refers to the share of land area that is arable, under permanent crops, and under permanent pastures. Arable land includes land defined by the FAO as land under temporary crops (double-cropped areas are counted once), temporary meadows for mowing or for pasture, land under market or kitchen gardens, and land temporarily fallow. Land abandoned as a result of shifting cultivation is excluded. Land under permanent crops is land cultivated with crops that occupy the land for long periods and need not be replanted after each harvest, such as cocoa, coffee, and rubber. This category includes land under flowering shrubs, fruit trees, nut trees, and vines, but excludes land under trees grown for wood or timber. Permanent pasture is land used for five or more years for forage, including natural and cultivated crops.  ...                  NaN             NaN                NaN    CC BY-4.0         NaN
+1  AG.LND.FRST.ZS                 Environment: Land use                                           Forest area (% of land area)              NaN                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  Forest area is land under natural or planted stands of trees of at least 5 meters in situ, whether productive or not, and excludes tree stands in agricultural production systems (for example, in fruit plantations and agroforestry systems) and trees in urban parks and gardens.  ...                  NaN             NaN                NaN    CC BY-4.0         NaN
+2  AG.PRD.FOOD.XD  Environment: Agricultural production                                Food production index (2004-2006 = 100)              NaN                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    Food production index covers food crops that are considered edible and that contain nutrients. Coffee and tea are excluded because, although edible, they have no nutritive value.  ...                  NaN             NaN                NaN    CC BY-4.0         NaN
+3          CC.EST   Governance: Stability & Rule of Law                                        Control of Corruption: Estimate              NaN                                                                                                                                                                                                                                                                                                                                                                                                                                                                          Control of Corruption captures perceptions of the extent to which public power is exercised for private gain, including both petty and grand forms of corruption, as well as "capture" of the state by elites and private interests. Estimate gives the country's score on the aggregate indicator, in units of a standard normal distribution, i.e. ranging from approximately -2.5 to 2.5.  ...                  NaN             NaN                NaN    CC BY-4.0         NaN
+4  EG.CFT.ACCS.ZS  Environment: Energy production & use  Access to clean fuels and technologies for cooking  (% of population)              NaN                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       Access to clean fuels and technologies for cooking is the proportion of total population primarily using clean cooking fuels and technologies for cooking. Under WHO guidelines, kerosene is excluded from clean cooking fuels.  ...                  NaN             NaN                NaN    CC BY-4.0         NaN
+
+
+================================================================================
+FILE 9: sp500_esg_data.csv
+================================================================================
+Path: data\sp500_esg_data.csv
+Size: 50.53 KB
+Rows: 426
+Columns: 15
+
+COLUMNS AND DATA TYPES
+--------------------------------------------------------------------------------
+  Symbol                         | object          | Missing:      0 (  0.0%)
+  Full Name                      | object          | Missing:      0 (  0.0%)
+  GICS Sector                    | object          | Missing:      0 (  0.0%)
+  GICS Sub-Industry              | object          | Missing:      0 (  0.0%)
+  environmentScore               | float64         | Missing:      0 (  0.0%)
+  socialScore                    | float64         | Missing:      0 (  0.0%)
+  governanceScore                | float64         | Missing:      0 (  0.0%)
+  totalEsg                       | float64         | Missing:      0 (  0.0%)
+  highestControversy             | float64         | Missing:      0 (  0.0%)
+  percentile                     | float64         | Missing:      0 (  0.0%)
+  ratingYear                     | float64         | Missing:      0 (  0.0%)
+  ratingMonth                    | float64         | Missing:      0 (  0.0%)
+  marketCap                      | int64           | Missing:      0 (  0.0%)
+  beta                           | float64         | Missing:      0 (  0.0%)
+  overallRisk                    | int64           | Missing:      0 (  0.0%)
+
+IDENTIFIED ESG-RELATED COLUMNS
+--------------------------------------------------------------------------------
+  Company Name:  Full Name
+  ESG Score:     totalEsg
+  Industry:      GICS Sub-Industry
+  Date:          ratingYear
+
+SAMPLE DATA (First 5 rows)
+--------------------------------------------------------------------------------
+  Symbol                Full Name             GICS Sector                           GICS Sub-Industry  environmentScore  ...  ratingYear  ratingMonth      marketCap   beta  overallRisk
+0      A     Agilent Technologies             Health Care              Life Sciences Tools & Services              1.12  ...      2023.0          9.0    39751831552  1.054            8
+1    AAL  American Airlines Group             Industrials                          Passenger Airlines              9.94  ...      2023.0          9.0     7335383552  1.433           10
+2   AAPL               Apple Inc.  Information Technology  Technology Hardware, Storage & Peripherals              0.46  ...      2023.0          9.0  3296096681984  1.240            1
+3   ABBV                   AbbVie             Health Care                               Biotechnology              2.38  ...      2023.0          9.0   341698445312  0.619            6
+4    ABT      Abbott Laboratories             Health Care                       Health Care Equipment              2.27  ...      2023.0          9.0   205534380032  0.722            7
+
+
+================================================================================
+FILE 10: sp500_price_data.csv
+================================================================================
+Path: data\sp500_price_data.csv
+Size: 3.03 MB
+Rows: 418
+Columns: 427
+
+COLUMNS AND DATA TYPES
+--------------------------------------------------------------------------------
+  Date                           | object          | Missing:      0 (  0.0%)
+  A                              | float64         | Missing:      0 (  0.0%)
+  AAL                            | float64         | Missing:      0 (  0.0%)
+  AAPL                           | float64         | Missing:      0 (  0.0%)
+  ABBV                           | float64         | Missing:      0 (  0.0%)
+  ABT                            | float64         | Missing:      0 (  0.0%)
+  ACGL                           | float64         | Missing:      0 (  0.0%)
+  ACN                            | float64         | Missing:      0 (  0.0%)
+  ADBE                           | float64         | Missing:      0 (  0.0%)
+  ADI                            | float64         | Missing:      0 (  0.0%)
+  ADM                            | float64         | Missing:      0 (  0.0%)
+  ADP                            | float64         | Missing:      0 (  0.0%)
+  ADSK                           | float64         | Missing:      0 (  0.0%)
+  AEE                            | float64         | Missing:      0 (  0.0%)
+  AEP                            | float64         | Missing:      0 (  0.0%)
+  AES                            | float64         | Missing:      0 (  0.0%)
+  AFL                            | float64         | Missing:      0 (  0.0%)
+  AIG                            | float64         | Missing:      0 (  0.0%)
+  AIZ                            | float64         | Missing:      0 (  0.0%)
+  AJG                            | float64         | Missing:      0 (  0.0%)
+  AKAM                           | float64         | Missing:      0 (  0.0%)
+  ALB                            | float64         | Missing:      0 (  0.0%)
+  ALL                            | float64         | Missing:      0 (  0.0%)
+  ALLE                           | float64         | Missing:      0 (  0.0%)
+  AMAT                           | float64         | Missing:      0 (  0.0%)
+  AME                            | float64         | Missing:      0 (  0.0%)
+  AMGN                           | float64         | Missing:      0 (  0.0%)
+  AMP                            | float64         | Missing:      0 (  0.0%)
+  AMT                            | float64         | Missing:      0 (  0.0%)
+  AMZN                           | float64         | Missing:      0 (  0.0%)
+  ANET                           | float64         | Missing:      0 (  0.0%)
+  ANSS                           | float64         | Missing:      0 (  0.0%)
+  AOS                            | float64         | Missing:      0 (  0.0%)
+  APA                            | float64         | Missing:      0 (  0.0%)
+  APD                            | float64         | Missing:      0 (  0.0%)
+  APH                            | float64         | Missing:      0 (  0.0%)
+  APTV                           | float64         | Missing:      0 (  0.0%)
+  ARE                            | float64         | Missing:      0 (  0.0%)
+  ATO                            | float64         | Missing:      0 (  0.0%)
+  AVB                            | float64         | Missing:      0 (  0.0%)
+  AVGO                           | float64         | Missing:      0 (  0.0%)
+  AVY                            | float64         | Missing:      0 (  0.0%)
+  AWK                            | float64         | Missing:      0 (  0.0%)
+  AXP                            | float64         | Missing:      0 (  0.0%)
+  AZO                            | float64         | Missing:      0 (  0.0%)
+  BA                             | float64         | Missing:      0 (  0.0%)
+  BAC                            | float64         | Missing:      0 (  0.0%)
+  BALL                           | float64         | Missing:      0 (  0.0%)
+  BAX                            | float64         | Missing:      0 (  0.0%)
+  BBWI                           | float64         | Missing:      0 (  0.0%)
+  BBY                            | float64         | Missing:      0 (  0.0%)
+  BDX                            | float64         | Missing:      0 (  0.0%)
+  BEN                            | float64         | Missing:      0 (  0.0%)
+  BG                             | float64         | Missing:      0 (  0.0%)
+  BIIB                           | float64         | Missing:      0 (  0.0%)
+  BIO                            | float64         | Missing:      0 (  0.0%)
+  BK                             | float64         | Missing:      0 (  0.0%)
+  BKNG                           | float64         | Missing:      0 (  0.0%)
+  BLK                            | float64         | Missing:      0 (  0.0%)
+  BMY                            | float64         | Missing:      0 (  0.0%)
+  BR                             | float64         | Missing:      0 (  0.0%)
+  BRO                            | float64         | Missing:      0 (  0.0%)
+  BSX                            | float64         | Missing:      0 (  0.0%)
+  BWA                            | float64         | Missing:      0 (  0.0%)
+  BX                             | float64         | Missing:      0 (  0.0%)
+  BXP                            | float64         | Missing:      0 (  0.0%)
+  C                              | float64         | Missing:      0 (  0.0%)
+  CAG                            | float64         | Missing:      0 (  0.0%)
+  CAH                            | float64         | Missing:      0 (  0.0%)
+  CAT                            | float64         | Missing:      0 (  0.0%)
+  CB                             | float64         | Missing:      0 (  0.0%)
+  CBOE                           | float64         | Missing:      0 (  0.0%)
+  CBRE                           | float64         | Missing:      0 (  0.0%)
+  CCI                            | float64         | Missing:      0 (  0.0%)
+  CCL                            | float64         | Missing:      0 (  0.0%)
+  CDNS                           | float64         | Missing:      0 (  0.0%)
+  CDW                            | float64         | Missing:      0 (  0.0%)
+  CE                             | float64         | Missing:      0 (  0.0%)
+  CF                             | float64         | Missing:      0 (  0.0%)
+  CFG                            | float64         | Missing:      0 (  0.0%)
+  CHD                            | float64         | Missing:      0 (  0.0%)
+  CHRW                           | float64         | Missing:      0 (  0.0%)
+  CHTR                           | float64         | Missing:      0 (  0.0%)
+  CI                             | float64         | Missing:      0 (  0.0%)
+  CINF                           | float64         | Missing:      0 (  0.0%)
+  CL                             | float64         | Missing:      0 (  0.0%)
+  CLX                            | float64         | Missing:      0 (  0.0%)
+  CMCSA                          | float64         | Missing:      0 (  0.0%)
+  CME                            | float64         | Missing:      0 (  0.0%)
+  CMG                            | float64         | Missing:      0 (  0.0%)
+  CMI                            | float64         | Missing:      0 (  0.0%)
+  CMS                            | float64         | Missing:      0 (  0.0%)
+  CNC                            | float64         | Missing:      0 (  0.0%)
+  CNP                            | float64         | Missing:      0 (  0.0%)
+  COF                            | float64         | Missing:      0 (  0.0%)
+  COO                            | float64         | Missing:      0 (  0.0%)
+  COP                            | float64         | Missing:      0 (  0.0%)
+  COR                            | float64         | Missing:      0 (  0.0%)
+  COST                           | float64         | Missing:      0 (  0.0%)
+  CPB                            | float64         | Missing:      0 (  0.0%)
+  CPRT                           | float64         | Missing:      0 (  0.0%)
+  CPT                            | float64         | Missing:      0 (  0.0%)
+  CRM                            | float64         | Missing:      0 (  0.0%)
+  CSCO                           | float64         | Missing:      0 (  0.0%)
+  CSGP                           | float64         | Missing:      0 (  0.0%)
+  CSX                            | float64         | Missing:      0 (  0.0%)
+  CTAS                           | float64         | Missing:      0 (  0.0%)
+  CTRA                           | float64         | Missing:      0 (  0.0%)
+  CTSH                           | float64         | Missing:      0 (  0.0%)
+  CVS                            | float64         | Missing:      0 (  0.0%)
+  CVX                            | float64         | Missing:      0 (  0.0%)
+  D                              | float64         | Missing:      0 (  0.0%)
+  DAL                            | float64         | Missing:      0 (  0.0%)
+  DD                             | float64         | Missing:      0 (  0.0%)
+  DE                             | float64         | Missing:      0 (  0.0%)
+  DFS                            | float64         | Missing:      0 (  0.0%)
+  DG                             | float64         | Missing:      0 (  0.0%)
+  DGX                            | float64         | Missing:      0 (  0.0%)
+  DHI                            | float64         | Missing:      0 (  0.0%)
+  DHR                            | float64         | Missing:      0 (  0.0%)
+  DIS                            | float64         | Missing:      0 (  0.0%)
+  DLR                            | float64         | Missing:      0 (  0.0%)
+  DLTR                           | float64         | Missing:      0 (  0.0%)
+  DOV                            | float64         | Missing:      0 (  0.0%)
+  DPZ                            | float64         | Missing:      0 (  0.0%)
+  DRI                            | float64         | Missing:      0 (  0.0%)
+  DTE                            | float64         | Missing:      0 (  0.0%)
+  DUK                            | float64         | Missing:      0 (  0.0%)
+  DVA                            | float64         | Missing:      0 (  0.0%)
+  DVN                            | float64         | Missing:      0 (  0.0%)
+  DXCM                           | float64         | Missing:      0 (  0.0%)
+  EA                             | float64         | Missing:      0 (  0.0%)
+  EBAY                           | float64         | Missing:      0 (  0.0%)
+  ECL                            | float64         | Missing:      0 (  0.0%)
+  ED                             | float64         | Missing:      0 (  0.0%)
+  EFX                            | float64         | Missing:      0 (  0.0%)
+  EG                             | float64         | Missing:      0 (  0.0%)
+  EIX                            | float64         | Missing:      0 (  0.0%)
+  EL                             | float64         | Missing:      0 (  0.0%)
+  ELV                            | float64         | Missing:      0 (  0.0%)
+  EMN                            | float64         | Missing:      0 (  0.0%)
+  EMR                            | float64         | Missing:      0 (  0.0%)
+  EOG                            | float64         | Missing:      0 (  0.0%)
+  EQIX                           | float64         | Missing:      0 (  0.0%)
+  EQR                            | float64         | Missing:      0 (  0.0%)
+  EQT                            | float64         | Missing:      0 (  0.0%)
+  ES                             | float64         | Missing:      0 (  0.0%)
+  ESS                            | float64         | Missing:      0 (  0.0%)
+  ETN                            | float64         | Missing:      0 (  0.0%)
+  ETR                            | float64         | Missing:      0 (  0.0%)
+  EW                             | float64         | Missing:      0 (  0.0%)
+  EXC                            | float64         | Missing:      0 (  0.0%)
+  EXPD                           | float64         | Missing:      0 (  0.0%)
+  EXPE                           | float64         | Missing:      0 (  0.0%)
+  EXR                            | float64         | Missing:      0 (  0.0%)
+  F                              | float64         | Missing:      0 (  0.0%)
+  FAST                           | float64         | Missing:      0 (  0.0%)
+  FCX                            | float64         | Missing:      0 (  0.0%)
+  FDS                            | float64         | Missing:      0 (  0.0%)
+  FDX                            | float64         | Missing:      0 (  0.0%)
+  FE                             | float64         | Missing:      0 (  0.0%)
+  FFIV                           | float64         | Missing:      0 (  0.0%)
+  FI                             | float64         | Missing:      0 (  0.0%)
+  FIS                            | float64         | Missing:      0 (  0.0%)
+  FITB                           | float64         | Missing:      0 (  0.0%)
+  FMC                            | float64         | Missing:      0 (  0.0%)
+  FRT                            | float64         | Missing:      0 (  0.0%)
+  FTNT                           | float64         | Missing:      0 (  0.0%)
+  FTV                            | float64         | Missing:      0 (  0.0%)
+  GD                             | float64         | Missing:      0 (  0.0%)
+  GE                             | float64         | Missing:      0 (  0.0%)
+  GEN                            | float64         | Missing:      0 (  0.0%)
+  GILD                           | float64         | Missing:      0 (  0.0%)
+  GIS                            | float64         | Missing:      0 (  0.0%)
+  GL                             | float64         | Missing:      0 (  0.0%)
+  GLW                            | float64         | Missing:      0 (  0.0%)
+  GM                             | float64         | Missing:      0 (  0.0%)
+  GOOGL                          | float64         | Missing:      0 (  0.0%)
+  GPC                            | float64         | Missing:      0 (  0.0%)
+  GPN                            | float64         | Missing:      0 (  0.0%)
+  GRMN                           | float64         | Missing:      0 (  0.0%)
+  GS                             | float64         | Missing:      0 (  0.0%)
+  GWW                            | float64         | Missing:      0 (  0.0%)
+  HAL                            | float64         | Missing:      0 (  0.0%)
+  HAS                            | float64         | Missing:      0 (  0.0%)
+  HBAN                           | float64         | Missing:      0 (  0.0%)
+  HCA                            | float64         | Missing:      0 (  0.0%)
+  HD                             | float64         | Missing:      0 (  0.0%)
+  HES                            | float64         | Missing:      0 (  0.0%)
+  HIG                            | float64         | Missing:      0 (  0.0%)
+  HLT                            | float64         | Missing:      0 (  0.0%)
+  HOLX                           | float64         | Missing:      0 (  0.0%)
+  HON                            | float64         | Missing:      0 (  0.0%)
+  HPE                            | float64         | Missing:      0 (  0.0%)
+  HPQ                            | float64         | Missing:      0 (  0.0%)
+  HRL                            | float64         | Missing:      0 (  0.0%)
+  HSIC                           | float64         | Missing:      0 (  0.0%)
+  HST                            | float64         | Missing:      0 (  0.0%)
+  HSY                            | float64         | Missing:      0 (  0.0%)
+  HUBB                           | float64         | Missing:      0 (  0.0%)
+  HUM                            | float64         | Missing:      0 (  0.0%)
+  IBM                            | float64         | Missing:      0 (  0.0%)
+  ICE                            | float64         | Missing:      0 (  0.0%)
+  IDXX                           | float64         | Missing:      0 (  0.0%)
+  IEX                            | float64         | Missing:      0 (  0.0%)
+  IFF                            | float64         | Missing:      0 (  0.0%)
+  INCY                           | float64         | Missing:      0 (  0.0%)
+  INTC                           | float64         | Missing:      0 (  0.0%)
+  INTU                           | float64         | Missing:      0 (  0.0%)
+  IP                             | float64         | Missing:      0 (  0.0%)
+  IPG                            | float64         | Missing:      0 (  0.0%)
+  IQV                            | float64         | Missing:      0 (  0.0%)
+  IRM                            | float64         | Missing:      0 (  0.0%)
+  ISRG                           | float64         | Missing:      0 (  0.0%)
+  IT                             | float64         | Missing:      0 (  0.0%)
+  ITW                            | float64         | Missing:      0 (  0.0%)
+  IVZ                            | float64         | Missing:      0 (  0.0%)
+  J                              | float64         | Missing:      0 (  0.0%)
+  JBHT                           | float64         | Missing:      0 (  0.0%)
+  JCI                            | float64         | Missing:      0 (  0.0%)
+  JKHY                           | float64         | Missing:      0 (  0.0%)
+  JNJ                            | float64         | Missing:      0 (  0.0%)
+  JNPR                           | float64         | Missing:      0 (  0.0%)
+  JPM                            | float64         | Missing:      0 (  0.0%)
+  K                              | float64         | Missing:      0 (  0.0%)
+  KEY                            | float64         | Missing:      0 (  0.0%)
+  KEYS                           | float64         | Missing:      0 (  0.0%)
+  KHC                            | float64         | Missing:      0 (  0.0%)
+  KIM                            | float64         | Missing:      0 (  0.0%)
+  KLAC                           | float64         | Missing:      0 (  0.0%)
+  KMB                            | float64         | Missing:      0 (  0.0%)
+  KMI                            | float64         | Missing:      0 (  0.0%)
+  KMX                            | float64         | Missing:      0 (  0.0%)
+  KO                             | float64         | Missing:      0 (  0.0%)
+  KR                             | float64         | Missing:      0 (  0.0%)
+  L                              | float64         | Missing:      0 (  0.0%)
+  LDOS                           | float64         | Missing:      0 (  0.0%)
+  LEN                            | float64         | Missing:      0 (  0.0%)
+  LH                             | float64         | Missing:      0 (  0.0%)
+  LKQ                            | float64         | Missing:      0 (  0.0%)
+  LLY                            | float64         | Missing:      0 (  0.0%)
+  LMT                            | float64         | Missing:      0 (  0.0%)
+  LNT                            | float64         | Missing:      0 (  0.0%)
+  LOW                            | float64         | Missing:      0 (  0.0%)
+  LRCX                           | float64         | Missing:      0 (  0.0%)
+  LULU                           | float64         | Missing:      0 (  0.0%)
+  LUV                            | float64         | Missing:      0 (  0.0%)
+  LVS                            | float64         | Missing:      0 (  0.0%)
+  LYB                            | float64         | Missing:      0 (  0.0%)
+  MA                             | float64         | Missing:      0 (  0.0%)
+  MAA                            | float64         | Missing:      0 (  0.0%)
+  MAR                            | float64         | Missing:      0 (  0.0%)
+  MAS                            | float64         | Missing:      0 (  0.0%)
+  MCD                            | float64         | Missing:      0 (  0.0%)
+  MCHP                           | float64         | Missing:      0 (  0.0%)
+  MCK                            | float64         | Missing:      0 (  0.0%)
+  MCO                            | float64         | Missing:      0 (  0.0%)
+  MDLZ                           | float64         | Missing:      0 (  0.0%)
+  MDT                            | float64         | Missing:      0 (  0.0%)
+  MET                            | float64         | Missing:      0 (  0.0%)
+  META                           | float64         | Missing:      0 (  0.0%)
+  MGM                            | float64         | Missing:      0 (  0.0%)
+  MHK                            | float64         | Missing:      0 (  0.0%)
+  MKC                            | float64         | Missing:      0 (  0.0%)
+  MLM                            | float64         | Missing:      0 (  0.0%)
+  MMC                            | float64         | Missing:      0 (  0.0%)
+  MMM                            | float64         | Missing:      0 (  0.0%)
+  MNST                           | float64         | Missing:      0 (  0.0%)
+  MO                             | float64         | Missing:      0 (  0.0%)
+  MOS                            | float64         | Missing:      0 (  0.0%)
+  MPC                            | float64         | Missing:      0 (  0.0%)
+  MRK                            | float64         | Missing:      0 (  0.0%)
+  MRO                            | float64         | Missing:      0 (  0.0%)
+  MS                             | float64         | Missing:      0 (  0.0%)
+  MSCI                           | float64         | Missing:      0 (  0.0%)
+  MSFT                           | float64         | Missing:      0 (  0.0%)
+  MSI                            | float64         | Missing:      0 (  0.0%)
+  MTB                            | float64         | Missing:      0 (  0.0%)
+  MTD                            | float64         | Missing:      0 (  0.0%)
+  MU                             | float64         | Missing:      0 (  0.0%)
+  NCLH                           | float64         | Missing:      0 (  0.0%)
+  NDAQ                           | float64         | Missing:      0 (  0.0%)
+  NDSN                           | float64         | Missing:      0 (  0.0%)
+  NEE                            | float64         | Missing:      0 (  0.0%)
+  NEM                            | float64         | Missing:      0 (  0.0%)
+  NFLX                           | float64         | Missing:      0 (  0.0%)
+  NI                             | float64         | Missing:      0 (  0.0%)
+  NKE                            | float64         | Missing:      0 (  0.0%)
+  NOC                            | float64         | Missing:      0 (  0.0%)
+  NOW                            | float64         | Missing:      0 (  0.0%)
+  NRG                            | float64         | Missing:      0 (  0.0%)
+  NSC                            | float64         | Missing:      0 (  0.0%)
+  NTAP                           | float64         | Missing:      0 (  0.0%)
+  NTRS                           | float64         | Missing:      0 (  0.0%)
+  NUE                            | float64         | Missing:      0 (  0.0%)
+  NVDA                           | float64         | Missing:      0 (  0.0%)
+  NVR                            | float64         | Missing:      0 (  0.0%)
+  NWSA                           | float64         | Missing:      0 (  0.0%)
+  NXPI                           | float64         | Missing:      0 (  0.0%)
+  O                              | float64         | Missing:      0 (  0.0%)
+  OKE                            | float64         | Missing:      0 (  0.0%)
+  OMC                            | float64         | Missing:      0 (  0.0%)
+  ON                             | float64         | Missing:      0 (  0.0%)
+  ORCL                           | float64         | Missing:      0 (  0.0%)
+  ORLY                           | float64         | Missing:      0 (  0.0%)
+  OXY                            | float64         | Missing:      0 (  0.0%)
+  PANW                           | float64         | Missing:      0 (  0.0%)
+  PARA                           | float64         | Missing:      0 (  0.0%)
+  PAYX                           | float64         | Missing:      0 (  0.0%)
+  PCAR                           | float64         | Missing:      0 (  0.0%)
+  PCG                            | float64         | Missing:      0 (  0.0%)
+  PEG                            | float64         | Missing:      0 (  0.0%)
+  PEP                            | float64         | Missing:      0 (  0.0%)
+  PFE                            | float64         | Missing:      0 (  0.0%)
+  PFG                            | float64         | Missing:      0 (  0.0%)
+  PG                             | float64         | Missing:      0 (  0.0%)
+  PGR                            | float64         | Missing:      0 (  0.0%)
+  PH                             | float64         | Missing:      0 (  0.0%)
+  PHM                            | float64         | Missing:      0 (  0.0%)
+  PKG                            | float64         | Missing:      0 (  0.0%)
+  PLD                            | float64         | Missing:      0 (  0.0%)
+  PM                             | float64         | Missing:      0 (  0.0%)
+  PNC                            | float64         | Missing:      0 (  0.0%)
+  PNR                            | float64         | Missing:      0 (  0.0%)
+  PNW                            | float64         | Missing:      0 (  0.0%)
+  PPG                            | float64         | Missing:      0 (  0.0%)
+  PPL                            | float64         | Missing:      0 (  0.0%)
+  PRU                            | float64         | Missing:      0 (  0.0%)
+  PSA                            | float64         | Missing:      0 (  0.0%)
+  PSX                            | float64         | Missing:      0 (  0.0%)
+  PTC                            | float64         | Missing:      0 (  0.0%)
+  PWR                            | float64         | Missing:      0 (  0.0%)
+  PYPL                           | float64         | Missing:      0 (  0.0%)
+  QCOM                           | float64         | Missing:      0 (  0.0%)
+  QRVO                           | float64         | Missing:      0 (  0.0%)
+  RCL                            | float64         | Missing:      0 (  0.0%)
+  REG                            | float64         | Missing:      0 (  0.0%)
+  REGN                           | float64         | Missing:      0 (  0.0%)
+  RF                             | float64         | Missing:      0 (  0.0%)
+  RJF                            | float64         | Missing:      0 (  0.0%)
+  RL                             | float64         | Missing:      0 (  0.0%)
+  RMD                            | float64         | Missing:      0 (  0.0%)
+  ROK                            | float64         | Missing:      0 (  0.0%)
+  ROL                            | float64         | Missing:      0 (  0.0%)
+  ROP                            | float64         | Missing:      0 (  0.0%)
+  ROST                           | float64         | Missing:      0 (  0.0%)
+  RSG                            | float64         | Missing:      0 (  0.0%)
+  RVTY                           | float64         | Missing:      0 (  0.0%)
+  SBAC                           | float64         | Missing:      0 (  0.0%)
+  SBUX                           | float64         | Missing:      0 (  0.0%)
+  SCHW                           | float64         | Missing:      0 (  0.0%)
+  SHW                            | float64         | Missing:      0 (  0.0%)
+  SJM                            | float64         | Missing:      0 (  0.0%)
+  SLB                            | float64         | Missing:      0 (  0.0%)
+  SNA                            | float64         | Missing:      0 (  0.0%)
+  SNPS                           | float64         | Missing:      0 (  0.0%)
+  SO                             | float64         | Missing:      0 (  0.0%)
+  SPG                            | float64         | Missing:      0 (  0.0%)
+  SPGI                           | float64         | Missing:      0 (  0.0%)
+  SRE                            | float64         | Missing:      0 (  0.0%)
+  STLD                           | float64         | Missing:      0 (  0.0%)
+  STT                            | float64         | Missing:      0 (  0.0%)
+  STX                            | float64         | Missing:      0 (  0.0%)
+  STZ                            | float64         | Missing:      0 (  0.0%)
+  SWK                            | float64         | Missing:      0 (  0.0%)
+  SWKS                           | float64         | Missing:      0 (  0.0%)
+  SYF                            | float64         | Missing:      0 (  0.0%)
+  SYK                            | float64         | Missing:      0 (  0.0%)
+  SYY                            | float64         | Missing:      0 (  0.0%)
+  T                              | float64         | Missing:      0 (  0.0%)
+  TAP                            | float64         | Missing:      0 (  0.0%)
+  TDG                            | float64         | Missing:      0 (  0.0%)
+  TEL                            | float64         | Missing:      0 (  0.0%)
+  TER                            | float64         | Missing:      0 (  0.0%)
+  TFX                            | float64         | Missing:      0 (  0.0%)
+  TGT                            | float64         | Missing:      0 (  0.0%)
+  TJX                            | float64         | Missing:      0 (  0.0%)
+  TMO                            | float64         | Missing:      0 (  0.0%)
+  TMUS                           | float64         | Missing:      0 (  0.0%)
+  TPR                            | float64         | Missing:      0 (  0.0%)
+  TRGP                           | float64         | Missing:      0 (  0.0%)
+  TRMB                           | float64         | Missing:      0 (  0.0%)
+  TROW                           | float64         | Missing:      0 (  0.0%)
+  TRV                            | float64         | Missing:      0 (  0.0%)
+  TSCO                           | float64         | Missing:      0 (  0.0%)
+  TSLA                           | float64         | Missing:      0 (  0.0%)
+  TSN                            | float64         | Missing:      0 (  0.0%)
+  TT                             | float64         | Missing:      0 (  0.0%)
+  TXN                            | float64         | Missing:      0 (  0.0%)
+  TXT                            | float64         | Missing:      0 (  0.0%)
+  UAL                            | float64         | Missing:      0 (  0.0%)
+  UDR                            | float64         | Missing:      0 (  0.0%)
+  UHS                            | float64         | Missing:      0 (  0.0%)
+  ULTA                           | float64         | Missing:      0 (  0.0%)
+  UNH                            | float64         | Missing:      0 (  0.0%)
+  UNP                            | float64         | Missing:      0 (  0.0%)
+  UPS                            | float64         | Missing:      0 (  0.0%)
+  URI                            | float64         | Missing:      0 (  0.0%)
+  USB                            | float64         | Missing:      0 (  0.0%)
+  V                              | float64         | Missing:      0 (  0.0%)
+  VLO                            | float64         | Missing:      0 (  0.0%)
+  VMC                            | float64         | Missing:      0 (  0.0%)
+  VRSK                           | float64         | Missing:      0 (  0.0%)
+  VRSN                           | float64         | Missing:      0 (  0.0%)
+  VRTX                           | float64         | Missing:      0 (  0.0%)
+  VTR                            | float64         | Missing:      0 (  0.0%)
+  VZ                             | float64         | Missing:      0 (  0.0%)
+  WAB                            | float64         | Missing:      0 (  0.0%)
+  WAT                            | float64         | Missing:      0 (  0.0%)
+  WBA                            | float64         | Missing:      0 (  0.0%)
+  WDC                            | float64         | Missing:      0 (  0.0%)
+  WEC                            | float64         | Missing:      0 (  0.0%)
+  WELL                           | float64         | Missing:      0 (  0.0%)
+  WFC                            | float64         | Missing:      0 (  0.0%)
+  WM                             | float64         | Missing:      0 (  0.0%)
+  WMB                            | float64         | Missing:      0 (  0.0%)
+  WMT                            | float64         | Missing:      0 (  0.0%)
+  WRB                            | float64         | Missing:      0 (  0.0%)
+  WTW                            | float64         | Missing:      0 (  0.0%)
+  WY                             | float64         | Missing:      0 (  0.0%)
+  WYNN                           | float64         | Missing:      0 (  0.0%)
+  XEL                            | float64         | Missing:      0 (  0.0%)
+  XOM                            | float64         | Missing:      0 (  0.0%)
+  XYL                            | float64         | Missing:      0 (  0.0%)
+  YUM                            | float64         | Missing:      0 (  0.0%)
+  ZBH                            | float64         | Missing:      0 (  0.0%)
+  ZTS                            | float64         | Missing:      0 (  0.0%)
+
+IDENTIFIED ESG-RELATED COLUMNS
+--------------------------------------------------------------------------------
+  Company Name:  Not found
+  ESG Score:     Not found
+  Industry:      Not found
+  Date:          Date
+
+SAMPLE DATA (First 5 rows)
+--------------------------------------------------------------------------------
+                        Date           A    AAL        AAPL        ABBV  ...         XOM         XYL         YUM         ZBH         ZTS
+0  2023-01-03 00:00:00+00:00  150.039993  12.74  125.070000  162.380005  ...  106.510002  110.760002  126.959999  127.279999  146.850006
+1  2023-01-04 00:00:00+00:00  151.669998  13.59  126.360001  163.690002  ...  106.820000  110.589996  128.679993  128.460007  148.960007
+2  2023-01-05 00:00:00+00:00  152.110001  13.99  125.019997  163.490005  ...  109.209999  107.449997  127.699997  126.080002  145.449997
+3  2023-01-06 00:00:00+00:00  147.669998  14.18  129.619995  166.550003  ...  110.529999  111.269997  130.289993  125.699997  147.639999
+4  2023-01-09 00:00:00+00:00  147.470001  14.61  130.149994  161.660004  ...  108.470001  111.790001  129.759995  126.050003  147.059998
+
+
+================================================================================
+END OF REPORT
+================================================================================

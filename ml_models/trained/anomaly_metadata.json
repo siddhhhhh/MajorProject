@@ -1,0 +1,18 @@
+{
+  "training_date": "2026-02-14T12:28:51.559141",
+  "dataset_size": 1000,
+  "features": [
+    "carbon_intensity",
+    "water_intensity",
+    "energy_intensity",
+    "esg_revenue_gap",
+    "growth_esg_correlation",
+    "profit_esg_ratio",
+    "environmental_balance",
+    "volatility_score"
+  ],
+  "contamination": 0.05,
+  "n_estimators": 100,
+  "anomalies_detected": 50,
+  "anomaly_percentage": 5.0
+}
