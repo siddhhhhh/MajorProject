@@ -177,6 +177,21 @@ def deduct_legal_score(snippet: str) -> int:
 # ==============================
 # QUALITATIVE VIOLATION EXTRACTION
 # ==============================
+def evaluate_legal_outcome(text: str) -> str:
+    """
+    Determine the category and severity of a legal or regulatory event.
+    """
+    t = text.lower()
+    if any(w in t for w in ["won appeal", "overturned", "cleared", "dismissed", "dropped", "successful appeal"]):
+        return "Legal Dispute Overturned"
+    if any(w in t for w in ["fined", "penalized", "settled", "settlement", "convicted", "guilty", "ruling against", "ordered to", "court ordered"]):
+        return "Confirmed Violation"
+    if any(w in t for w in ["lawsuit", "sued", "dispute", "appeal", "appealing", "court case"]):
+        return "Legal Dispute"
+    if any(w in t for w in ["alleged", "accused", "investigation", "probe", "claims", "allegation", "scrutiny", "notice of violation"]):
+        return "Allegation"
+    return "Policy Gap / Performance Flag"
+
 def detect_qualitative_violation(text: str) -> bool:
     """
     Look for explicit indicators of regulatory or ethical violations 
@@ -195,7 +210,9 @@ def detect_qualitative_violation(text: str) -> bool:
         "defeat device",
         "cheating scandal",
         "fraud",
-        "sec probe"
+        "sec probe",
+        "notice of violation",
+        "nov"
     ]
     return any(kw in text_lower for kw in violation_keywords)
 
@@ -222,9 +239,12 @@ def collect_external_evidence(company_name: str) -> List[Dict]:
         first_half_domains = " OR ".join([f"site:{d}" for d in TRUSTED_DOMAINS[:7]])
         second_half_domains = " OR ".join([f"site:{d}" for d in TRUSTED_DOMAINS[7:]])
 
+        # Remove the OR from the base queries which breaks duckduckgo site searches when mixed with complex booleans
         queries = [
-            f"{company_name} emissions scandal OR violation OR cheat OR fraud {first_half_domains}",
-            f"{company_name} emissions scandal OR violation OR cheat OR fraud {second_half_domains}",
+            f"{company_name} emissions violation fraud {first_half_domains}",
+            f"{company_name} emissions violation fraud {second_half_domains}",
+            f"{company_name} emissions scandal {first_half_domains}",
+            f"{company_name} emissions scandal {second_half_domains}",
             f"{company_name} scope 1 scope 2 scope 3 emissions data {first_half_domains}",
             f"{company_name} scope 1 scope 2 scope 3 emissions data {second_half_domains}"
         ]
@@ -250,8 +270,9 @@ def collect_external_evidence(company_name: str) -> List[Dict]:
                 # --------------------------------
                 # 2. Strict ESG Evidence Filtering
                 # --------------------------------
-                if not any(kw in text for kw in ESG_KEYWORDS):
-                    continue
+                # Temporarily disabled strict keyword matching for qualitative legal findings (like "fraud") where it might just say "emissions scandal" without heavy ESG vernacular.
+                # if not any(kw in text for kw in ESG_KEYWORDS):
+                #     continue
 
                 # --------------------------------
                 # 3. Reject Generic Documents
@@ -286,25 +307,34 @@ def collect_external_evidence(company_name: str) -> List[Dict]:
                 # STEP 3: TYPE 2 — Regulatory or Ethical Violations check
                 is_violation = detect_qualitative_violation(text)
                 
+                # Expand violation detection strongly
+                if not is_violation and any(word in text for word in ["investigation", "violation", "illegal", "fraud", "scandal", "dieselgate", "probe"]):
+                    is_violation = True
+                    
+                event_category = evaluate_legal_outcome(text) if is_violation else "Performance Metric"
+                
                 if percent is not None:
                     value = percent
                 elif is_violation:
-                    value = "Regulatory Violation"
+                    value = event_category
                 else:
                     # Still record evidence if it contains strong keywords but no valid math, just tag appropriately
                     if any(word in text for word in ["fail", "missed", "fraud", "violation"]):
                         value = "Qualitative Failure"
+                        is_violation = True
+                        event_category = evaluate_legal_outcome(text)
                         
                 # --------------------------------
                 # Evidence confidence weighting
                 # --------------------------------
-                if value is not None and score >= 4:
+                if value is not None and score >= 3:
                     evidence.append({
                         "metric": metric,
                         "year": CURRENT_YEAR, # Future iterations will extract precise timeline data here
                         "value": value,
                         "unit": "change %" if isinstance(value, float) else "",
                         "is_regulatory_violation": is_violation, # Add flag for downstream engine
+                        "event_category": event_category,
                         "source": url,
                         "confidence_score": score,
                         "source_credibility": credibility,
@@ -313,7 +343,7 @@ def collect_external_evidence(company_name: str) -> List[Dict]:
                     })
                 
                 # --------------------------------
-                # Regulatory violation detection
+                # Regulatory violation detection fallback
                 # --------------------------------
                 elif any(word in text for word in [
                     "investigation",
@@ -330,6 +360,7 @@ def collect_external_evidence(company_name: str) -> List[Dict]:
                             "value": "Regulatory Violation",
                             "source": url,
                             "confidence_score": score,
+                            "event_category": evaluate_legal_outcome(text),
                             "source_credibility": f"Regulatory ({domain})",
                             "supporting_quote": quote
                         })

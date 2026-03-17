@@ -238,11 +238,16 @@ def analyze_company_esg(company_name: str) -> Dict:
     for cp in completed_promises:
          metric_name = cp.get('metric', '').replace('_', ' ').title()
          
+         actual_perf = str(cp.get('actual', 'N/A'))
+         # Provide readable tier-labels instead of default NON-COMPLIANT
+         verdict_label = cp.get('status', 'Unverified Issue').upper()
+         
          formatted_mismatches.append({
              "Failed Pledge": metric_name,
              "Expected Target": f"{cp.get('target', 'N/A')} {cp.get('unit', '')}".strip() if cp.get('target') else "Categorical Goal",
-             "Actual Verified Performance": f"NON-COMPLIANT: {cp.get('actual', 'N/A')}",
+             "Flagged Status": f"{verdict_label}: {actual_perf}",
              "Risk Level": cp.get("risk_score", "Unknown"),
+             "Confidence Score": cp.get("confidence", "Medium"),
              "Evidence Source": cp.get("mismatch_source", "Unknown Source"),
              "Verified Quote": cp.get("mismatch_quote", "No quote available")
          })
