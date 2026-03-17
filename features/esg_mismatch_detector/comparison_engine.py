@@ -82,16 +82,35 @@ def compare_promises_vs_actual(promises: List[Dict], actual_data: List[Dict]) ->
                 actual_quote = actual.get("supporting_quote", "").lower()
                 if any(crime in actual_quote for crime in ["violation", "fraud", "exceeding", "illegal", "investigation"]):
                     regulatory_violation = True
+        
+        event_category = actual.get("event_category", "Policy Gap / Performance Flag") if actual else None
 
         # Process Qualitative Regulatory Violations directly even without a numerical actual_value
         if regulatory_violation:
-            status = "Violation Detected"
-            mismatch_type = "Regulatory Violation"
-            risk_score = "Severe" # Overrides quantitative calculations
-            mismatch_explanation = "Regulatory investigation, fine, or scandal found contradicting sustainability claims."
+            if event_category == "Legal Dispute Overturned":
+                 status = "Monitored (Overturned Dispute)"
+                 mismatch_type = "Resolved Allegation"
+                 risk_score = "Low"
+                 mismatch_explanation = "A dispute occurred but ruling was overturned or appeal won."
+                 regulatory_violation = False
+            else:
+                 status = "Violation Detected" if event_category in ["Confirmed Violation", "Policy Gap / Performance Flag"] else "Risk Flagged"
+                 mismatch_type = "Regulatory/Legal Event"
+                 
+                 # Dynamically assign severity based on the tier
+                 if event_category == "Confirmed Violation":
+                     risk_score = "Severe"
+                 elif event_category == "Allegation":
+                     risk_score = "Moderate"
+                 elif event_category == "Legal Dispute":
+                     risk_score = "High"
+                 else:
+                     risk_score = "High" 
+                 mismatch_explanation = f"Event recorded: {event_category}. Further investigation required."
+                 
             # Set to valid placeholder so it successfully triggers mismatch logic lower down
             if actual_value is None:
-                actual_value = "Non-Numeric Regulatory Flag"
+                actual_value = event_category
 
         if actual_value is not None and not regulatory_violation:
             # Check string based absolute goals (like 'carbon negative') vs reality (+29.1% increase)
@@ -129,7 +148,7 @@ def compare_promises_vs_actual(promises: List[Dict], actual_data: List[Dict]) ->
                                 mismatch_explanation = None
                             else:
                                 risk_score = "Moderate" if gap <= 30 else ("High" if gap <= 70 else "Severe")
-                                status = "Missed"
+                                status = "Missed Minimum Targets"
                     elif category == "future_promise":
                         # Step 4: Monitoring for Future Promises
                         status = "In Progress"
@@ -169,7 +188,7 @@ def compare_promises_vs_actual(promises: List[Dict], actual_data: List[Dict]) ->
                             status = "Achieved"
                         else:
                             risk_score = "Moderate" if gap <= 30 else ("High" if gap <= 70 else "Severe")
-                            status = "Missed"
+                            status = "Missed Minimum Targets"
                             mismatch_type = "Missed Target"
                             mismatch_explanation = f"Target was {target_f}%, but actual achieved was {actual_f}%."
                     elif category == "future_promise":
@@ -197,6 +216,19 @@ def compare_promises_vs_actual(promises: List[Dict], actual_data: List[Dict]) ->
             risk_score = "Unknown"
             trend = "unknown"
             
+        # Add Confidence metric loosely mapped from source severity / score
+        eval_conf = "Medium"
+        if actual:
+             score = actual.get("confidence_score", 3)
+             if score >= 5 and event_category == "Confirmed Violation":
+                  eval_conf = "Very High (Regulatory Verdict)"
+             elif score >= 5:
+                  eval_conf = "High (Government Tier)"
+             elif event_category == "Allegation":
+                  eval_conf = "Low (Pending Investigation)"
+             elif score == 4:
+                  eval_conf = "Medium-High (Trusted Entity)"
+            
         # Clean up output fields to be easily readable
         mismatch_source = actual.get("source") if actual and mismatch_type else None
         mismatch_quote = actual.get("supporting_quote") if actual and mismatch_type else None
@@ -210,21 +242,23 @@ def compare_promises_vs_actual(promises: List[Dict], actual_data: List[Dict]) ->
         comparisons.append({
             "metric": metric,
             "target": target,
-            "actual": actual_value,
             "unit": promise.get("unit"),
-            "deadline": promise.get("deadline"),
+            "baseline": promise.get("baseline"),
+            "scope": promise.get("scope"),
+            "deadline": deadline,
             "category": category,
             "trend": trend,
             "gap": gap,
+            "risk_score": risk_score,
             "status": status,
-            "progress": progress,
-            "risk_score": risk_score, 
+            "actual": actual_value,
+            "measures_taking": promise.get("measures_taking"),
+            "source": promise.get("source"),
             "mismatch_type": mismatch_type,
             "mismatch_explanation": mismatch_explanation,
-            "promise_source": promise.get("supporting_quote", promise.get("source")),
-            "measures_taking": promise.get("measures_taking", "Not explicitly stated."),
             "mismatch_source": mismatch_source,
-            "mismatch_quote": mismatch_quote
+            "mismatch_quote": mismatch_quote,
+            "confidence": eval_conf
         })
-        
+
     return comparisons
