@@ -1,10 +1,20 @@
 import json
+import re
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
+import logging
 from core.llm_client import llm_client
 from utils.enterprise_data_sources import enterprise_fetcher
 from config.agent_prompts import HISTORICAL_ANALYSIS_PROMPT
 from core.evidence_cache import evidence_cache
+
+try:
+    from data.known_cases import get_known_contradictions
+except Exception:
+    def get_known_contradictions(company_name: str, claim_text: str) -> List[Dict[str, Any]]:
+        return []
+
+logger = logging.getLogger(__name__)
 
 class HistoricalAnalyst:
     def __init__(self):
@@ -70,9 +80,28 @@ class HistoricalAnalyst:
         # ============================================================
         print("\n📈 Analyzing temporal patterns...")
         patterns = self._analyze_patterns(violations, greenwashing, achievements)
+
+        if not violations:
+            known = get_known_contradictions(company, "net zero sustainable climate") or []
+            for case in known:
+                violations.append({
+                    "year": case.get("year"),
+                    "type": "Known Contradiction",
+                    "description": case.get("contradiction_text", "Known contradiction case"),
+                    "source": case.get("source", "Known contradictions database"),
+                    "url": case.get("source_url", ""),
+                })
         
         # Calculate reputation score
         reputation = self._calculate_reputation_score(violations, greenwashing, achievements, patterns)
+
+        trend_analysis = self._llm_trend_analysis(company, violations, achievements, patterns)
+        claim_tone_trend = trend_analysis.get("claim_tone_trend") or "INSUFFICIENT_DATA"
+        env_performance_trend = trend_analysis.get("env_performance_trend") or "INSUFFICIENT_DATA"
+
+        years = [y for y in [v.get("year") for v in violations] if isinstance(y, int)]
+        years_analyzed = len(set(years)) if years else 0
+        year_range = f"{min(years)}-{max(years)}" if years else "N/A"
         
         result = {
             "company": company,
@@ -81,7 +110,14 @@ class HistoricalAnalyst:
             "greenwashing_history": greenwashing,
             "positive_track_record": achievements,
             "temporal_patterns": patterns,
-            "reputation_score": reputation
+            "reputation_score": reputation,
+            "claim_tone_trend": claim_tone_trend,
+            "env_performance_trend": env_performance_trend,
+            "violations": violations,
+            "violations_count": len(violations),
+            "years_analyzed": years_analyzed,
+            "year_range": year_range,
+            "confidence": 0.65 if years_analyzed > 0 else 0.5,
         }
         
         print(f"\n✅ Historical analysis complete:")
@@ -90,6 +126,64 @@ class HistoricalAnalyst:
         print(f"   Achievements: {len(achievements)}")
         
         return result
+
+    def _llm_trend_analysis(
+        self,
+        company: str,
+        violations: List[Dict[str, Any]],
+        achievements: List[Dict[str, Any]],
+        patterns: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """LLM-assisted trend summary with deterministic fallbacks."""
+        prompt = HISTORICAL_ANALYSIS_PROMPT.format(
+            company=company,
+            violations=json.dumps(violations[:10], default=str),
+            achievements=json.dumps(achievements[:10], default=str),
+            patterns=json.dumps(patterns, default=str),
+        )
+
+        try:
+            raw_response = self.llm.call_with_fallback(prompt, use_gemini_first=True)
+            logger.debug("Historical LLM raw response: %s", raw_response)
+        except Exception as exc:
+            logger.warning("Historical LLM call failed: %s", exc)
+            raw_response = None
+
+        if not raw_response:
+            return {
+                "claim_tone_trend": "INSUFFICIENT_DATA",
+                "env_performance_trend": "INSUFFICIENT_DATA",
+            }
+
+        try:
+            cleaned = re.sub(r'```\s*json?\s*', '', raw_response)
+            cleaned = re.sub(r'```\s*', '', cleaned)
+            start = cleaned.find('{')
+            end = cleaned.rfind('}') + 1
+            payload = json.loads(cleaned[start:end]) if start != -1 and end > start else {}
+
+            claim_tone_trend = (
+                payload.get("claim_tone_trend")
+                or payload.get("claim_trend")
+                or payload.get("tone_trend")
+                or "INSUFFICIENT_DATA"
+            )
+            env_performance_trend = (
+                payload.get("env_performance_trend")
+                or payload.get("environmental_trend")
+                or payload.get("performance_trend")
+                or "INSUFFICIENT_DATA"
+            )
+
+            return {
+                "claim_tone_trend": claim_tone_trend,
+                "env_performance_trend": env_performance_trend,
+            }
+        except Exception:
+            return {
+                "claim_tone_trend": "INSUFFICIENT_DATA",
+                "env_performance_trend": "INSUFFICIENT_DATA",
+            }
     
     def _extract_violations_from_cache(self, evidence_list: List[Dict]) -> List[Dict]:
         """Extract violations from cached evidence"""

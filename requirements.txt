@@ -1,7 +1,10 @@
+python_requires>=3.11
+pytest>=7.0.0
+pytest-cov>=4.0.0
 pyautogen>=0.2.35
 chromadb>=0.4.22
 groq>=0.4.0
-google-generativeai>=0.3.0
+google-genai>=0.7.0
 requests>=2.31.0
 beautifulsoup4>=4.12.0
 spacy>=3.7.0
@@ -53,7 +56,8 @@ lime>=0.2.0.1
 
 # Company Report Fetching & PDF Parsing
 pdfplumber>=0.10.0
-PyPDF2>=3.0.0
+pypdf>=4.0.0
+newspaper4k>=0.9.3.1
 
 # Indian Data Sources
 feedparser>=6.0.10  # Already included above, just noting

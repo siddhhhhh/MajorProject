@@ -9,6 +9,7 @@ from datetime import datetime
 from core.llm_client import llm_client
 import json
 import os
+import re
 import numpy as np
 from ml_models.xgboost_risk_model import XGBoostRiskModel
 from ml_models.lightgbm_esg_predictor import LightGBMESGPredictor
@@ -24,7 +25,7 @@ class RiskScorer:
         "aviation": 1.3,
         "coal": 1.6
     }
-    
+        
     def __init__(self):
         self.name = "Greenwashing Risk Scoring & ESG Rating Specialist"
         self.llm = llm_client
@@ -213,77 +214,115 @@ class RiskScorer:
         """
         
         print(f"\n📊 Calculating ESG Pillar Scores...")
-        
-        # Get evidence and contradictions
+
         evidence = all_analyses.get('evidence', [])
         contradictions = all_analyses.get('contradiction_analysis', [])
-        
-        # Flatten all text content for keyword analysis
-        all_text = []
-        for ev in evidence:
-            if isinstance(ev, dict):
-                all_text.append(ev.get('snippet', '').lower())
-                all_text.append(ev.get('relevant_text', '').lower())
-                for e in ev.get('evidence', []):
-                    if isinstance(e, dict):
-                        all_text.append(e.get('relevant_text', '').lower())
-        
-        combined_text = ' '.join(all_text)
-        
-        # Define pillar keywords
-        environmental_keywords = [
-            "carbon", "emissions", "climate", "renewable", "waste", 
-            "water", "biodiversity", "pollution", "energy", "environmental"
-        ]
-        
-        social_keywords = [
-            "labor", "diversity", "community", "human rights", "employee", 
-            "safety", "stakeholder", "workers", "social", "equity"
-        ]
-        
-        governance_keywords = [
-            "board", "ethics", "compliance", "transparency", "corruption", 
-            "disclosure", "audit", "governance", "accountability", "integrity"
-        ]
-        
-        # Calculate Environmental Score
-        env_positive = sum(1 for kw in environmental_keywords if kw in combined_text)
-        env_negative = sum(
-            1 for c in contradictions 
-            if c.get('overall_verdict') == 'Contradicted' and 
-            any(kw in str(c).lower() for kw in environmental_keywords)
+        historical = all_analyses.get('historical_analysis', {}) or {}
+        carbon_ctx = all_analyses.get('carbon_extraction', {}) or {}
+
+        # Flatten text for weak-signal keyword extraction using a bounded buffer
+        # to avoid memory spikes on very large evidence payloads.
+        combined_text = self._build_bounded_evidence_text(evidence)
+
+        # Environmental signals
+        carbon_data_quality = self._assess_carbon_data_quality(all_analyses)
+        renewable_energy_pct = self._extract_percentage_from_text(combined_text, ["renewable", "renewable energy"])
+        science_based_target = bool(
+            carbon_ctx.get("science_based_target")
+            or ("science based" in combined_text or "sbti" in combined_text)
         )
-        
-        environmental_score = 50 + (env_positive * 10) - (env_negative * 15)
+        net_zero_target = bool(carbon_ctx.get("net_zero_target") or ("net zero" in combined_text))
+        climate_capex = self._extract_percentage_from_text(combined_text, ["climate capex", "decarbonization capex", "climate investment"])
+        offset_audit = carbon_ctx.get("offset_transparency", {}) if isinstance(carbon_ctx, dict) else {}
+        offset_penalty = float(offset_audit.get("risk_penalty_points", 0) or 0)
+
+        environmental_score = 25.0
+        environmental_score += min(30.0, carbon_data_quality * 0.30)
+        environmental_score += min(15.0, renewable_energy_pct * 0.15)
+        environmental_score += 12.0 if science_based_target else 0.0
+        environmental_score += 10.0 if net_zero_target else 0.0
+        environmental_score += min(8.0, climate_capex * 0.20)
+        environmental_score -= min(20.0, offset_penalty)
+
+        env_contradictions = sum(
+            1 for c in contradictions
+            if c.get('overall_verdict') == 'Contradicted' and any(k in str(c).lower() for k in ["carbon", "emission", "climate", "renewable"])
+        )
+        environmental_score -= min(20.0, env_contradictions * 6.0)
         environmental_score = max(0, min(100, environmental_score))
-        
-        print(f"   Environmental: {environmental_score:.1f}/100 (positive: {env_positive}, contradictions: {env_negative})")
-        
-        # Calculate Social Score
-        soc_positive = sum(1 for kw in social_keywords if kw in combined_text)
-        soc_negative = sum(
-            1 for c in contradictions 
-            if c.get('overall_verdict') == 'Contradicted' and 
-            any(kw in str(c).lower() for kw in social_keywords)
+
+        print(
+            f"   Environmental: {environmental_score:.1f}/100 "
+            f"(carbon_quality={carbon_data_quality:.1f}, renewable={renewable_energy_pct:.1f}, "
+            f"sbt={science_based_target}, net_zero={net_zero_target}, offset_penalty={offset_penalty:.1f})"
         )
-        
-        social_score = 50 + (soc_positive * 10) - (soc_negative * 15)
+
+        # Social signals
+        controversies = len(historical.get('past_violations', []))
+        labor_practices = 1 if any(k in combined_text for k in ["labor", "worker safety", "occupational safety", "workplace"]) else 0
+        diversity_disclosure = 1 if any(k in combined_text for k in ["diversity", "inclusion", "gender", "women in workforce"]) else 0
+        community_investment = 1 if any(k in combined_text for k in ["community investment", "csr", "community development"]) else 0
+        dei_progress = self._extract_dei_progress_signals(combined_text)
+
+        social_score = 35.0
+        social_score += (labor_practices * 15.0)
+        social_score += (diversity_disclosure * 6.0)
+        social_score += (community_investment * 12.0)
+        social_score -= min(25.0, controversies * 5.0)
+
+        # DEI granularity: target existence is not enough, progress toward target matters.
+        if dei_progress["has_target"] and dei_progress["has_actual"]:
+            if dei_progress["yoy_change"] is not None and dei_progress["yoy_change"] > 0:
+                social_score += min(12.0, 5.0 + dei_progress["yoy_change"] * 1.5)
+            elif dei_progress["yoy_change"] is not None and dei_progress["yoy_change"] <= 0:
+                social_score -= min(10.0, 4.0 + abs(dei_progress["yoy_change"]) * 1.5)
+
+            if dei_progress["target_gap"] is not None:
+                if dei_progress["target_gap"] <= 0:
+                    social_score += 4.0
+                elif dei_progress["target_gap"] >= 12:
+                    social_score -= 8.0
+                elif dei_progress["target_gap"] >= 6:
+                    social_score -= 4.0
+        elif dei_progress["has_target"] and not dei_progress["has_actual"]:
+            social_score -= 5.0
+
+        soc_contradictions = sum(
+            1 for c in contradictions
+            if c.get('overall_verdict') == 'Contradicted' and any(k in str(c).lower() for k in ["labor", "employee", "diversity", "community", "human rights"])
+        )
+        social_score -= min(20.0, soc_contradictions * 6.0)
         social_score = max(0, min(100, social_score))
-        
-        print(f"   Social: {social_score:.1f}/100 (positive: {soc_positive}, contradictions: {soc_negative})")
-        
-        # Calculate Governance Score
-        gov_positive = sum(1 for kw in governance_keywords if kw in combined_text)
-        gov_negative = sum(
-            1 for c in contradictions 
-            if c.get('overall_verdict') == 'Contradicted' and 
-            any(kw in str(c).lower() for kw in governance_keywords)
+
+        print(
+            f"   Social: {social_score:.1f}/100 "
+            f"(controversies={controversies}, labor={labor_practices}, diversity={diversity_disclosure}, "
+            f"community={community_investment}, dei_yoy={dei_progress['yoy_change']}, dei_gap={dei_progress['target_gap']})"
         )
-        
-        governance_score = 50 + (gov_positive * 10) - (gov_negative * 15)
+
+        # Governance signals
+        board_independence = 1 if any(k in combined_text for k in ["independent director", "board independence", "independent board"]) else 0
+        exec_comp_transparency = 1 if any(k in combined_text for k in ["executive compensation", "remuneration policy", "pay ratio"]) else 0
+        anti_corruption = 1 if any(k in combined_text for k in ["anti corruption", "anti-corruption", "bribery", "ethics policy"]) else 0
+        esg_governance_structure = 1 if any(k in combined_text for k in ["esg committee", "sustainability committee", "board oversight"] ) else 0
+
+        governance_score = 38.0
+        governance_score += board_independence * 15.0
+        governance_score += exec_comp_transparency * 12.0
+        governance_score += anti_corruption * 15.0
+        governance_score += esg_governance_structure * 12.0
+
+        gov_contradictions = sum(
+            1 for c in contradictions
+            if c.get('overall_verdict') == 'Contradicted' and any(k in str(c).lower() for k in ["board", "governance", "ethics", "corruption", "compliance"])
+        )
+        governance_score -= min(25.0, gov_contradictions * 7.0)
         governance_score = max(0, min(100, governance_score))
-        
-        print(f"   Governance: {governance_score:.1f}/100 (positive: {gov_positive}, contradictions: {gov_negative})")
+
+        print(
+            f"   Governance: {governance_score:.1f}/100 "
+            f"(board={board_independence}, exec_comp={exec_comp_transparency}, anti_corruption={anti_corruption}, esg_gov={esg_governance_structure})"
+        )
         
         # Apply industry baseline adjustment
         industry = self._identify_industry(all_analyses.get('company', 'Unknown'), all_analyses)
@@ -291,7 +330,8 @@ class RiskScorer:
         industry_baseline = industry_data.get('baseline', 50)
         
         # Adjust scores based on industry baseline (high-risk industries get penalty)
-        industry_penalty = (industry_baseline - 50) * 0.2  # 20% of baseline deviation
+        # Cap industry adjustment to avoid over-penalizing sector membership alone.
+        industry_penalty = max(-5.0, min(5.0, (industry_baseline - 50) * 0.2))
         
         environmental_score = max(0, min(100, environmental_score - industry_penalty))
         social_score = max(0, min(100, social_score - industry_penalty))
@@ -305,13 +345,310 @@ class RiskScorer:
         
         print(f"   Overall ESG: {overall_esg:.1f}/100 (E×0.35 + S×0.30 + G×0.35)")
         
+        pillar_factors = {
+            "environmental": [
+                {
+                    "factor": "Carbon data quality",
+                    "raw_signal": carbon_data_quality,
+                    "source": "Carbon extractor agent",
+                    "weight": 0.30,
+                    "points_contributed": round(carbon_data_quality * 0.30, 1),
+                    "confidence": "Low" if carbon_data_quality == 0 else "Medium",
+                },
+                {
+                    "factor": "Renewable energy usage",
+                    "raw_signal": renewable_energy_pct,
+                    "source": "Evidence retrieval",
+                    "weight": 0.25,
+                    "points_contributed": round(renewable_energy_pct * 0.25, 1),
+                    "confidence": "Medium",
+                },
+                {
+                    "factor": "Science-based target (SBTi)",
+                    "raw_signal": "Validated" if science_based_target else "ABSENT",
+                    "source": "Regulatory scanner",
+                    "weight": 0.25,
+                    "points_contributed": 25.0 if science_based_target else 0.0,
+                    "confidence": "High",
+                },
+                {
+                    "factor": "Net-zero target declared",
+                    "raw_signal": "Yes" if net_zero_target else "No",
+                    "source": "Claim extractor",
+                    "weight": 0.20,
+                    "points_contributed": 20.0 if net_zero_target else 0.0,
+                    "confidence": "High",
+                },
+            ],
+            "social": [
+                {
+                    "factor": "Labor controversy count",
+                    "raw_signal": controversies,
+                    "source": "Contradiction analyzer",
+                    "weight": 0.30,
+                    "points_contributed": max(0, 30 - controversies * 10),
+                    "confidence": "Medium",
+                },
+                {
+                    "factor": "Labor rights disclosure",
+                    "raw_signal": "Present" if labor_practices else "Absent",
+                    "source": "Evidence retrieval",
+                    "weight": 0.25,
+                    "points_contributed": 25.0 if labor_practices else 0.0,
+                    "confidence": "Medium",
+                },
+                {
+                    "factor": "Diversity & inclusion disclosure",
+                    "raw_signal": "Present" if diversity_disclosure else "Absent",
+                    "source": "Evidence retrieval",
+                    "weight": 0.25,
+                    "points_contributed": 25.0 if diversity_disclosure else 0.0,
+                    "confidence": "Low",
+                },
+                {
+                    "factor": "Community engagement",
+                    "raw_signal": "Present" if community_investment else "Absent",
+                    "source": "Evidence retrieval",
+                    "weight": 0.20,
+                    "points_contributed": 20.0 if community_investment else 0.0,
+                    "confidence": "Low",
+                },
+            ],
+            "governance": [
+                {
+                    "factor": "Board independence disclosure",
+                    "raw_signal": "Present" if board_independence else "Absent",
+                    "source": "Evidence retrieval",
+                    "weight": 0.30,
+                    "points_contributed": 30.0 if board_independence else 0.0,
+                    "confidence": "Low",
+                },
+                {
+                    "factor": "Executive compensation ESG link",
+                    "raw_signal": "Present" if exec_comp_transparency else "Absent",
+                    "source": "Evidence retrieval",
+                    "weight": 0.25,
+                    "points_contributed": 25.0 if exec_comp_transparency else 0.0,
+                    "confidence": "Low",
+                },
+                {
+                    "factor": "Anti-corruption framework",
+                    "raw_signal": "Present" if anti_corruption else "Absent",
+                    "source": "Evidence retrieval",
+                    "weight": 0.25,
+                    "points_contributed": 25.0 if anti_corruption else 0.0,
+                    "confidence": "Low",
+                },
+                {
+                    "factor": "ESG governance structure",
+                    "raw_signal": "Present" if esg_governance_structure else "Absent",
+                    "source": "Evidence retrieval",
+                    "weight": 0.20,
+                    "points_contributed": 20.0 if esg_governance_structure else 0.0,
+                    "confidence": "Low",
+                },
+            ],
+        }
+
         return {
             "environmental_score": round(environmental_score, 1),
             "social_score": round(social_score, 1),
             "governance_score": round(governance_score, 1),
             "overall_esg_score": round(overall_esg, 1),
-            "industry_adjustment": round(industry_penalty, 1)
+            "industry_adjustment": round(industry_penalty, 1),
+            "offset_transparency_status": offset_audit.get("status", "unknown") if isinstance(offset_audit, dict) else "unknown",
+            "offset_penalty": round(offset_penalty, 1),
+            "dei_progress": dei_progress,
+            "pillar_factors": pillar_factors,
         }
+
+    def _extract_percentage_from_text(self, text: str, keywords: List[str]) -> float:
+        """Extract first reasonable percentage near any keyword; deterministic fallback to 0."""
+        if not text:
+            return 0.0
+
+        for kw in keywords:
+            pattern = rf"{re.escape(kw)}[^\n\r]{{0,60}}?(\d{{1,3}}(?:\.\d+)?)\s*%"
+            m = re.search(pattern, text, re.IGNORECASE)
+            if m:
+                try:
+                    value = float(m.group(1))
+                    return max(0.0, min(100.0, value))
+                except Exception:
+                    continue
+
+        return 0.0
+
+    def _build_bounded_evidence_text(self, evidence: List[Dict[str, Any]]) -> str:
+        """Build a capped lowercase evidence buffer to keep keyword parsing memory-safe."""
+        if not evidence:
+            return ""
+
+        max_total_chars = 220000
+        max_field_chars = 2500
+        text_parts: List[str] = []
+        total_chars = 0
+
+        for ev in evidence:
+            if not isinstance(ev, dict):
+                continue
+
+            for key in ("snippet", "relevant_text", "content"):
+                raw = ev.get(key)
+                if not raw:
+                    continue
+
+                fragment = str(raw)[:max_field_chars].lower()
+                if not fragment:
+                    continue
+
+                remaining = max_total_chars - total_chars
+                if remaining <= 0:
+                    return " ".join(text_parts)
+
+                if len(fragment) > remaining:
+                    fragment = fragment[:remaining]
+
+                text_parts.append(fragment)
+                total_chars += len(fragment)
+
+                if total_chars >= max_total_chars:
+                    return " ".join(text_parts)
+
+        return " ".join(text_parts)
+
+    def _extract_dei_progress_signals(self, text: str) -> Dict[str, Any]:
+        """Extract DEI target vs actual progress signals from narrative text."""
+        if not text:
+            return {
+                "has_target": False,
+                "has_actual": False,
+                "target_pct": None,
+                "current_pct": None,
+                "prior_pct": None,
+                "yoy_change": None,
+                "target_gap": None,
+            }
+
+        # Guard against pathological payload sizes even after upstream bounding.
+        try:
+            t = text[:300000].lower()
+        except MemoryError:
+            return {
+                "has_target": False,
+                "has_actual": False,
+                "target_pct": None,
+                "current_pct": None,
+                "prior_pct": None,
+                "yoy_change": None,
+                "target_gap": None,
+            }
+
+        target_pct = None
+        target_match = re.search(
+            r"(?:target|goal|aim)\s*(?:of\s*)?(\d{1,3}(?:\.\d+)?)\s*%[^\n\r]{0,50}?(?:women|female|diversity|dei|leadership)",
+            t,
+            re.IGNORECASE,
+        )
+        if target_match:
+            target_pct = float(target_match.group(1))
+
+        # Capture the first two percentages around DEI-related terms as current/prior proxy.
+        dei_percentages = []
+        sentences = re.split(r"[\.!?]", t)
+        for sent in sentences:
+            s = sent.strip()
+            if not s:
+                continue
+            if not any(k in s for k in ["women", "female", "diversity", "dei", "inclusion", "leadership"]):
+                continue
+            if any(k in s for k in ["target", "goal", "aim", "by 20"]):
+                continue
+
+            for m in re.finditer(r"(\d{1,3}(?:\.\d+)?)\s*%", s):
+                try:
+                    dei_percentages.append(float(m.group(1)))
+                except Exception:
+                    continue
+                if len(dei_percentages) >= 2:
+                    break
+            if len(dei_percentages) >= 2:
+                break
+
+        current_pct = dei_percentages[0] if len(dei_percentages) >= 1 else None
+        prior_pct = dei_percentages[1] if len(dei_percentages) >= 2 else None
+        yoy_change = (current_pct - prior_pct) if (current_pct is not None and prior_pct is not None) else None
+        target_gap = (target_pct - current_pct) if (target_pct is not None and current_pct is not None) else None
+
+        return {
+            "has_target": target_pct is not None,
+            "has_actual": current_pct is not None,
+            "target_pct": target_pct,
+            "current_pct": current_pct,
+            "prior_pct": prior_pct,
+            "yoy_change": yoy_change,
+            "target_gap": target_gap,
+        }
+    
+    def _assess_carbon_data_quality(self, all_analyses: Dict[str, Any]) -> float:
+        """
+        Assess carbon data quality (0-100)
+        Returns percentage of emissions data available
+        
+        PHASE 3: Environmental Score Inflation Fix
+        """
+        try:
+            # Prefer direct structured payload if already passed by wrappers.
+            direct_carbon = all_analyses.get('carbon_extraction', {})
+            if isinstance(direct_carbon, dict) and direct_carbon:
+                direct_quality = direct_carbon.get('data_quality', {})
+                if isinstance(direct_quality, dict):
+                    overall = direct_quality.get('overall_score')
+                    if isinstance(overall, (int, float)):
+                        return float(overall)
+                if isinstance(direct_quality, (int, float)):
+                    return float(direct_quality)
+
+            # Extract carbon extraction agent output
+            agent_outputs = all_analyses.get('agent_outputs', [])
+            carbon_outputs = [o for o in agent_outputs if o.get('agent') == 'carbon_extraction']
+            
+            if not carbon_outputs:
+                return 0  # No carbon data found
+            
+            carbon_result = carbon_outputs[-1].get('output', {})
+            
+            # Check which emission scopes are available
+            data_quality = carbon_result.get('data_quality', {})
+            
+            if isinstance(data_quality, dict):
+                # If data_quality is a detailed object
+                scope1_quality = data_quality.get('scope1', 0)
+                scope2_quality = data_quality.get('scope2', 0)
+                scope3_quality = data_quality.get('scope3', 0)
+                
+                # Average of available scopes
+                avg_quality = (scope1_quality + scope2_quality + scope3_quality) / 3
+                return avg_quality
+            elif isinstance(data_quality, (int, float)):
+                # If data_quality is a simple number
+                return float(data_quality)
+            
+            # Check for basic emissions data
+            emissions = carbon_result.get('emissions', {})
+            has_scope1 = bool(emissions.get('scope1', {}).get('value'))
+            has_scope2 = bool(emissions.get('scope2', {}).get('value'))
+            has_scope3 = bool(emissions.get('scope3', {}).get('value'))
+            
+            # Calculate quality as percentage of scopes available (out of 3)
+            scopes_available = sum([has_scope1, has_scope2, has_scope3])
+            quality_percentage = (scopes_available / 3) * 100
+            
+            return quality_percentage
+            
+        except Exception as e:
+            print(f"      ⚠️ Error assessing carbon data quality: {e}")
+            return 0
     
     def calculate_final_score(self, company: str, all_analyses: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -427,7 +764,39 @@ class RiskScorer:
                 else:
                     print(f"   ⚠️ ML confidence too low, using pillar-based rating")
         
-        # Step 3: Formula-based components (for explainability ONLY)
+        # Step 3: Extract temporal consistency signal (NEW PHASE 7)
+        temporal_consistency_score = 50  # Default: neutral
+        temporal_inconsistency_detected = False
+        temporal_signal = None
+        temporal_weight = 0.0
+        temporal_mode = "none"
+        temporal_data_quality = "low"
+        
+        # Extract temporal consistency from agent outputs if available
+        temporal_outputs = [o for o in all_analyses.get('agent_outputs', []) if o.get('agent') == 'temporal_consistency']
+        if temporal_outputs:
+            temporal_result = temporal_outputs[-1].get('output', {})
+            if isinstance(temporal_result, dict):
+                temporal_consistency_score = temporal_result.get('temporal_consistency_score', 50)
+                temporal_inconsistency_detected = temporal_result.get('temporal_inconsistency_detected', False)
+                temporal_signal = temporal_result
+                temporal_weight = float(temporal_result.get('temporal_weight', 0.0) or 0.0)
+                temporal_mode = str(temporal_result.get('temporal_mode', 'none'))
+                temporal_data_quality = str(temporal_result.get('data_quality', 'low'))
+                
+                print(f"\n🔄 TEMPORAL CONSISTENCY ANALYSIS (NEW):")
+                print(f"   Temporal Score: {temporal_consistency_score:.1f}/100")
+                print(f"   Risk Pattern Detected: {'YES' if temporal_inconsistency_detected else 'NO'}")
+                print(f"   Claim Trend: {temporal_result.get('claim_trend', 'unknown')}")
+                print(f"   Environmental Trend: {temporal_result.get('environmental_trend', 'unknown')}")
+                print(f"   Mode: {temporal_mode} | Data Quality: {temporal_data_quality} | Weight: {temporal_weight:.2f}")
+                
+                # Impact greenwashing risk based on temporal consistency
+                if temporal_inconsistency_detected:
+                    temporal_risk_adjustment = temporal_consistency_score * temporal_weight
+                    print(f"   Temporal Risk Adjustment: +{temporal_risk_adjustment:.1f} points")
+        
+        # Step 4: Formula-based components (for explainability ONLY)
         print(f"\n📐 Calculating formula components for explainability...")
         
         industry = self._identify_industry(company, all_analyses)
@@ -444,25 +813,34 @@ class RiskScorer:
             for key, weight in self.weights.items()
         )
         
-        industry_adjustment = (industry_baseline - 50) * 0.3
+        industry_adjustment = max(-10.0, min(10.0, (industry_baseline - 50) * 0.3))
         adjusted_risk = base_risk + industry_adjustment
         
         # Apply industry-specific risk multipliers for high-carbon sectors
-        industry_multiplier = self.INDUSTRY_RISK_MULTIPLIERS.get(industry, 1.0)
+        industry_multiplier = min(1.2, self.INDUSTRY_RISK_MULTIPLIERS.get(industry, 1.0))
         if industry_multiplier > 1.0:
             print(f"Industry penalty applied: {industry.replace('_', ' ').title()} × {industry_multiplier}")
             adjusted_risk = adjusted_risk * industry_multiplier
         
         peer_modifier = self._calculate_peer_modifier(all_analyses, industry)
         debate_penalty = 10.0 if all_analyses.get("debate_activated") else 0.0
+        temporal_modifier = 0.0
         
-        final_risk = adjusted_risk + peer_modifier + debate_penalty
+        # Apply temporal consistency penalty only when temporal signal quality supports it.
+        if temporal_inconsistency_detected and temporal_consistency_score > 50 and temporal_weight > 0:
+            temporal_modifier = (temporal_consistency_score - 50) * temporal_weight
+            print(f"   Temporal Penalty: +{temporal_modifier:.1f} points (quality-gated)")
+        elif temporal_inconsistency_detected and temporal_weight <= 0:
+            print("   Temporal signal present but low confidence - no risk penalty applied")
+        
+        final_risk = adjusted_risk + peer_modifier + debate_penalty + temporal_modifier
         greenwashing_risk_formula = max(0, min(100, final_risk))
         
         print(f"   Formula Risk: {greenwashing_risk_formula:.1f}/100 (for component analysis)")
         print(f"   Industry: {industry.replace('_', ' ').title()}")
         print(f"   Industry Baseline: {industry_baseline}/100")
-        # Step 4: DOMAIN KNOWLEDGE OVERRIDES (highest priority)
+        
+        # Step 5: DOMAIN KNOWLEDGE OVERRIDES (highest priority)
         # CRITICAL: Industry-specific greenwashing patterns override pillar scores
         high_carbon_greenwashing_flag = False
         
@@ -485,25 +863,29 @@ class RiskScorer:
         print(f'  Green claim: {has_green_claim}')
         print(f'  ESG Score: {overall_esg_score}/100')
         
-        # CRITICAL: High-carbon sector greenwashing check
-        if industry == "oil_and_gas" and has_green_claim:
-            print(f"\n🔴 HIGH-CARBON SECTOR GREENWASHING CHECK")
-            print(f"   Industry: Oil & Gas")
+        # Evidence-backed high-scrutiny override (not industry-only bias).
+        high_scrutiny_industries = {"oil_and_gas", "coal", "mining", "aviation", "chemicals", "fast_fashion"}
+        weak_substantiation = components.get("claim_verification", 50) >= 70 or components.get("evidence_quality", 50) >= 60
+
+        if industry in high_scrutiny_industries and has_green_claim:
+            print(f"\n🔴 HIGH-SCRUTINY GREEN CLAIM CHECK")
+            print(f"   Industry: {industry.replace('_', ' ').title()}")
             print(f"   Green keywords: {[kw for kw in green_keywords if kw in claim_text]}")
             print(f"   ESG Score: {overall_esg_score}/100")
-            
-            # Override rating if ESG score is LOW/MODERATE with green claims
-            if overall_esg_score < 60:
-                print(f"   🚨 DOMAIN OVERRIDE: Low ESG + Green Claims = Greenwashing")
-                
+            print(f"   Weak substantiation signal: {weak_substantiation}")
+
+            # Override only when claim quality signals support elevated risk.
+            if overall_esg_score < 60 and weak_substantiation:
+                print(f"   🚨 DOMAIN OVERRIDE: Low ESG + weakly substantiated green claim")
+
                 rating_grade = "BB"
                 risk_level = "HIGH"
                 greenwashing_risk = max(greenwashing_risk, 70)
                 high_carbon_greenwashing_flag = True
                 override_ml = True
-                risk_source = "Domain Knowledge Override (Oil & Gas Greenwashing)"
+                risk_source = "Domain Knowledge Override (Evidence-Backed High-Scrutiny)"
                 confidence = 0.92
-                
+
                 print(f"   Assigned Rating: {rating_grade} (forced HIGH risk)")
         
         # OLD HYBRID LOGIC (now deprecated - kept for reference)
@@ -727,12 +1109,22 @@ class RiskScorer:
             "base_risk_score": round(base_risk, 1),
             "industry_adjustment": round(industry_adjustment, 1),
             "peer_adjustment": round(peer_modifier, 1),
+            "temporal_adjustment": round(temporal_modifier, 1),
             "greenwashing_risk_score": round(greenwashing_risk, 1),
             "esg_score": round(esg_score, 1),
             "risk_level": risk_level,
             "rating_grade": rating_grade,
+            "environmental_score": pillar_scores.get("environmental_score"),
+            "social_score": pillar_scores.get("social_score"),
+            "governance_score": pillar_scores.get("governance_score"),
             "component_scores": components,
             "pillar_scores": pillar_scores,
+            "pillar_factors": pillar_scores.get("pillar_factors", {}),
+            "temporal_consistency_score": round(temporal_consistency_score, 1),
+            "temporal_mode": temporal_mode,
+            "temporal_data_quality": temporal_data_quality,
+            "temporal_weight": round(temporal_weight, 2),
+            "temporal_inconsistency_detected": temporal_inconsistency_detected,
             "explainability_top_3_reasons": top_reasons,
             "actionable_insights": insights,
             "confidence_level": round(confidence * 100, 1),
@@ -854,6 +1246,23 @@ class RiskScorer:
         Uses LLM to classify into predefined MSCI-based categories
         """
         
+        # Prefer workflow-provided industry when available to avoid unnecessary LLM variance.
+        provided_industry = str(analyses.get("industry", "") or "").strip().lower()
+        if provided_industry:
+            normalized = provided_industry.replace("&", "and").replace("-", "_").replace(" ", "_")
+            aliases = {
+                "tech": "technology",
+                "it": "technology",
+                "information_technology": "technology",
+                "energy": "oil_and_gas",
+                "oil_gas": "oil_and_gas",
+                "food_and_beverage": "food_beverage",
+                "telecom": "telecommunications"
+            }
+            normalized = aliases.get(normalized, normalized)
+            if normalized in self.industry_baseline_risk:
+                return normalized
+
         # Get list of valid industries from config
         valid_industries = [k for k in self.industry_baseline_risk.keys() if k != 'unknown']
         
@@ -935,20 +1344,33 @@ Industry:"""
         else:
             components['claim_verification'] = 100
         
-        # 2. Evidence Quality (more sources = lower risk)
+        # 2. Evidence Quality (more and better weighted sources = lower risk)
         evidence = analyses.get('evidence', [])
-        total_sources = sum(len(ev.get('evidence', [])) for ev in evidence)
+        total_sources = sum(
+            len(ev.get('evidence', [])) if isinstance(ev.get('evidence', []), list) else 0
+            for ev in evidence if isinstance(ev, dict)
+        )
+        if total_sources == 0:
+            total_sources = len([ev for ev in evidence if isinstance(ev, dict)])
+
+        # Prefer weighted evidence quality if available
+        weighted_scores = [float(ev.get('evidence_weight', 0.5)) for ev in evidence if isinstance(ev, dict)]
+        weighted_quality = (sum(weighted_scores) / len(weighted_scores)) if weighted_scores else 0.5
         
         if total_sources >= 20:
-            components['evidence_quality'] = 10
+            base_evidence_risk = 10
         elif total_sources >= 15:
-            components['evidence_quality'] = 20
+            base_evidence_risk = 20
         elif total_sources >= 10:
-            components['evidence_quality'] = 35
+            base_evidence_risk = 35
         elif total_sources >= 5:
-            components['evidence_quality'] = 60
+            base_evidence_risk = 60
         else:
-            components['evidence_quality'] = 90
+            base_evidence_risk = 90
+
+        # Higher source weight lowers risk
+        quality_modifier = int((1.0 - weighted_quality) * 25)
+        components['evidence_quality'] = max(0, min(100, base_evidence_risk + quality_modifier))
         
         # 3. Source Credibility (higher credibility = lower risk)
         credibility = analyses.get('credibility_analysis', {})

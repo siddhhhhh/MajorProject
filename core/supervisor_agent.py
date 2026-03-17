@@ -69,8 +69,17 @@ Return ONLY a single float between 0.0 and 1.0, nothing else."""
         Determine which workflow path to take based on complexity
         """
         complexity = state["complexity_score"]
-        
-        if complexity < 0.3:
+
+        claim_text = str(state.get("claim", "") or "").lower()
+        requires_full_pipeline = any(
+            kw in claim_text for kw in [
+                "scope 1", "scope 2", "scope 3", "emission", "carbon", "net zero",
+                "renewable", "sbti", "science based", "%", "by 20", "since 20"
+            ]
+        )
+
+        # Only allow fast track for genuinely simple, non-quantitative claims.
+        if complexity < 0.2 and not requires_full_pipeline:
             path = "fast_track"
         elif complexity < 0.7:
             path = "standard_track"

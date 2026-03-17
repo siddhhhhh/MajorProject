@@ -1,3 +1,63 @@
+# === Real Peer Data Fetcher ===
+from utils.free_esg_data_fetcher import fetch_wikirate_esg_score, fetch_cdp_score
+
+# Sector known peers mapping
+SECTOR_KNOWN_PEERS = {
+    "Energy": ["Shell", "BP", "ExxonMobil", "Chevron", "TotalEnergies", "Eni", "Equinor", "Reliance Industries"],
+    "Technology": ["Microsoft", "Apple", "Infosys", "TCS", "Wipro", "Accenture", "IBM", "SAP", "HCL Technologies"],
+    "Finance": ["HSBC", "JPMorgan", "Goldman Sachs", "HDFC Bank", "ICICI Bank", "BNP Paribas", "Deutsche Bank"],
+    "Aviation": ["Ryanair", "Emirates", "IndiGo", "Air India", "Lufthansa", "Delta Airlines"],
+    "Retail": ["H&M", "Zara/Inditex", "Walmart", "Amazon", "Flipkart"],
+    "Automotive": ["Volkswagen", "Tesla", "Tata Motors", "Toyota", "BMW"],
+    "Consumer Goods": ["Unilever", "Nestle", "P&G", "HUL", "ITC"]
+}
+
+def get_peer_scores(company_name: str, sector: str) -> list:
+    """
+    Returns list of peer dicts with real data where possible.
+    Priority: 1) Wikirate API, 2) CDP data, 3) Historical DB, 4) Estimated
+    Each peer dict: {company, esg_score, e_score, s_score, g_score, source, is_estimated, year}
+    """
+    peers = SECTOR_KNOWN_PEERS.get(sector, [])
+    peers = [p for p in peers if p.lower() != company_name.lower()][:5]
+    peer_scores = []
+    for peer in peers:
+        # Try Wikirate first
+        wikirate_data = fetch_wikirate_esg_score(peer)
+        if wikirate_data and wikirate_data.get("overall_score"):
+            peer_scores.append({
+                "company": peer,
+                "esg_score": float(wikirate_data["overall_score"]),
+                "source": "Wikirate",
+                "is_estimated": False,
+                "year": wikirate_data.get("year")
+            })
+            continue
+        # Try CDP
+        cdp_data = fetch_cdp_score(peer)
+        if cdp_data:
+            peer_scores.append({
+                "company": peer,
+                "esg_score": float(cdp_data["cdp_numeric"]),
+                "source": "CDP",
+                "is_estimated": False,
+                "year": cdp_data.get("year")
+            })
+            continue
+        # Fall back to sector median estimate
+        SECTOR_MEDIANS = {
+            "Energy": 45, "Technology": 62, "Finance": 55,
+            "Aviation": 38, "Retail": 48, "Automotive": 50,
+            "Consumer Goods": 58
+        }
+        peer_scores.append({
+            "company": peer,
+            "esg_score": SECTOR_MEDIANS.get(sector, 50),
+            "source": "Estimated (sector median)*",
+            "is_estimated": True,
+            "year": "est."
+        })
+    return peer_scores
 """
 Industry Comparison & Peer Benchmarking Agent
 DYNAMIC peer comparison - builds real database over time
@@ -185,11 +245,15 @@ class IndustryComparator:
         
         variance_range = industry_data.get('peer_variance_range', [10, 15])
         
-        # Generate estimated peers with variance
+        # Generate deterministic estimated peers (no randomness)
         peers = []
+        leader_variance = float(variance_range[1])
+        above_variance = float((variance_range[0] + variance_range[1]) / 3)
+        avg_variance = 0.0
+        below_variance = -float((variance_range[0] + variance_range[1]) / 3)
+        laggard_variance = -float(variance_range[1])
         
         # Peer 1: Industry Leader (above baseline)
-        leader_variance = np.random.uniform(variance_range[0], variance_range[1])
         peers.append({
             "company": "Industry Leader",
             "esg": round(min(100, baseline_esg + leader_variance), 1),
@@ -201,7 +265,6 @@ class IndustryComparator:
         })
         
         # Peer 2: Above Average
-        above_variance = np.random.uniform(variance_range[0] * 0.5, variance_range[1] * 0.7)
         peers.append({
             "company": "Industry Peer A",
             "esg": round(min(100, baseline_esg + above_variance), 1),
@@ -213,7 +276,6 @@ class IndustryComparator:
         })
         
         # Peer 3: Industry Average
-        avg_variance = np.random.uniform(-3, 3)
         peers.append({
             "company": "Industry Average",
             "esg": round(baseline_esg + avg_variance, 1),
@@ -225,7 +287,6 @@ class IndustryComparator:
         })
         
         # Peer 4: Below Average
-        below_variance = -np.random.uniform(variance_range[0] * 0.5, variance_range[1] * 0.7)
         peers.append({
             "company": "Industry Peer B",
             "esg": round(max(0, baseline_esg + below_variance), 1),
@@ -237,7 +298,6 @@ class IndustryComparator:
         })
         
         # Peer 5: Industry Laggard
-        laggard_variance = -np.random.uniform(variance_range[0], variance_range[1])
         peers.append({
             "company": "Industry Laggard",
             "esg": round(max(0, baseline_esg + laggard_variance), 1),
@@ -553,9 +613,26 @@ Competitors:"""
         except Exception as e:
             print(f"   ⚠️ LLM peer identification failed: {e}")
         
-        # Fallback: return empty list
-        print(f"   ⚠️ Could not identify peers for {company}")
-        return []
+        # Fallback: deterministic peer dataset for energy-heavy companies
+        fallback_energy = [
+            "Shell",
+            "BP",
+            "TotalEnergies",
+            "Chevron",
+            "Exxon",
+            "Reliance",
+            "Adani"
+        ]
+        company_l = company.lower()
+        if any(k in company_l for k in ["bp", "shell", "exxon", "chevron", "total", "energy", "oil", "gas", "reliance", "adani"]):
+            peers = [p for p in fallback_energy if p.lower() != company_l][:5]
+            print(f"   ⚠️ Using deterministic fallback peers for energy sector")
+            return peers
+
+        # Generic fallback: pick first 5 deterministic peers excluding company
+        peers = [p for p in fallback_energy if p.lower() != company_l][:5]
+        print(f"   ⚠️ Could not identify peers for {company}, using fallback peer list")
+        return peers
     
     def _fetch_peer_esg_data(self, peer: str) -> Dict[str, Any]:
         """Fetch ESG data for peer - IMPROVED with multiple query strategies"""

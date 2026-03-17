@@ -10,6 +10,9 @@ import joblib
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class LightGBMESGPredictor:
@@ -53,8 +56,11 @@ class LightGBMESGPredictor:
                         self.metadata = json.load(f)
                 
                 self.model_available = True
-                r2 = self.metadata['performance']['test_r2'] if self.metadata else 0.92
-                print(f"✅ LightGBM ESG predictor loaded (R²={r2:.3f})")
+                r2 = self.metadata.get('performance', {}).get('test_r2') if self.metadata else None
+                if isinstance(r2, (int, float)):
+                    print(f"✅ LightGBM ESG predictor loaded (held-out R²={r2:.3f})")
+                else:
+                    print("✅ LightGBM ESG predictor loaded (held-out R² unavailable)")
             else:
                 print(f"⚠️ LightGBM model not found: {model_path}")
                 print(f"   Train model using notebooks/train_lightgbm_esg_score.ipynb")
@@ -115,6 +121,16 @@ class LightGBMESGPredictor:
             # Reorder to match training
             if self.feature_names:
                 data = data[self.feature_names]
+
+            logger.debug("LightGBM input features: %s", list(data.columns))
+            logger.debug("Feature matrix shape: %s", data.shape)
+            logger.debug("Non-null counts: %s", data.count().to_dict())
+
+            if data.isnull().all(axis=None):
+                return {
+                    'prediction_successful': False,
+                    'error': 'All LightGBM inference features are NaN'
+                }
             
             # Predict
             prediction = self.model.predict(data)[0]

@@ -7,6 +7,7 @@ Detects financial-ESG mismatches (e.g., "green" claims + rising fossil fuel reve
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 import json
+from pathlib import Path
 from core.llm_client import llm_client
 
 # Try importing yfinance
@@ -74,6 +75,14 @@ class FinancialAnalyst:
             "dupont": "DD",
             "dow": "DOW"
         }
+
+        aliases_path = Path(__file__).parent.parent / "config" / "company_aliases.json"
+        self.company_aliases = {}
+        if aliases_path.exists():
+            try:
+                self.company_aliases = json.loads(aliases_path.read_text(encoding="utf-8"))
+            except Exception:
+                self.company_aliases = {}
     
     def analyze_financial_esg_correlation(self, company: str, claim: str, 
                                           esg_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -132,6 +141,15 @@ class FinancialAnalyst:
             print(f"\n❌ FINAL FAILURE: Both Yahoo Finance and Alpha Vantage failed")
             print(f"   Error: {financial_data.get('error', 'Unknown')}")
             return financial_data
+
+        if not financial_data.get("revenue_ttm"):
+            return {
+                "financial_data_available": False,
+                "error": "Financial data unavailable - financial ESG context excluded.",
+                "revenue": None,
+                "profit_margin": None,
+                "greenwashing_flags": []
+            }
         
         print(f"\n✅ Financial data fetch SUCCESSFUL")
         print(f"   Source: {financial_data.get('data_source', 'Yahoo Finance')}")
@@ -187,6 +205,14 @@ class FinancialAnalyst:
     def _get_ticker(self, company: str) -> Optional[str]:
         """Get stock ticker from company name"""
         company_lower = company.lower().strip()
+
+        # Config alias map takes precedence for edge cases (e.g., BP vs BP.L)
+        for canonical, alias_data in self.company_aliases.items():
+            aliases = [canonical] + (alias_data.get("aliases") or []) + [alias_data.get("full_name", "")]
+            if any(a and a.lower() in company_lower for a in aliases):
+                ticker = alias_data.get("ticker")
+                if ticker:
+                    return ticker
         
         # Direct match
         if company_lower in self.symbol_map:

@@ -1,9 +1,10 @@
 import os
 from groq import Groq
-import google.generativeai as genai
+from google import genai
 from typing import Dict, Any, Optional, List
 from config.settings import settings
 import time
+import hashlib
 
 class LLMClient:
     def __init__(self):
@@ -11,7 +12,12 @@ class LLMClient:
         self.groq_client = Groq(api_key=settings.GROQ_API_KEY)
         
         # Initialize Gemini client
-        genai.configure(api_key=settings.GEMINI_API_KEY)
+        self.gemini_client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        
+        # PHASE 8: Add caching for LLM responses
+        self.response_cache: Dict[str, str] = {}  # hash(prompt) -> response
+        self.gemini_quota_exceeded = False  # Track if Gemini is rate-limited
+        self.groq_quota_exceeded = False    # Track if Groq is rate-limited
         
         # Test and get available models
         self.available_gemini_models = self._get_available_gemini_models()
@@ -19,7 +25,6 @@ class LLMClient:
         
         # Select best available models
         self.gemini_model_name = self._select_best_gemini_model()
-        self.gemini_model = genai.GenerativeModel(self.gemini_model_name)
         
         self.groq_model_name = self._select_best_groq_model()
         self.groq_fast_model = self._select_fast_groq_model()
@@ -28,14 +33,42 @@ class LLMClient:
         print(f"   - Gemini model: {self.gemini_model_name}")
         print(f"   - Groq model: {self.groq_model_name}")
         print(f"   - Groq fast model: {self.groq_fast_model}")
+        print(f"   - Response caching: ENABLED (PHASE 8)")
+    
+    def _hash_prompt(self, prompt: str) -> str:
+        """Create hash of prompt for caching"""
+        return hashlib.md5(prompt.encode()).hexdigest()
+    
+    def _get_cached_response(self, prompt: str) -> Optional[str]:
+        """PHASE 8: Check if response is cached"""
+        cache_key = self._hash_prompt(prompt)
+        if cache_key in self.response_cache:
+            print(f"✅ Cache HIT - Using cached LLM response (saved API call)")
+            return self.response_cache[cache_key]
+        return None
+    
+    def _cache_response(self, prompt: str, response: str):
+        """PHASE 8: Cache the response"""
+        cache_key = self._hash_prompt(prompt)
+        self.response_cache[cache_key] = response
+    
+    def _detect_quota_exceeded(self, error_msg: str) -> tuple:
+        """PHASE 8: Detect quota exhaustion from error message"""
+        error_lower = error_msg.lower()
+        quotas = {
+            'gemini': 'resource_exhausted' in error_lower or 'rate_limit' in error_lower or '429' in error_msg,
+            'groq': 'rate_limit' in error_lower or '429' in error_msg or 'quota' in error_lower
+        }
+        return quotas['gemini'], quotas['groq']
     
     def _get_available_gemini_models(self) -> List[str]:
         """List all available Gemini models"""
         try:
             models = []
-            for m in genai.list_models():
-                if 'generateContent' in m.supported_generation_methods:
-                    models.append(m.name.replace('models/', ''))
+            for m in self.gemini_client.models.list():
+                model_name = getattr(m, "name", "") or ""
+                if model_name:
+                    models.append(model_name.replace('models/', ''))
             
             print(f"📋 Available Gemini models: {len(models)} found")
             return models
@@ -109,7 +142,7 @@ class LLMClient:
         return "llama-3.1-8b-instant"
     
     def call_groq(self, messages: list, model: str = None, 
-                  temperature: float = 0.1, max_retries: int = 3,
+                  temperature: float = 0.0, max_retries: int = 3,
                   use_fast: bool = False) -> str:
         """
         Fast inference using Groq
@@ -151,25 +184,64 @@ class LLMClient:
     def call_gemini(self, prompt: str, temperature: float = 0.1, 
                    max_retries: int = 3, use_pro: bool = False) -> str:
         """Complex reasoning using Gemini"""
+
+        # Ensure deterministic generation for research reproducibility.
+        temperature = 0.0 if temperature is None else float(temperature)
+        
+        # PHASE 8: Check cache first
+        cached_response = self._get_cached_response(prompt)
+        if cached_response:
+            return cached_response
+        
+        # PHASE 8: If Gemini quota exhausted, use Groq directly
+        if self.gemini_quota_exceeded:
+            print(f"⚠️ Gemini quota exhausted - using Groq fallback")
+            messages = [{"role": "user", "content": prompt}]
+            return self.call_groq(messages)
+        
         for attempt in range(max_retries):
             try:
                 # Switch to Pro model if requested and available
-                if use_pro and "gemini-2.5-pro" in self.available_gemini_models:
-                    model = genai.GenerativeModel("gemini-2.5-pro")
-                else:
-                    model = self.gemini_model
-                
-                response = model.generate_content(
-                    prompt,
-                    generation_config=genai.types.GenerationConfig(
-                        temperature=temperature,
-                        max_output_tokens=8000
-                    )
+                model_name = "gemini-2.5-pro" if use_pro and "gemini-2.5-pro" in self.available_gemini_models else self.gemini_model_name
+
+                response = self.gemini_client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config={
+                        "temperature": temperature,
+                        "max_output_tokens": 8000,
+                    },
                 )
-                return response.text
+                
+                result = getattr(response, "text", None)
+                if not result:
+                    # Defensive fallback for SDK response variations
+                    candidates = getattr(response, "candidates", None) or []
+                    if candidates:
+                        content = getattr(candidates[0], "content", None)
+                        parts = getattr(content, "parts", None) or []
+                        if parts:
+                            result = getattr(parts[0], "text", "")
+                # PHASE 8: Cache successful response
+                self._cache_response(prompt, result)
+                self.gemini_quota_exceeded = False  # Reset flag on success
+                return result
+                
             except Exception as e:
                 error_msg = str(e)
                 print(f"⚠️ Gemini API error (attempt {attempt + 1}/{max_retries}): {error_msg}")
+                
+                # PHASE 8: Detect quota exhaustion
+                is_gemini_quota_exceeded, _ = self._detect_quota_exceeded(error_msg)
+                if is_gemini_quota_exceeded:
+                    self.gemini_quota_exceeded = True
+                    print("🔴 GEMINI QUOTA EXHAUSTED - Auto-fallback to Groq")
+                    messages = [{"role": "user", "content": prompt}]
+                    result = self.call_groq(messages)
+                    if result:
+                        # PHASE 8: Cache the Groq response
+                        self._cache_response(prompt, result)
+                    return result
                 
                 # If model not found, try to switch to alternative
                 if "404" in error_msg or "not found" in error_msg:
@@ -177,29 +249,45 @@ class LLMClient:
                     if attempt == 0 and self.available_gemini_models:
                         # Try next available model
                         alt_model = self.available_gemini_models[0]
-                        try:
-                            self.gemini_model = genai.GenerativeModel(alt_model)
-                            self.gemini_model_name = alt_model
-                            print(f"   Switched to: {alt_model}")
-                            continue
-                        except:
-                            pass
+                        self.gemini_model_name = alt_model
+                        print(f"   Switched to: {alt_model}")
+                        continue
                 
                 if attempt < max_retries - 1:
                     time.sleep(2 ** attempt)
                 else:
-                    return None
+                    # PHASE 8: Fallback to Groq on final failure
+                    print("🔄 Gemini failed, falling back to Groq")
+                    messages = [{"role": "user", "content": prompt}]
+                    return self.call_groq(messages)
     
     def call_with_fallback(self, prompt: str, use_gemini_first: bool = True) -> str:
         """
         Try Gemini first for complex tasks, fallback to Groq
         Or vice versa based on use_gemini_first flag
+        
+        PHASE 8: Enhanced with caching and quota detection
         """
+        # PHASE 8: Check cache first
+        cached_response = self._get_cached_response(prompt)
+        if cached_response:
+            return cached_response
+        
+        # PHASE 8: If Gemini quota exhausted, use Groq directly
+        if self.gemini_quota_exceeded and use_gemini_first:
+            print("⏳ Gemini quota exhausted - using Groq directly")
+            messages = [{"role": "user", "content": prompt}]
+            result = self.call_groq(messages)
+            if result:
+                self._cache_response(prompt, result)
+            return result
+        
         if use_gemini_first:
             print("⏳ Trying Gemini...")
             result = self.call_gemini(prompt)
             if result:
                 print("✅ Gemini succeeded")
+                self._cache_response(prompt, result)
                 return result
             
             print("🔄 Falling back to Groq...")
@@ -207,6 +295,7 @@ class LLMClient:
             result = self.call_groq(messages)
             if result:
                 print("✅ Groq succeeded")
+                self._cache_response(prompt, result)
                 return result
         else:
             print("⏳ Trying Groq...")
@@ -214,12 +303,14 @@ class LLMClient:
             result = self.call_groq(messages)
             if result:
                 print("✅ Groq succeeded")
+                self._cache_response(prompt, result)
                 return result
             
             print("🔄 Falling back to Gemini...")
             result = self.call_gemini(prompt)
             if result:
                 print("✅ Gemini succeeded")
+                self._cache_response(prompt, result)
                 return result
         
         print("❌ Both LLMs failed")

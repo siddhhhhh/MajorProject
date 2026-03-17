@@ -49,14 +49,15 @@ class GreenwishingDetector:
             ]
         }
         
-        # Greenhushing indicators (absence patterns)
+        # Greenhushing indicators (required climate disclosure fields)
         self.required_disclosures = {
-            "carbon_data": ["scope 1", "scope 2", "scope 3", "emissions", "carbon footprint"],
-            "water_data": ["water usage", "water withdrawal", "water consumption"],
-            "waste_data": ["waste generated", "waste recycled", "hazardous waste"],
-            "social_data": ["employee turnover", "diversity", "safety incidents"],
-            "governance_data": ["board composition", "executive compensation", "ethics violations"],
-            "supply_chain": ["supplier audit", "supply chain emissions", "tier 1 suppliers"]
+            "scope1": ["scope 1", "scope i"],
+            "scope2": ["scope 2", "scope ii"],
+            "scope3": ["scope 3", "scope iii"],
+            "renewable_energy_percent": ["renewable", "% renewable", "renewable energy"],
+            "net_zero_target_year": ["net zero", "carbon neutral by", "target year"],
+            "science_based_targets": ["science based target", "sbti", "science-based"],
+            "climate_capex": ["climate capex", "decarbonization capex", "climate investment", "capital expenditure"]
         }
         
         # Indian BRSR mandatory disclosures (for greenhushing detection)
@@ -89,7 +90,8 @@ class GreenwishingDetector:
     
     def detect_deception_tactics(self, company: str, claim: Dict[str, Any],
                                  evidence: List[Dict[str, Any]],
-                                 historical_data: Dict[str, Any] = None) -> Dict[str, Any]:
+                                 historical_data: Dict[str, Any] = None,
+                                 structured_context: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Detect greenwishing, greenhushing, and selective disclosure
         
@@ -111,26 +113,28 @@ class GreenwishingDetector:
         
         claim_text = claim.get("claim_text", "")
         evidence_text = self._combine_evidence(evidence)
+        context_text = self._combine_structured_context(structured_context or {})
+        full_text = f"{evidence_text}\n\n{context_text}".strip()
         
         # 1. Detect Greenwishing
         print("🎯 Detecting greenwishing patterns...")
-        greenwishing_analysis = self._detect_greenwishing(claim_text, evidence_text, company)
+        greenwishing_analysis = self._detect_greenwishing(claim_text, full_text, company)
         
         # 2. Detect Greenhushing
         print("🔇 Detecting greenhushing patterns...")
-        greenhushing_analysis = self._detect_greenhushing(evidence_text, company)
+        greenhushing_analysis = self._detect_greenhushing(full_text, company, structured_context or {})
         
         # 3. Detect Selective Disclosure
         print("📊 Detecting selective disclosure...")
-        selective_disclosure = self._detect_selective_disclosure(claim_text, evidence_text)
+        selective_disclosure = self._detect_selective_disclosure(claim_text, full_text)
         
         # 4. Carbon Tunnel Vision Check
         print("🔭 Checking for carbon tunnel vision...")
-        tunnel_vision = self._detect_carbon_tunnel_vision(evidence_text)
+        tunnel_vision = self._detect_carbon_tunnel_vision(full_text)
         
         # 5. LLM Deep Analysis
         print("🤖 Running AI deep analysis...")
-        llm_analysis = self._llm_deep_analysis(company, claim_text, evidence_text)
+        llm_analysis = self._llm_deep_analysis(company, claim_text, full_text)
         
         # 6. Calculate overall deception risk
         deception_risk = self._calculate_deception_risk(
@@ -169,6 +173,76 @@ class GreenwishingDetector:
             snippet = ev.get("snippet", ev.get("relevant_text", ""))
             texts.append(f"{title}: {snippet}")
         return "\n\n".join(texts)[:10000]
+
+    def _combine_structured_context(self, structured_context: Dict[str, Any]) -> str:
+        """Merge report chunks, report claims, and carbon extraction into searchable text."""
+        texts = []
+
+        report_chunks = structured_context.get("report_chunks", [])
+        for chunk in report_chunks[:20]:
+            if isinstance(chunk, dict):
+                txt = str(chunk.get("text", "")).strip()
+                if txt:
+                    texts.append(txt[:600])
+
+        report_claims_by_year = structured_context.get("report_claims_by_year", {})
+        if isinstance(report_claims_by_year, dict):
+            for year, claims in report_claims_by_year.items():
+                if isinstance(claims, list):
+                    for c in claims[:15]:
+                        texts.append(f"{year}: {str(c)}")
+
+        carbon = structured_context.get("carbon_extraction", {})
+        if isinstance(carbon, dict):
+            emissions = carbon.get("emissions", {})
+            if isinstance(emissions, dict):
+                for scope_key in ["scope1", "scope2", "scope3"]:
+                    scope = emissions.get(scope_key, {})
+                    if isinstance(scope, dict):
+                        val = scope.get("value") or scope.get("total")
+                        if val not in [None, "N/A"]:
+                            texts.append(f"{scope_key} emissions {val}")
+
+            if carbon.get("net_zero_target"):
+                texts.append(f"net zero target {carbon.get('net_zero_target')}")
+            if carbon.get("renewable_energy_percentage"):
+                texts.append(f"renewable energy {carbon.get('renewable_energy_percentage')}")
+            if carbon.get("science_based_target"):
+                texts.append("science based targets sbti")
+
+        return "\n".join(texts)[:12000]
+
+    def _has_structured_disclosure(self, category: str, structured_context: Dict[str, Any]) -> bool:
+        """Check if a required disclosure category is present in structured outputs."""
+        carbon = structured_context.get("carbon_extraction", {})
+        if not isinstance(carbon, dict):
+            carbon = {}
+
+        emissions = carbon.get("emissions", {})
+        if not isinstance(emissions, dict):
+            emissions = {}
+
+        if category == "scope1":
+            s1 = emissions.get("scope1", {})
+            return isinstance(s1, dict) and (s1.get("value") not in [None, "N/A"])
+        if category == "scope2":
+            s2 = emissions.get("scope2", {})
+            return isinstance(s2, dict) and (s2.get("value") not in [None, "N/A"])
+        if category == "scope3":
+            s3 = emissions.get("scope3", {})
+            if isinstance(s3, dict):
+                return (s3.get("value") not in [None, "N/A"]) or (s3.get("total") not in [None, "N/A"])
+            return False
+        if category == "renewable_energy_percent":
+            return bool(carbon.get("renewable_energy_percentage"))
+        if category == "net_zero_target_year":
+            return bool(carbon.get("net_zero_target"))
+        if category == "science_based_targets":
+            return bool(carbon.get("science_based_target"))
+        if category == "climate_capex":
+            return bool(carbon.get("climate_capex"))
+
+        return False
     
     def _detect_greenwishing(self, claim_text: str, evidence_text: str, 
                             company: str) -> Dict[str, Any]:
@@ -259,25 +333,33 @@ class GreenwishingDetector:
             "definition": "Greenwishing: Setting unfunded, aspirational sustainability goals without credible implementation pathways"
         }
     
-    def _detect_greenhushing(self, evidence_text: str, company: str) -> Dict[str, Any]:
+    def _detect_greenhushing(self, evidence_text: str, company: str, structured_context: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Detect greenhushing: Deliberately hiding sustainability data
         """
         
         findings = []
+        structured_context = structured_context or {}
         evidence_lower = evidence_text.lower()
         
-        # Check for missing mandatory disclosures
+        # Check required disclosure completeness
+        missing_disclosure_count = 0
+        disclosed_count = 0
+        total_fields = len(self.required_disclosures)
+
         for category, keywords in self.required_disclosures.items():
-            category_found = any(kw in evidence_lower for kw in keywords)
-            
+            category_found = any(kw in evidence_lower for kw in keywords) or self._has_structured_disclosure(category, structured_context)
+
             if not category_found:
+                missing_disclosure_count += 1
                 findings.append({
                     "type": "missing_mandatory_disclosure",
                     "category": category,
                     "expected_keywords": keywords[:3],
-                    "severity": "High" if category in ["carbon_data", "governance_data"] else "Medium"
+                    "severity": "High" if category in ["scope1", "scope2", "scope3"] else "Medium"
                 })
+            else:
+                disclosed_count += 1
         
         # Check BRSR compliance (for Indian companies or listed entities)
         brsr_missing = []
@@ -321,14 +403,30 @@ class GreenwishingDetector:
                     "severity": "Low"
                 })
         
-        # Calculate score
-        severity_weights = {"High": 25, "Medium": 15, "Low": 8}
-        score = min(100, sum(severity_weights.get(f["severity"], 10) for f in findings))
+        # Greenhushing score based on missing_fields / total_fields
+        if missing_disclosure_count == 0:
+            score = 0
+            print(f"[Fix] Greenhushing score corrected: All disclosures present, score = 0")
+        else:
+            completeness_ratio = disclosed_count / max(total_fields, 1)
+            score = int(round((missing_disclosure_count / max(total_fields, 1)) * 100))
+
+            # If company discloses >70%, keep greenhushing low
+            if completeness_ratio > 0.70:
+                score = min(score, 30)
+
+            print(
+                f"[Fix] Greenhushing completeness={completeness_ratio:.2f}, "
+                f"missing={missing_disclosure_count}/{total_fields}, score={score}"
+            )
         
         return {
             "detected": len(findings) > 0,
             "findings": findings,
             "score": score,
+            "disclosure_completeness": round(disclosed_count / max(total_fields, 1), 2),
+            "missing_fields": missing_disclosure_count,
+            "total_fields": total_fields,
             "risk_level": "High" if score >= 50 else "Medium" if score >= 25 else "Low",
             "definition": "Greenhushing: Deliberately underreporting or hiding sustainability data to avoid scrutiny"
         }

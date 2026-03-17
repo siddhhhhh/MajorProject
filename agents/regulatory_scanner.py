@@ -553,12 +553,18 @@ class RegulatoryHorizonScanner:
         else:
             compliance_status = "Partially Compliant"
             compliance_percentage = (len(requirements_met) / total_rules) * 100
+
+        gap_details = [r.get("requirement") for r in requirements_unverified if r.get("requirement")]
+        has_gap = len(gap_details) > 0
+        status = "GAP FOUND" if has_gap else "COMPLIANT"
         
         return {
             "regulation_id": reg_id,
             "regulation_name": reg.get("name"),
             "jurisdiction": reg.get("jurisdiction"),
             "authority": reg.get("authority"),
+            "status": status,
+            "gap_details": gap_details,
             "compliance_status": compliance_status,
             "compliance_percentage": round(compliance_percentage, 1),
             "requirements_met": requirements_met,
@@ -628,45 +634,55 @@ Analyze regulatory compliance risks. Return JSON."""
         risks.sort(key=lambda x: risk_order.get(x["risk_level"], 2))
         
         return risks
-    
-    def _calculate_compliance_score(self, compliance_results: List[Dict]) -> Dict[str, Any]:
-        """Calculate overall compliance score"""
-        
+
+    def _calculate_compliance_score(self, compliance_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Calculate overall compliance score and derived risk level."""
         if not compliance_results:
-            return {"score": 0, "risk_level": "Unknown", "detail": "No regulations checked"}
-        
-        # Filter out "Not Applicable" results
-        applicable_results = [r for r in compliance_results if r["compliance_status"] != "Not Applicable"]
-        
-        if not applicable_results:
-            return {"score": 100, "risk_level": "Low", "detail": "No regulations triggered"}
-        
-        # Calculate weighted average
-        total_score = sum(r["compliance_percentage"] for r in applicable_results)
-        avg_score = total_score / len(applicable_results)
-        
-        # Determine risk level
-        if avg_score >= 80:
+            return {
+                "score": 0,
+                "risk_level": "Unknown",
+                "gaps": 0,
+                "total_regulations": 0,
+                "compliant_regulations": 0,
+            }
+
+        total = len(compliance_results)
+        gaps = sum(
+            1 for result in compliance_results
+            if len(result.get("gap_details", [])) > 0
+        )
+        compliant = total - gaps
+
+        base_score = int((compliant / total) * 100)
+        penalty = min(gaps * 12, 60)
+        score = max(0, base_score - penalty)
+
+        if score >= 70:
             risk_level = "Low"
-        elif avg_score >= 50:
+        elif score >= 40:
             risk_level = "Medium"
         else:
             risk_level = "High"
-        
+
+        if gaps > 0 and score == 100:
+            raise ValueError(
+                f"Compliance score inconsistency: score=100 but gaps={gaps}. "
+                f"Check gap_details population in regulation scan."
+            )
+
         return {
-            "score": round(avg_score, 1),
+            "score": score,
             "risk_level": risk_level,
-            "regulations_checked": len(applicable_results),
-            "fully_compliant": sum(1 for r in applicable_results if r["compliance_status"] == "Compliant"),
-            "partially_compliant": sum(1 for r in applicable_results if r["compliance_status"] == "Partially Compliant"),
-            "non_compliant": sum(1 for r in applicable_results if r["compliance_status"] == "Non-Compliant")
+            "gaps": gaps,
+            "total_regulations": total,
+            "compliant_regulations": compliant,
         }
-    
+
     def _generate_compliance_recommendations(self, compliance_results: List[Dict]) -> List[str]:
         """Generate actionable compliance recommendations"""
-        
+
         recommendations = []
-        
+
         for result in compliance_results:
             if result["compliance_status"] == "Non-Compliant":
                 recommendations.append(
@@ -677,17 +693,16 @@ Analyze regulatory compliance risks. Return JSON."""
                     recommendations.append(
                         f"[PARTIAL] {result['regulation_name']}: {req['requirement']}"
                     )
-        
-        # Add proactive recommendations
+
         if not recommendations:
             recommendations.append("[OK] Current disclosures appear compliant with applicable regulations")
             recommendations.append("[RECOMMEND] Consider voluntary third-party assurance for enhanced credibility")
-        
+
         return recommendations[:10]
-    
+
     def _get_upcoming_regulations(self, jurisdiction: str) -> List[Dict[str, Any]]:
         """Get upcoming regulatory changes"""
-        
+
         upcoming = [
             {
                 "regulation": "SEBI BRSR Core - Reasonable Assurance",
@@ -714,14 +729,140 @@ Analyze regulatory compliance risks. Return JSON."""
                 "impact": "Classification of sustainable activities for India"
             }
         ]
-        
-        # Filter by relevance to jurisdiction
+
         if jurisdiction == "India":
             return [u for u in upcoming if u["jurisdiction"] in ["India", "Global"]]
-        elif jurisdiction == "EU":
+        if jurisdiction == "EU":
             return [u for u in upcoming if u["jurisdiction"] in ["EU", "Global"]]
-        else:
-            return upcoming
+        return upcoming
+    
+
+# === NEW: End-to-end compliance scoring and gap detection ===
+def compute_compliance_score(regulation_results: list) -> dict:
+    """
+    regulation_results: list of dicts with keys:
+      regulation_name, gap_count (int), gaps_found (list of strings)
+    Returns: dict with score (int 0-100), risk_level, per_regulation_status
+    """
+    if not regulation_results:
+        return {
+            "score": 0,
+            "risk_level": "Unknown",
+            "per_regulation_status": [],
+            "gaps": 0,
+            "total_regulations": 0,
+            "compliant_regulations": 0,
+        }
+
+    total = len(regulation_results)
+    per_regulation_status = []
+    gaps = 0
+
+    for r in regulation_results:
+        gap_details = r.get("gap_details")
+        if gap_details is None:
+            gap_details = r.get("gaps_found", [])
+        if not isinstance(gap_details, list):
+            gap_details = [str(gap_details)] if gap_details else []
+
+        gap_count = len(gap_details)
+        has_gap = gap_count > 0
+        status = "GAP FOUND" if has_gap else "COMPLIANT"
+
+        if has_gap:
+            gaps += 1
+
+        per_regulation_status.append({
+            "regulation": r["regulation_name"],
+            "status": status,
+            "gap_count": gap_count,
+            "gap_details": gap_details,
+            "gaps": gap_details,
+        })
+
+    compliant_count = total - gaps
+    base = int((compliant_count / total) * 100)
+    penalty = min(gaps * 12, 60)
+    score = max(0, base - penalty)
+
+    if score >= 70:
+        risk_level = "Low"
+    elif score >= 40:
+        risk_level = "Medium"
+    else:
+        risk_level = "High"
+
+    if gaps > 0 and score == 100:
+        raise ValueError(
+            f"Compliance score inconsistency: score=100 but gaps={gaps}. "
+            f"Check gap_details population in regulation scan."
+        )
+
+    return {
+        "score": score,
+        "risk_level": risk_level,
+        "per_regulation_status": per_regulation_status,
+        "gaps": gaps,
+        "total_regulations": total,
+        "compliant_regulations": compliant_count,
+    }
+
+# Alias for backward compatibility with tests and other modules
+calculate_compliance_score = compute_compliance_score
+
+
+def detect_regulation_gaps(company_name: str, claim_text: str, regulation_name: str, carbon_data: dict = None) -> dict:
+    """
+    Detects specific gaps between a claim and regulation requirements.
+    Returns dict: {gap_count: int, gaps_found: list of str}
+    All checks use only the text content — no paid APIs.
+    """
+    claim_lower = claim_text.lower()
+    company_lower = company_name.lower()
+    gaps = []
+    if "science based target" in regulation_name.lower() or "sbti" in regulation_name.lower():
+        has_sbti_mention = any(term in claim_lower for term in [
+            "sbti", "science based target", "1.5°c", "1.5 degrees", "science-based"])
+        has_net_zero_claim = any(term in claim_lower for term in [
+            "net zero", "net-zero", "carbon neutral", "carbon negative"])
+        if has_net_zero_claim and not has_sbti_mention:
+            gaps.append("Net-zero/carbon neutral claim without SBTi validation mentioned")
+        if "by 2050" in claim_lower and not has_sbti_mention:
+            gaps.append("2050 target without Science Based Target validation")
+    if "gri" in regulation_name.lower():
+        has_scope_breakdown = any(term in claim_lower for term in [
+            "scope 1", "scope 2", "scope 3"])
+        if not has_scope_breakdown:
+            gaps.append("No GRI-required Scope 1/2/3 emissions breakdown mentioned")
+        if carbon_data and not carbon_data.get("scope_1"):
+            gaps.append("Scope 1 emissions not disclosed (GRI 305-1 required)")
+        if carbon_data and not carbon_data.get("scope_2"):
+            gaps.append("Scope 2 emissions not disclosed (GRI 305-2 required)")
+    if "cdp" in regulation_name.lower():
+        has_cdp_mention = any(term in claim_lower for term in [
+            "cdp", "carbon disclosure", "carbon disclosure project"])
+        if not has_cdp_mention:
+            gaps.append("No CDP disclosure score or submission referenced")
+    if "ghg protocol" in regulation_name.lower():
+        mentions_emissions = any(term in claim_lower for term in [
+            "emissions", "carbon", "co2", "ghg", "greenhouse"])
+        has_scope_boundary = any(term in claim_lower for term in [
+            "scope 1", "scope 2", "operational", "market-based", "location-based"])
+        if mentions_emissions and not has_scope_boundary:
+            gaps.append("Emissions mentioned without GHG Protocol scope boundary definition")
+    if "brsr" in regulation_name.lower() or "sebi" in regulation_name.lower():
+        indian_companies = ["infosys", "tcs", "wipro", "hcl", "reliance", "tata", "mahindra", "hdfc", "icici", "bajaj", "asian paints"]
+        is_indian = any(name in company_lower for name in indian_companies)
+        if is_indian:
+            has_brsr = any(term in claim_lower for term in ["brsr", "business responsibility", "sebi"])
+            if not has_brsr:
+                gaps.append("Indian company without BRSR compliance reference")
+    if "tcfd" in regulation_name.lower():
+        has_scenario = any(term in claim_lower for term in [
+            "scenario", "physical risk", "transition risk", "climate risk"])
+        if not has_scenario:
+            gaps.append("No TCFD-required climate risk scenario analysis mentioned")
+    return {"gap_count": len(gaps), "gaps_found": gaps}
 
 
 # Global instance

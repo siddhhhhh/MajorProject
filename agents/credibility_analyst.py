@@ -67,7 +67,20 @@ class CredibilityAnalyst:
                 "medium_credibility_count": medium_credibility,
                 "low_credibility_count": low_credibility,
                 "total_sources": len(evidence)
-            }
+            },
+            "overall_credibility": int(round(avg_credibility * 100)),
+            "high_credibility_sources": [
+                s.get("source_name")
+                for s in source_analyses
+                if s.get("final_credibility_score", 0) >= 0.8
+            ][:10],
+            "low_credibility_sources": [
+                s.get("source_name")
+                for s in source_analyses
+                if s.get("final_credibility_score", 0) < 0.5
+            ][:10],
+            "unverifiable_sources": sum(1 for s in source_analyses if not (s.get("url") or "").strip() or s.get("url") == "#"),
+            "credibility_warning": f"{low_credibility} of {len(evidence)} sources scored low credibility"
         }
     
     def _analyze_single_source(self, evidence: Dict[str, Any]) -> Dict[str, Any]:

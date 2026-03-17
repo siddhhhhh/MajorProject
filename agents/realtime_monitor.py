@@ -4,7 +4,13 @@ Continuously scrapes and stores latest ESG news in Chroma
 """
 import os
 import requests
-from newspaper import Article
+try:
+    from newspaper import Article
+    NEWSPAPER_AVAILABLE = True
+except ImportError:
+    Article = None
+    NEWSPAPER_AVAILABLE = False
+    print("WARNING: newspaper4k not installed. Real-time monitoring will use fallback RSS mode.")
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 from typing import Dict, Any, List
@@ -83,6 +89,7 @@ class RealTimeMonitor:
                             "company": company,
                             "articles_found": len(evidence_list),
                             "articles": evidence_list[:10],
+                            "evidence_items": [self._article_to_evidence_item(a) for a in evidence_list[:10]],
                             "timestamp": datetime.now().isoformat(),
                             "used_cache": True
                         }
@@ -134,9 +141,32 @@ class RealTimeMonitor:
             "company": company,
             "articles_found": len(recent_articles),
             "articles": recent_articles,
+            "evidence_items": [self._article_to_evidence_item(a) for a in recent_articles],
             "timestamp": datetime.now().isoformat(),
             "used_cache": False
         }
+
+    def _article_to_evidence_item(self, article: Dict[str, Any]) -> Dict[str, Any]:
+        source_name = (
+            ((article.get("source") or {}) if isinstance(article.get("source"), dict) else {}).get("name")
+            or article.get("publisher")
+            or article.get("domain")
+            or article.get("source")
+            or "Unknown News Source"
+        )
+        item = {
+            "source_name": source_name,
+            "title": article.get("title", "Untitled"),
+            "url": article.get("url", ""),
+            "date_retrieved": datetime.now().isoformat(),
+            "snippet": article.get("description") or article.get("snippet", ""),
+            "reliability_tier": "General Web / Other",
+            "stance": "unspecified",
+            "source_type": "news",
+            "relationship_to_claim": "unspecified",
+        }
+        assert item["source_name"] != "realtime_news", "source_name must be the publisher, not the agent name"
+        return item
     
     def _scrape_rss_feeds(self, company: str) -> List[Dict]:
         """Scrape RSS feeds - ROBUST XML parsing"""
@@ -187,6 +217,13 @@ class RealTimeMonitor:
     def _enrich_articles(self, articles: List[Dict]) -> List[Dict]:
         """Extract full content - BLOCKS problematic domains"""
         enriched = []
+
+        if not NEWSPAPER_AVAILABLE:
+            for article in articles:
+                article['fallback_mode'] = 'rss_only'
+                article['full_text'] = article.get('snippet', '')
+                enriched.append(article)
+            return enriched
         
         # Blocklist - sites that block scraping
         blocked_domains = [
@@ -214,7 +251,7 @@ class RealTimeMonitor:
             # Rest of your existing code...
 
                 
-                # Use newspaper3k with better headers
+                # Use newspaper4k/newspaper parser when available
                 news_article = Article(url)
                 news_article.config.browser_user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                 news_article.config.request_timeout = 10

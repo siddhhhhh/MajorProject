@@ -2,8 +2,11 @@ import json
 from typing import Dict, Any, List
 from textblob import TextBlob
 import re
+import logging
 from core.llm_client import llm_client
 from config.agent_prompts import SENTIMENT_ANALYSIS_PROMPT
+
+logger = logging.getLogger(__name__)
 
 class SentimentAnalyzer:
     def __init__(self):
@@ -64,15 +67,37 @@ class SentimentAnalyzer:
         # LLM-based deep analysis
         print("🤖 Running AI linguistic analysis...")
         llm_analysis = self._llm_sentiment_analysis(claim_text)
+
+        claim_sentiment_label = claim_analysis.get("sentiment", self._label_from_polarity(claim_analysis.get("polarity_score", 0.0)))
+        evidence_sentiment_label = evidence_analysis.get("sentiment", self._label_from_polarity(evidence_analysis.get("polarity_score", 0.0)))
+        if claim_sentiment_label is None:
+            claim_sentiment_label = "neutral"
+        if evidence_sentiment_label is None:
+            evidence_sentiment_label = "neutral"
+
+        claim_sentiment_score = claim_analysis.get("score", int((claim_analysis.get("polarity_score", 0.0) + 1) * 50))
+        evidence_sentiment_score = evidence_analysis.get("score", int((evidence_analysis.get("polarity_score", 0.0) + 1) * 50))
+
+        low_confidence = bool(llm_analysis.get("low_confidence", False))
         
         result = {
             "claim_id": claim.get("claim_id"),
-            "claim_sentiment": claim_analysis,
-            "evidence_sentiment": evidence_analysis,
+            "claim_sentiment": claim_sentiment_label,
+            "evidence_sentiment": evidence_sentiment_label,
+            "claim_sentiment_details": claim_analysis,
+            "evidence_sentiment_details": evidence_analysis,
+            "claim_sentiment_score": claim_sentiment_score,
+            "evidence_sentiment_score": evidence_sentiment_score,
+            "low_confidence": low_confidence,
             "sentiment_divergence": round(sentiment_divergence, 3),
             "divergence_score": min(100, int(sentiment_divergence * 100)),
             "greenwashing_flags": greenwashing_flags,
             "llm_linguistic_analysis": llm_analysis,
+            "sentiment_label": evidence_sentiment_label,
+            "sentiment_score": evidence_analysis.get("polarity_score", 0.0),
+            "articles_analyzed": len(evidence),
+            "notable_signal": self._build_notable_signal(evidence, greenwashing_flags),
+            "source_breakdown": self._sentiment_source_breakdown(evidence),
             "overall_linguistic_risk": self._calculate_linguistic_risk(
                 claim_analysis, evidence_analysis, sentiment_divergence, greenwashing_flags
             )
@@ -92,6 +117,9 @@ class SentimentAnalyzer:
             return {
                 "polarity_score": 0.0,
                 "subjectivity_score": 0.0,
+                "sentiment": "neutral",
+                "score": 50,
+                "low_confidence": True,
                 "buzzword_count": 0,
                 "vague_terms": [],
                 "hedge_words": []
@@ -106,9 +134,14 @@ class SentimentAnalyzer:
         vague_found = [term for term in self.vague_quantifiers if term in text_lower]
         hedge_found = [word for word in self.hedge_words if word in text_lower]
         
+        polarity = round(blob.sentiment.polarity, 3)
+        sentiment = self._label_from_polarity(polarity)
         return {
-            "polarity_score": round(blob.sentiment.polarity, 3),  # -1 to +1
+            "polarity_score": polarity,  # -1 to +1
             "subjectivity_score": round(blob.sentiment.subjectivity, 3),  # 0 to 1
+            "sentiment": sentiment,
+            "score": int((polarity + 1) * 50),
+            "low_confidence": False,
             "buzzword_count": buzzword_count,
             "vague_terms": vague_found,
             "hedge_words": hedge_found,
@@ -182,29 +215,61 @@ class SentimentAnalyzer:
         prompt = SENTIMENT_ANALYSIS_PROMPT.format(text=claim_text)
         
         # Use fast Groq model
-        response = self.llm.call_groq(
-            [{"role": "user", "content": prompt}],
-            temperature=0.1,
-            use_fast=True
-        )
+        try:
+            response = self.llm.call_groq(
+                [{"role": "user", "content": prompt}],
+                temperature=0.1,
+                use_fast=True
+            )
+        except Exception as exc:
+            logger.warning("Sentiment LLM call failed: %s", exc)
+            return {
+                "analysis_failed": True,
+                "sentiment": "neutral",
+                "score": 50,
+                "low_confidence": True,
+            }
+
+        logger.debug("Sentiment LLM raw response: %s", response)
         
         if not response:
-            return {"analysis_failed": True}
+            return {
+                "analysis_failed": True,
+                "sentiment": "neutral",
+                "score": 50,
+                "low_confidence": True,
+            }
         
         try:
             # Try to parse JSON
+            cleaned = response
             cleaned = re.sub(r'```\s*', '', cleaned)
             start = cleaned.find('{')
             end = cleaned.rfind('}') + 1
             if start != -1 and end > start:
-                return json.loads(cleaned[start:end])
+                result = json.loads(cleaned[start:end])
+                sentiment = (
+                    result.get("sentiment")
+                    or result.get("label")
+                    or result.get("overall_sentiment")
+                    or result.get("tone")
+                    or "neutral"
+                )
+                result["sentiment"] = sentiment
+                if result.get("score") is None:
+                    result["score"] = 50
+                result["low_confidence"] = False
+                return result
         except:
             pass
         
         # Fallback: extract key info from text
         return {
             "raw_analysis": response[:300],
-            "parsed": False
+            "parsed": False,
+            "sentiment": "neutral",
+            "score": 50,
+            "low_confidence": True,
         }
     
     def _calculate_linguistic_risk(self, claim_analysis: Dict, evidence_analysis: Dict,
@@ -234,3 +299,30 @@ class SentimentAnalyzer:
             risk_score += 10
         
         return min(100, risk_score)
+
+    def _label_from_polarity(self, polarity: float) -> str:
+        if polarity <= -0.15:
+            return "negative"
+        if polarity >= 0.15:
+            return "positive"
+        return "neutral"
+
+    def _build_notable_signal(self, evidence: List[Dict[str, Any]], flags: List[Dict[str, str]]) -> str:
+        if flags:
+            return f"{flags[0].get('type', 'Linguistic signal')} detected in claim language"
+        if not evidence:
+            return "No external evidence available for sentiment signal extraction"
+        first = evidence[0]
+        source = first.get("source_name") or first.get("source") or "media coverage"
+        return f"Primary sentiment signal derived from {source} coverage"
+
+    def _sentiment_source_breakdown(self, evidence: List[Dict[str, Any]]) -> Dict[str, int]:
+        breakdown = {"positive": 0, "neutral": 0, "negative": 0}
+        for ev in evidence:
+            text = (ev.get("relevant_text") or ev.get("snippet") or "").strip()
+            if not text:
+                continue
+            polarity = TextBlob(text).sentiment.polarity
+            label = self._label_from_polarity(polarity)
+            breakdown[label] += 1
+        return breakdown

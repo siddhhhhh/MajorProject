@@ -33,7 +33,10 @@ from .financial_analyst import FinancialAnalyst
 from .industry_comparator import IndustryComparator
 from .conflict_resolver import ConflictResolver
 from .confidence_scorer import ConfidenceScorer
-from .realtime_monitor import RealTimeMonitor
+try:
+    from .realtime_monitor import RealTimeMonitor
+except Exception:
+    RealTimeMonitor = None
 
 # New 2026 Agents
 from .carbon_extractor import CarbonExtractor, get_carbon_extractor

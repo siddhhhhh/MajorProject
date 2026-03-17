@@ -3,11 +3,17 @@ ESG Greenwashing Detection System - LangGraph Version
 Maintains compatibility with existing main.py while adding agentic capabilities
 """
 import os
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 import sys
 import argparse
+import threading
 from datetime import datetime
 from dotenv import load_dotenv
 import json
+
+if sys.version_info < (3, 11):
+    print("WARNING: Python 3.11+ recommended. Current:", sys.version)
 
 load_dotenv()
 
@@ -186,19 +192,51 @@ class ESGGreenwashingDetectorLangGraph:
         json_file = f"{base_name}.json"
         with open(json_file, 'w', encoding='utf-8') as f:
             f.write(result["json_export"])
-        
-        # Save full results (for debugging)
+
+        # Save full results only when explicitly enabled to avoid large blocking writes.
         full_file = f"{base_name}_FULL.json"
-        with open(full_file, 'w', encoding='utf-8') as f:
-            # Remove non-serializable items
-            clean_result = {k: v for k, v in result.items() 
-                          if k not in ["professional_report", "json_export"]}
-            json.dump(clean_result, f, indent=2, default=str)
+        save_full = os.getenv("ESG_SAVE_FULL_RESULTS", "0").lower() in {"1", "true", "yes"}
+        if save_full:
+            try:
+                with open(full_file, 'w', encoding='utf-8') as f:
+                    clean_result = {
+                        k: self._to_json_safe(v)
+                        for k, v in result.items()
+                        if k not in ["professional_report", "json_export"]
+                    }
+                    json.dump(clean_result, f, indent=2, ensure_ascii=False)
+            except Exception as e:
+                print(f"⚠️ Skipped full debug JSON export: {e}")
         
         print(f"\n💾 Reports saved:")
         print(f"   📄 {txt_file}")
         print(f"   📊 {json_file}")
-        print(f"   🔍 {full_file}")
+        if save_full:
+            print(f"   🔍 {full_file}")
+
+    def _to_json_safe(self, value, depth: int = 0, max_depth: int = 5, max_items: int = 200):
+        """Convert nested runtime objects into bounded JSON-safe structures."""
+        if depth >= max_depth:
+            return "<truncated>"
+
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+
+        if isinstance(value, dict):
+            items = list(value.items())[:max_items]
+            out = {str(k): self._to_json_safe(v, depth + 1, max_depth, max_items) for k, v in items}
+            if len(value) > max_items:
+                out["_truncated_keys"] = len(value) - max_items
+            return out
+
+        if isinstance(value, (list, tuple, set)):
+            items = list(value)[:max_items]
+            out = [self._to_json_safe(v, depth + 1, max_depth, max_items) for v in items]
+            if len(value) > max_items:
+                out.append({"_truncated_items": len(value) - max_items})
+            return out
+
+        return str(value)
     
     def _display_summary(self, result: dict):
         """Display executive summary - FIXED deduplication"""
@@ -351,6 +389,24 @@ def quick_analysis(company: str, claim: str, industry: str = None):
     return detector.analyze_company(company, claim, industry)
 
 
+def _force_exit_if_background_threads(exit_code: int = 0):
+    """Force process termination for CLI runs if background threads keep interpreter alive."""
+    if os.getenv("ESG_FORCE_EXIT", "1").lower() not in {"1", "true", "yes"}:
+        return
+
+    live_threads = [
+        t for t in threading.enumerate()
+        if t is not threading.main_thread() and t.is_alive()
+    ]
+
+    if live_threads:
+        print("\n⚠️ Background threads detected after completion; forcing clean process exit for CLI run.")
+
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(int(exit_code))
+
+
 if __name__ == "__main__":
     # Setup argument parser for named arguments
     parser = argparse.ArgumentParser(
@@ -372,7 +428,10 @@ Examples:
     
     # If company and claim are provided, run analysis
     if args.company and args.claim:
-        quick_analysis(args.company, args.claim, args.industry)
+        result = quick_analysis(args.company, args.claim, args.industry)
+        if isinstance(result, dict) and result.get("error"):
+            _force_exit_if_background_threads(1)
+        _force_exit_if_background_threads(0)
     else:
         # Interactive mode if no arguments provided
         interactive_mode()

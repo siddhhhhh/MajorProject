@@ -6,6 +6,7 @@ Quick test to verify LSTM model loads correctly with TensorFlow/Keras 2.15+
 
 import sys
 from pathlib import Path
+import pytest
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -19,15 +20,9 @@ def test_lstm_loading():
     print("LSTM MODEL LOADING TEST")
     print("="*70)
     
-    try:
-        # Check if TensorFlow is available
-        import tensorflow as tf
-        print(f"\n✅ TensorFlow version: {tf.__version__}")
-        
-    except ImportError:
-        print("\n❌ TensorFlow not installed")
-        print("   Install with: pip install tensorflow>=2.15.0")
-        return False
+    # Skip cleanly when TensorFlow is not available in the environment.
+    tf = pytest.importorskip("tensorflow", reason="TensorFlow is required for LSTM loading test")
+    print(f"\n✅ TensorFlow version: {tf.__version__}")
     
     try:
         # Import LSTM predictor
@@ -53,25 +48,30 @@ def test_lstm_loading():
                 print(f"   Trend:      {result['trend']}")
                 print(f"   Change:     {result['change_pct']}%")
                 print(f"   Model MAE:  {result['confidence_mae']}")
-                return True
+                assert True
             else:
-                print(f"❌ Prediction failed: {result.get('error')}")
-                return False
+                pytest.fail(f"Prediction failed: {result.get('error')}")
         else:
             print(f"\n⚠️  LSTM model not available")
             print(f"   This is expected if model hasn't been trained yet")
             print(f"   Train model using: notebooks/train_lstm_trend.ipynb")
-            return False
+            pytest.skip("LSTM model artifacts not available in this environment")
             
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        raise
 
 
 if __name__ == "__main__":
-    success = test_lstm_loading()
+    try:
+        test_lstm_loading()
+        success = True
+    except pytest.skip.Exception:
+        success = True
+    except Exception:
+        success = False
     
     print(f"\n{'='*70}")
     if success:

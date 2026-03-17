@@ -12,7 +12,7 @@ Supports: Global companies + Indian enterprises (SEBI BRSR, MCA compliance)
 
 import json
 import re
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from core.llm_client import llm_client
 from config.agent_prompts import CARBON_EXTRACTION_PROMPT
 
@@ -297,8 +297,10 @@ class CarbonExtractor:
             "Waste generated"
         ]
     
-    def extract_carbon_data(self, company: str, evidence: List[Dict[str, Any]], 
-                           claim: Dict[str, Any] = None) -> Dict[str, Any]:
+    def extract_carbon_data(self, company: str, evidence: List[Dict[str, Any]],
+                           claim: Dict[str, Any] = None,
+                           report_chunks: Optional[List[Dict[str, Any]]] = None,
+                           report_claims_by_year: Optional[Dict[Any, List[str]]] = None) -> Dict[str, Any]:
         """
         Extract comprehensive carbon emissions data from evidence
         
@@ -306,6 +308,8 @@ class CarbonExtractor:
             company: Company name
             evidence: List of evidence documents from EvidenceRetriever
             claim: Optional ESG claim being analyzed
+            report_chunks: Parsed ESG report chunks
+            report_claims_by_year: Extracted report claims grouped by year
         
         Returns:
             Structured carbon data with Scope 1, 2, 3 breakdown
@@ -316,9 +320,18 @@ class CarbonExtractor:
         print(f"{'='*60}")
         print(f"Company: {company}")
         print(f"Evidence documents: {len(evidence)}")
-        
-        # Combine evidence texts
-        evidence_text = self._combine_evidence(evidence)
+        print(f"Report chunks: {len(report_chunks or [])}")
+        print(f"Report claim years: {len((report_claims_by_year or {}).keys())}")
+
+        if not report_chunks and isinstance(claim, dict):
+            report_chunks = claim.get("parsed_report_chunks") or claim.get("report_chunks") or []
+
+        # Build prioritized extraction corpus (reports -> report claims -> evidence)
+        extraction_text, source_meta = self._build_extraction_corpus(
+            evidence=evidence,
+            report_chunks=report_chunks or [],
+            report_claims_by_year=report_claims_by_year or {}
+        )
         
         # Step 0: Check known emissions database first
         known_data = self._get_known_emissions(company)
@@ -327,7 +340,9 @@ class CarbonExtractor:
         
         # Step 1: Extract carbon figures using LLM
         print("📊 Extracting carbon emissions data...")
-        extracted_data = self._llm_extract_carbon(company, evidence_text, claim)
+        extracted_data = self._llm_extract_carbon(company, extraction_text, claim)
+        if not extracted_data:
+            extracted_data = self._regex_extract_carbon(extraction_text)
         
         # Helper to check if scope has actual data
         def has_emission_value(scope_data):
@@ -352,6 +367,12 @@ class CarbonExtractor:
                 "carbon_intensity": known_data.get("carbon_intensity"),
                     "data_source": "Known Emissions Database (CDP/BRSR/Sustainability Reports)"
                 }
+
+        if not llm_has_data and not known_data:
+            cdp_fallback = self._fetch_cdp_carbon_data(company)
+            if cdp_fallback:
+                print("📊 Using CDP public-data fallback...")
+                extracted_data.update(cdp_fallback)
         
         # Step 2: Validate and normalize units
         print("🔍 Validating emission figures...")
@@ -368,6 +389,10 @@ class CarbonExtractor:
         # Step 5: Indian BRSR compliance (if applicable)
         print("🇮🇳 Checking SEBI BRSR compliance...")
         brsr_compliance = self._check_brsr_compliance(validated_data, company)
+
+        # Step 6: Offset transparency audit (avoidance vs removal)
+        print("🧾 Auditing carbon offset transparency...")
+        offset_transparency = self._audit_offset_transparency(extraction_text, validated_data)
         
         # Include additional metadata from known database
         additional_info = {}
@@ -392,9 +417,12 @@ class CarbonExtractor:
             "intensity_metrics": intensity_metrics,
             "ghg_compliance": compliance_check,
             "brsr_compliance": brsr_compliance,
+            "offset_transparency": offset_transparency,
             "data_quality": self._assess_data_quality(validated_data),
             "carbon_claims_analysis": self._analyze_carbon_claims(claim, validated_data),
-            "red_flags": self._detect_carbon_red_flags(validated_data, evidence_text),
+            "red_flags": self._detect_carbon_red_flags(validated_data, extraction_text),
+            "annual_emissions": self._extract_annual_emissions(extraction_text),
+            "source_coverage": source_meta,
             **additional_info  # Include net zero target, renewable %, etc.
         }
         
@@ -408,6 +436,56 @@ class CarbonExtractor:
             print(f"   Data Source: {additional_info.get('data_source', 'Unknown')}")
         
         return result
+
+    def _fetch_cdp_carbon_data(self, company_name: str) -> Dict[str, Any]:
+        """Best-effort CDP public web fallback for scope values."""
+        query = f"{company_name} CDP scope 1 2 3 emissions tCO2e site:cdp.net"
+        try:
+            from ddgs import DDGS
+            text_hits = []
+            with DDGS() as ddgs:
+                for result in ddgs.text(query, max_results=5):
+                    title = result.get("title", "")
+                    body = result.get("body", "")
+                    text_hits.append(f"{title} {body}")
+        except Exception:
+            text_hits = []
+
+        parsed = self._parse_cdp_results(text_hits)
+        return parsed
+
+    def _parse_cdp_results(self, results: List[str]) -> Dict[str, Any]:
+        text = "\n".join(results or [])
+        if not text:
+            return {}
+
+        def _extract_scope(patterns: List[str]) -> Optional[float]:
+            for p in patterns:
+                m = re.search(p, text, re.IGNORECASE)
+                if m:
+                    try:
+                        return float(m.group(1).replace(",", ""))
+                    except Exception:
+                        continue
+            return None
+
+        scope1 = _extract_scope([r"scope\s*1[^\d]{0,20}(\d[\d,\.]*)"])
+        scope2 = _extract_scope([r"scope\s*2[^\d]{0,20}(\d[\d,\.]*)"])
+        scope3 = _extract_scope([r"scope\s*3[^\d]{0,20}(\d[\d,\.]*)"])
+
+        if scope1 is None and scope2 is None and scope3 is None:
+            return {}
+
+        out: Dict[str, Any] = {
+            "data_source": "CDP public web fallback",
+        }
+        if scope1 is not None:
+            out["scope1"] = {"value": scope1, "unit": "tCO2e", "source": "CDP"}
+        if scope2 is not None:
+            out["scope2"] = {"value": scope2, "unit": "tCO2e", "source": "CDP"}
+        if scope3 is not None:
+            out["scope3"] = {"total": scope3, "unit": "tCO2e", "source": "CDP"}
+        return out
     
     def _combine_evidence(self, evidence: List[Dict[str, Any]]) -> str:
         """Combine evidence documents into searchable text"""
@@ -418,6 +496,54 @@ class CarbonExtractor:
             texts.append(f"{title}: {snippet}")
         
         return "\n\n".join(texts)[:8000]  # Limit to ~2K tokens
+
+    def _combine_report_chunks(self, report_chunks: List[Dict[str, Any]]) -> str:
+        """Combine parsed report chunks with year hints."""
+        texts = []
+        for chunk in report_chunks[:60]:
+            chunk_text = str(chunk.get("text", ""))
+            if not chunk_text:
+                continue
+            year = chunk.get("year", "unknown")
+            report_year = chunk.get("report_year", year)
+            texts.append(f"[REPORT YEAR {report_year}] {chunk_text[:1200]}")
+        return "\n\n".join(texts)
+
+    def _combine_report_claims(self, report_claims_by_year: Dict[Any, List[str]]) -> str:
+        """Combine report claims grouped by year."""
+        texts = []
+        for year in sorted(report_claims_by_year.keys(), reverse=True):
+            claims = report_claims_by_year.get(year, [])
+            if not claims:
+                continue
+            joined = "\n".join(f"- {c}" for c in claims[:80])
+            texts.append(f"[REPORT CLAIMS {year}]\n{joined}")
+        return "\n\n".join(texts)
+
+    def _build_extraction_corpus(self,
+                                 evidence: List[Dict[str, Any]],
+                                 report_chunks: List[Dict[str, Any]],
+                                 report_claims_by_year: Dict[Any, List[str]]) -> Tuple[str, Dict[str, int]]:
+        """Build prioritized corpus: report chunks, then report claims, then evidence."""
+        report_text = self._combine_report_chunks(report_chunks)
+        report_claim_text = self._combine_report_claims(report_claims_by_year)
+        evidence_text = self._combine_evidence(evidence)
+
+        corpus_parts = []
+        if report_text:
+            corpus_parts.append("=== PRIORITY 1: ESG REPORT CHUNKS ===\n" + report_text)
+        if report_claim_text:
+            corpus_parts.append("=== PRIORITY 2: REPORT CLAIMS BY YEAR ===\n" + report_claim_text)
+        if evidence_text:
+            corpus_parts.append("=== PRIORITY 3: EXTERNAL EVIDENCE ===\n" + evidence_text)
+
+        combined = "\n\n".join(corpus_parts)[:32000]
+        meta = {
+            "report_chunks": len(report_chunks),
+            "report_claim_years": len(report_claims_by_year.keys()),
+            "evidence_documents": len(evidence)
+        }
+        return combined, meta
     
     def _get_known_emissions(self, company: str) -> Optional[Dict[str, Any]]:
         """
@@ -512,25 +638,29 @@ Extract ALL carbon emission data. Return ONLY valid JSON."""
     def _regex_extract_carbon(self, text: str) -> Dict[str, Any]:
         """Fallback regex extraction for carbon figures"""
         
-        result = {"scope1": {}, "scope2": {}, "scope3": {}}
+        result = {"scope1": {}, "scope2": {}, "scope3": {}, "total": {}}
         
-        # Pattern for emission values
+        # Stronger extraction patterns aligned to report wording
         patterns = [
-            (r'scope\s*1[:\s]+(\d+(?:,\d+)*(?:\.\d+)?)\s*(tCO2e?|MT|tonnes?)', "scope1"),
-            (r'scope\s*2[:\s]+(\d+(?:,\d+)*(?:\.\d+)?)\s*(tCO2e?|MT|tonnes?)', "scope2"),
-            (r'scope\s*3[:\s]+(\d+(?:,\d+)*(?:\.\d+)?)\s*(tCO2e?|MT|tonnes?)', "scope3"),
-            (r'direct\s+emissions?[:\s]+(\d+(?:,\d+)*(?:\.\d+)?)\s*(tCO2e?|MT)', "scope1"),
-            (r'indirect\s+emissions?[:\s]+(\d+(?:,\d+)*(?:\.\d+)?)\s*(tCO2e?|MT)', "scope2"),
-            (r'carbon\s+footprint[:\s]+(\d+(?:,\d+)*(?:\.\d+)?)\s*(tCO2e?|MT)', "total"),
+            (r'Scope\s*1[^\n\r]{0,120}?(\d[\d,\.]+)\s*(MtCO2e|ktCO2e|tCO2e|tons?|tonnes?)?', "scope1"),
+            (r'Scope\s*2[^\n\r]{0,120}?(\d[\d,\.]+)\s*(MtCO2e|ktCO2e|tCO2e|tons?|tonnes?)?', "scope2"),
+            (r'Scope\s*3[^\n\r]{0,120}?(\d[\d,\.]+)\s*(MtCO2e|ktCO2e|tCO2e|tons?|tonnes?)?', "scope3"),
+            (r'Total\s+emissions[^\n\r]{0,120}?(\d[\d,\.]+)\s*(MtCO2e|ktCO2e|tCO2e|tons?|tonnes?)?', "total"),
+            (r'carbon\s+footprint[:\s]+(\d+(?:,\d+)*(?:\.\d+)?)\s*(MtCO2e|ktCO2e|tCO2e|MT|tonnes?)', "total"),
         ]
         
         for pattern, scope in patterns:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
                 value = float(match.group(1).replace(",", ""))
-                unit = match.group(2)
-                if scope != "total":
-                    result[scope] = {"value": value, "unit": unit, "source": "regex_extraction"}
+                unit = match.group(2) if len(match.groups()) > 1 and match.group(2) else "tCO2e"
+                normalized_value = self._normalize_units(value, unit)
+                if scope == "scope3":
+                    result[scope] = {"total": normalized_value, "unit": "tCO2e", "source": "regex_extraction"}
+                elif scope == "total":
+                    result[scope] = {"value": normalized_value, "unit": "tCO2e", "source": "regex_extraction"}
+                else:
+                    result[scope] = {"value": normalized_value, "unit": "tCO2e", "source": "regex_extraction"}
         
         return result
     
@@ -544,6 +674,8 @@ Extract ALL carbon emission data. Return ONLY valid JSON."""
             
             if isinstance(scope_data, dict):
                 value = scope_data.get("value")
+                if value is None and scope == "scope3":
+                    value = scope_data.get("total")
                 
                 if value is not None:
                     # Normalize to tCO2e
@@ -556,7 +688,7 @@ Extract ALL carbon emission data. Return ONLY valid JSON."""
                     if normalized_value < 0:
                         validation_flags.append("negative_value_invalid")
                     
-                    validated[scope] = {
+                    validated_scope = {
                         "value": normalized_value,
                         "unit": "tCO2e",
                         "original_value": value,
@@ -565,6 +697,9 @@ Extract ALL carbon emission data. Return ONLY valid JSON."""
                         "validation_flags": validation_flags,
                         "verified": len(validation_flags) == 0
                     }
+                    if scope == "scope3":
+                        validated_scope["total"] = normalized_value
+                    validated[scope] = validated_scope
             elif isinstance(scope_data, (int, float)):
                 validated[scope] = {
                     "value": float(scope_data),
@@ -577,7 +712,8 @@ Extract ALL carbon emission data. Return ONLY valid JSON."""
     def _normalize_units(self, value: float, unit: str) -> float:
         """Normalize emission values to tCO2e"""
         
-        unit_lower = unit.lower() if unit else "tco2e"
+        unit_lower = (unit or "tco2e").lower().strip()
+        unit_lower = unit_lower.replace(" ", "")
         
         conversions = {
             "tco2e": 1.0,
@@ -586,17 +722,39 @@ Extract ALL carbon emission data. Return ONLY valid JSON."""
             "mtco2": 1_000_000,
             "ktco2e": 1_000,  # Kilotonnes
             "ktco2": 1_000,
+            "mmtco2e": 1_000_000,
+            "milliontonnes": 1_000_000,
             "kgco2e": 0.001,  # Kilograms
             "kgco2": 0.001,
             "mt": 1.0,  # Metric tonnes
+            "tonne": 1.0,
             "tonnes": 1.0,
             "tons": 0.907,  # US short tons
+            "ton": 0.907,
             "lakh tonnes": 100_000,  # Indian lakh
             "crore tonnes": 10_000_000  # Indian crore
         }
         
         conversion_factor = conversions.get(unit_lower, 1.0)
         return float(value) * conversion_factor
+
+    def _extract_annual_emissions(self, text: str) -> Dict[int, float]:
+        """Extract coarse annual total emissions series for temporal analysis."""
+        annual = {}
+        if not text:
+            return annual
+
+        for match in re.finditer(
+            r"((?:19|20)\d{2})[^\n\r]{0,120}?(?:total\s+emissions|scope\s*1\s*\+\s*scope\s*2|ghg\s+emissions)[^\n\r]{0,120}?(\d[\d,\.]+)\s*(MtCO2e|ktCO2e|tCO2e|tons?|tonnes?)",
+            text,
+            re.IGNORECASE,
+        ):
+            year = int(match.group(1))
+            value = float(match.group(2).replace(",", ""))
+            unit = match.group(3) or "tCO2e"
+            annual[year] = self._normalize_units(value, unit)
+
+        return dict(sorted(annual.items()))
     
     def _calculate_intensity(self, data: Dict[str, Any], company: str) -> Dict[str, Any]:
         """Calculate carbon intensity metrics"""
@@ -712,21 +870,47 @@ Extract ALL carbon emission data. Return ONLY valid JSON."""
     def _assess_data_quality(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Assess quality of carbon data"""
         
+        # PHASE 7 FIX: Check if any emissions data exists
+        has_scope1 = bool(data.get("scope1", {}).get("value"))
+        has_scope2 = bool(data.get("scope2", {}).get("value"))
+        has_scope3 = bool(data.get("scope3", {}).get("value") or data.get("scope3", {}).get("total"))
+        
+        # If NO emissions data exists, return zero quality
+        if not (has_scope1 or has_scope2 or has_scope3):
+            return {
+                "factors": {
+                    "scope1_present": 0,
+                    "scope2_present": 0,
+                    "scope3_present": 0,
+                    "year_specified": 0,
+                    "methodology_stated": 0,
+                    "third_party_verified": 0
+                },
+                "overall_score": 0,
+                "data_confidence": "Low",
+                "status": "insufficient_data",
+                "message": "Emissions data not available in retrieved sources."
+            }
+        
         quality_factors = {
-            "scope1_present": 25 if data.get("scope1", {}).get("value") else 0,
-            "scope2_present": 25 if data.get("scope2", {}).get("value") else 0,
-            "scope3_present": 20 if data.get("scope3") else 0,
+            "scope1_present": 25 if has_scope1 else 0,
+            "scope2_present": 25 if has_scope2 else 0,
+            "scope3_present": 20 if has_scope3 else 0,
             "year_specified": 10 if any(d.get("year") for d in [data.get("scope1", {}), 
                                                                  data.get("scope2", {})]) else 0,
             "methodology_stated": 10 if data.get("methodology") else 0,
             "third_party_verified": 10 if data.get("verified") else 0
         }
         
+        overall_score = sum(quality_factors.values())
+        
         return {
             "factors": quality_factors,
-            "overall_score": sum(quality_factors.values()),
-            "data_confidence": "High" if sum(quality_factors.values()) >= 70 else 
-                              "Medium" if sum(quality_factors.values()) >= 40 else "Low"
+            "overall_score": overall_score,
+            "data_confidence": "High" if overall_score >= 70 else 
+                              "Medium" if overall_score >= 40 else "Low",
+            "status": "sufficient_data" if overall_score > 0 else "insufficient_data",
+            "message": "Emissions data not available in retrieved sources." if overall_score == 0 else None
         }
     
     def _analyze_carbon_claims(self, claim: Dict[str, Any], 
@@ -761,7 +945,11 @@ Extract ALL carbon emission data. Return ONLY valid JSON."""
         if "carbon neutral" in claim_text or "net zero" in claim_text:
             if not carbon_data.get("scope3"):
                 analysis["red_flags"].append("Carbon neutral/net zero claim without Scope 3 disclosure")
-            if not carbon_data.get("offsets"):
+
+            offset_audit = carbon_data.get("offset_transparency", {}) if isinstance(carbon_data, dict) else {}
+            if offset_audit and offset_audit.get("status") == "high_avoidance_reliance":
+                analysis["red_flags"].append("Carbon neutral claim relies heavily on avoidance offsets")
+            elif not offset_audit or offset_audit.get("total_offset_mentions", 0) == 0:
                 analysis["red_flags"].append("Carbon neutral claim without offset disclosure")
         
         if "100%" in claim_text and "renewable" in claim_text:
@@ -824,12 +1012,13 @@ Extract ALL carbon emission data. Return ONLY valid JSON."""
                     "detail": "Net zero/carbon neutral claim without Scope 3 disclosure"
                 })
         
-        # 4. Heavy reliance on offsets
-        if "offset" in evidence_text.lower() and "reduction" not in evidence_text.lower():
+        # 4. Heavy reliance on offsets (avoidance-focused)
+        offset_audit = self._audit_offset_transparency(evidence_text, data)
+        if offset_audit.get("status") == "high_avoidance_reliance":
             red_flags.append({
-                "flag": "Offset-heavy strategy",
-                "severity": "Medium",
-                "detail": "Emphasis on carbon offsets without emission reduction"
+                "flag": "Offset-heavy strategy (avoidance-dominant)",
+                "severity": "High",
+                "detail": "Offset mix is dominated by avoidance credits over removals"
             })
         
         # 5. Missing intensity metrics
@@ -844,6 +1033,71 @@ Extract ALL carbon emission data. Return ONLY valid JSON."""
             })
         
         return red_flags
+
+    def _audit_offset_transparency(self, text: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Audit offset disclosures and classify avoidance vs removal reliance."""
+        lower = (text or "").lower()
+
+        removal_terms = [
+            "direct air capture", "dac", "biochar", "mineralization", "carbon removal",
+            "reforestation", "afforestation", "soil carbon", "enhanced weathering", "beccs"
+        ]
+        avoidance_terms = [
+            "avoided emissions", "cookstove", "clean cookstove", "renewable project credits",
+            "landfill gas", "methane avoidance", "energy efficiency credits", "prevented deforestation"
+        ]
+
+        removal_mentions = sum(lower.count(t) for t in removal_terms)
+        avoidance_mentions = sum(lower.count(t) for t in avoidance_terms)
+        generic_offset_mentions = lower.count("offset") + lower.count("credit") + lower.count("vcu") + lower.count("verra")
+        total_mentions = removal_mentions + avoidance_mentions + generic_offset_mentions
+
+        rem_pct = self._extract_nearby_percentage(lower, ["removal", "carbon removal", "removals"])
+        avd_pct = self._extract_nearby_percentage(lower, ["avoidance", "avoided emissions", "avoidance credits"])
+
+        if rem_pct is not None or avd_pct is not None:
+            rem = max(0.0, min(100.0, rem_pct if rem_pct is not None else 100.0 - float(avd_pct or 0.0)))
+            avd = max(0.0, min(100.0, avd_pct if avd_pct is not None else 100.0 - rem))
+        elif (removal_mentions + avoidance_mentions) > 0:
+            rem = (removal_mentions / max(1, removal_mentions + avoidance_mentions)) * 100.0
+            avd = (avoidance_mentions / max(1, removal_mentions + avoidance_mentions)) * 100.0
+        else:
+            rem = 0.0
+            avd = 0.0
+
+        if total_mentions == 0:
+            status = "no_offset_disclosure"
+            risk_penalty = 0
+        elif avd >= 70 and avd > rem:
+            status = "high_avoidance_reliance"
+            risk_penalty = 15
+        elif avd >= 55 and avd > rem:
+            status = "moderate_avoidance_reliance"
+            risk_penalty = 8
+        else:
+            status = "balanced_or_removal_weighted"
+            risk_penalty = 0
+
+        return {
+            "status": status,
+            "avoidance_share_pct": round(avd, 1),
+            "removal_share_pct": round(rem, 1),
+            "avoidance_mentions": avoidance_mentions,
+            "removal_mentions": removal_mentions,
+            "total_offset_mentions": total_mentions,
+            "risk_penalty_points": risk_penalty
+        }
+
+    def _extract_nearby_percentage(self, text: str, keywords: List[str]) -> Optional[float]:
+        """Extract first percentage near any keyword from a text blob."""
+        for kw in keywords:
+            m = re.search(rf"{re.escape(kw)}[^\n\r]{{0,60}}?(\d{{1,3}}(?:\.\d+)?)\s*%", text, re.IGNORECASE)
+            if m:
+                try:
+                    return float(m.group(1))
+                except Exception:
+                    continue
+        return None
     
     def _clean_json_response(self, text: str) -> str:
         """Clean JSON from LLM response"""

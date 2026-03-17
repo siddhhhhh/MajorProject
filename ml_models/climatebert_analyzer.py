@@ -17,6 +17,11 @@ import numpy as np
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 
+try:
+    from huggingface_hub import login
+except ImportError:
+    login = None
+
 
 class ClimateBERTAnalyzer:
     """
@@ -96,6 +101,13 @@ class ClimateBERTAnalyzer:
             
             from transformers import AutoTokenizer, AutoModelForSequenceClassification
             import torch
+
+            hf_token = os.getenv("HF_TOKEN")
+            if hf_token and login is not None:
+                try:
+                    login(token=hf_token)
+                except Exception:
+                    pass
             
             self._transformers_available = True
             self._torch_available = True
@@ -111,7 +123,10 @@ class ClimateBERTAnalyzer:
                 try:
                     print(f"   Loading {model_key}...")
                     self.tokenizers[model_key] = AutoTokenizer.from_pretrained(model_name)
-                    self.models[model_key] = AutoModelForSequenceClassification.from_pretrained(model_name)
+                    self.models[model_key] = AutoModelForSequenceClassification.from_pretrained(
+                        model_name,
+                        ignore_mismatched_sizes=True,
+                    )
                     self.models[model_key].to(device)
                     self.models[model_key].eval()
                 except Exception as e:
@@ -503,3 +518,8 @@ climatebert_analyzer = ClimateBERTAnalyzer()
 def get_climatebert_analyzer() -> ClimateBERTAnalyzer:
     """Get global ClimateBERT analyzer instance"""
     return climatebert_analyzer
+
+
+def climatebert_analyze(text: str, analysis_type: str = "comprehensive"):
+    analyzer = ClimateBERTAnalyzer()
+    return analyzer.analyze_text(text, analysis_type)
