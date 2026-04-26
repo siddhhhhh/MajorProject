@@ -28,23 +28,28 @@ import time
 logger = logging.getLogger(__name__)
 
 # -- Stage 1: raw fetch caps (per source) --------------------------------------
+# Paid/quota-limited APIs kept at current caps to protect daily quotas.
 NEWSAPI_FETCH_CAP = 10
 NEWSDATA_FETCH_CAP = 10
-DUCKDUCKGO_FETCH_CAP = 10
+DUCKDUCKGO_FETCH_CAP = 10  # free DDG search; safe to keep moderate
 REUTERS_RSS_FETCH_CAP = 5
 SCHOLAR_FETCH_CAP = 5
-CDP_FETCH_CAP = 3
-COMPANY_IR_FETCH_CAP = 3
-SBTI_FETCH_CAP = 2
-COMPANIES_HOUSE_FETCH_CAP = 2
-INFLUENCEMAP_FETCH_CAP = 2
-GRI_FETCH_CAP = 2
-OPENSANCTIONS_FETCH_CAP = 1
+# Free / public-registry sources — bumped so the post-dedup citation pool
+# clears the ≥4-per-tier diversity floor instead of barely crossing 1-2.
+CDP_FETCH_CAP = 5            # was 3 — public CDP search
+COMPANY_IR_FETCH_CAP = 5     # was 3 — company IR pages, free
+SBTI_FETCH_CAP = 4           # was 2 — public SBTi dashboard
+COMPANIES_HOUSE_FETCH_CAP = 4  # was 2 — UK Companies House, free
+INFLUENCEMAP_FETCH_CAP = 4   # was 2 — public NGO database via DDG
+GRI_FETCH_CAP = 4            # was 2 — public GRI database via DDG
+OPENSANCTIONS_FETCH_CAP = 2  # was 1 — public sanctions registry
 ADVERSARIAL_FETCH_CAP = 3
 
 # -- Stage 2: survivors after filter -------------------------------------------
-MAX_FULL_TEXT_FETCH = 15
-MAX_FINAL_RESULTS = 25
+# Bumped so more diverse retrieved evidence survives into the final pool —
+# previously 5 final citations after dedup was barely above the 4-floor.
+MAX_FULL_TEXT_FETCH = 20  # was 15
+MAX_FINAL_RESULTS = 35    # was 25
 
 # -- Full text fetch settings ---------------------------------------------------
 FULL_TEXT_TIMEOUT_SECS = 8
@@ -225,7 +230,7 @@ def fetch_duckduckgo(query: str, cap: int = DUCKDUCKGO_FETCH_CAP) -> list[dict]:
 
         results = []
         with DDGS() as ddgs:
-            # Sometime ddgs.news throws decode errors. Try news first, then text.
+            # Sometimes ddgs.news throws decode errors. Try news first, then text.
             search_results = []
             for func in [ddgs.news, ddgs.text]:
                 try:
@@ -235,7 +240,7 @@ def fetch_duckduckgo(query: str, cap: int = DUCKDUCKGO_FETCH_CAP) -> list[dict]:
                 except Exception as e:
                     logger.debug("DuckDuckGo fetch func failed: %s", e)
                     time.sleep(1)
-            
+
             for item in search_results:
                 url = item.get("url", "") or item.get("href", "")
                 if is_blocked(url):
@@ -1083,34 +1088,88 @@ class EvidenceRetriever:
 
         async def _run_pipeline() -> Dict[str, Any]:
             raw: List[Dict[str, Any]] = []
+            # Per-retriever yield log so silent-failure retrievers (returning 0
+            # items without raising) become visible. Previously it was nearly
+            # impossible to tell whether NewsAPI/SBTi/InfluenceMap actually
+            # contributed or just quietly returned [].
+            tally: Dict[str, int] = {}
+
+            async def _try_async(label: str, coro):
+                """Call an async retriever, log how many items it yielded, and
+                surface exceptions as a logged warning instead of letting one
+                broken source kill the whole pipeline."""
+                try:
+                    out = await coro
+                except Exception as exc:
+                    print(f"  ⚠️  retriever '{label}' raised {type(exc).__name__}: {str(exc)[:100]}")
+                    tally[label] = -1
+                    return []
+                n = len(out) if isinstance(out, list) else 0
+                tally[label] = n
+                if n == 0:
+                    print(f"  ⚠️  retriever '{label}' returned 0 items (silent miss — check API key / endpoint)")
+                else:
+                    print(f"  ✓ retriever '{label}' returned {n} items")
+                return out if isinstance(out, list) else []
+
+            def _try_sync(label: str, fn, *args, **kwargs):
+                try:
+                    out = fn(*args, **kwargs)
+                except Exception as exc:
+                    print(f"  ⚠️  retriever '{label}' raised {type(exc).__name__}: {str(exc)[:100]}")
+                    tally[label] = -1
+                    return []
+                n = len(out) if isinstance(out, list) else 0
+                tally[label] = n
+                if n == 0:
+                    print(f"  ⚠️  retriever '{label}' returned 0 items (silent miss — check API key / endpoint)")
+                else:
+                    print(f"  ✓ retriever '{label}' returned {n} items")
+                return out if isinstance(out, list) else []
 
             # Stage 1: broad fetch with updated source caps
-            raw += await fetch_newsapi(query, cap=NEWSAPI_FETCH_CAP)
-            raw += await fetch_newsdata(query, cap=NEWSDATA_FETCH_CAP)
-            raw += fetch_duckduckgo(query, cap=DUCKDUCKGO_FETCH_CAP)
-            raw += fetch_reuters_rss(company, cap=REUTERS_RSS_FETCH_CAP)
+            raw += await _try_async("newsapi",       fetch_newsapi(query, cap=NEWSAPI_FETCH_CAP))
+            raw += await _try_async("newsdata",      fetch_newsdata(query, cap=NEWSDATA_FETCH_CAP))
+            raw += _try_sync(       "duckduckgo",    fetch_duckduckgo, query, cap=DUCKDUCKGO_FETCH_CAP)
+            raw += _try_sync(       "reuters_rss",   fetch_reuters_rss, company, cap=REUTERS_RSS_FETCH_CAP)
 
             # Historical context remains useful but bounded
             vector_results = self.vector_store.search_similar(claim_text, n_results=5)
             raw += self._process_vector_results(vector_results)
 
             async with httpx.AsyncClient() as session:
-                raw += await fetch_cdp_evidence(company, session)
-                raw += await fetch_sbti_registry_evidence(company, session)
-                raw += await fetch_company_ir(company, ticker, country, session)
-                raw += await fetch_companies_house_evidence(company, session)
-                raw += await fetch_opensanctions_evidence(company)
+                raw += await _try_async("cdp",              fetch_cdp_evidence(company, session))
+                raw += await _try_async("sbti",             fetch_sbti_registry_evidence(company, session))
+                raw += await _try_async("company_ir",       fetch_company_ir(company, ticker, country, session))
+                raw += await _try_async("companies_house",  fetch_companies_house_evidence(company, session))
+                raw += await _try_async("opensanctions",    fetch_opensanctions_evidence(company))
 
-            raw += await fetch_influencemap_evidence(company)
-            raw += await fetch_gri_database_evidence(company)
-            raw += await fetch_adversarial_evidence(company, claim_text)
+            raw += await _try_async("influencemap",   fetch_influencemap_evidence(company))
+            raw += await _try_async("gri_database",   fetch_gri_database_evidence(company))
+            raw += await _try_async("adversarial",    fetch_adversarial_evidence(company, claim_text))
 
-            # Ensure minimum evidence coverage even when news APIs or Reuters feeds fail.
-            if len(raw) < 10:
-                raw += fetch_google_news_rss(company, cap=10)
+            # Always invoke Google News — it's free (RSS), unmetered, and adds
+            # tier-3 news diversity even when the metered news APIs returned data.
+            # Previously gated on `len(raw) < 10` which left ~30% of runs without
+            # Google News coverage despite the source being available.
+            raw += _try_sync("google_news",  fetch_google_news_rss, company, cap=10)
 
-            if any(w in claim_text.lower() for w in ["research", "study", "report", "data"]):
-                raw += fetch_google_scholar(query, cap=SCHOLAR_FETCH_CAP)
+            # Always invoke Google Scholar for ESG claims (was gated on the
+            # claim containing "research/study/report/data"). Net-zero,
+            # decarbonisation and similar claims are research-grade and benefit
+            # from peer-reviewed sources regardless of phrasing.
+            raw += _try_sync("google_scholar", fetch_google_scholar, query, cap=SCHOLAR_FETCH_CAP)
+
+            # Surface a single end-of-stage summary: which retrievers contributed
+            # and which were silent. Stored in the cache for post-hoc audit.
+            silent = sorted([k for k, v in tally.items() if v == 0])
+            crashed = sorted([k for k, v in tally.items() if v == -1])
+            contributed = sorted([k for k, v in tally.items() if v > 0])
+            print(f"\n  📊 retrieval tally — contributed={len(contributed)}, silent={len(silent)}, crashed={len(crashed)}")
+            if silent:
+                print(f"     silent (0 items): {', '.join(silent)}")
+            if crashed:
+                print(f"     crashed:          {', '.join(crashed)}")
 
             logger.info("Stage 1 complete: %d raw results fetched", len(raw))
 
@@ -1218,6 +1277,9 @@ class EvidenceRetriever:
                 "full_text_count": full_text_count,
                 "snippet_count": snippet_count,
                 "priority_count": priority_count,
+                # Per-retriever yield tally so downstream consumers can see
+                # which sources contributed and which were silent.
+                "retriever_tally": tally,
             }
 
         pipeline = asyncio.run(_run_pipeline())
@@ -1381,6 +1443,9 @@ class EvidenceRetriever:
             "evidence_gap": quality_metrics['evidence_gap'],
             "quality_metrics": quality_metrics,
             "source_breakdown": source_breakdown,
+            # Per-retriever yield tally — exposes silent-failure retrievers
+            # so downstream auditors can see which evidence channels worked.
+            "retriever_tally": pipeline.get("retriever_tally", {}),
             "financial_context": financial_context,
             "company_reports": company_reports,
             "indian_financials": indian_financials,

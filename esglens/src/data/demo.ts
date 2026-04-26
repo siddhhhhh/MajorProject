@@ -30,6 +30,11 @@ export type ReportData = {
   evidence: { type: string; domain: string; url: string; year: number; credibility: number; stance: string; excerpt: string; archive: string }[];
   greenwashingData?: any;
   shapDrivers?: { f: string; v: number }[];
+  // Real annual reduction rates from the carbon_pathway agent (when present);
+  // the trajectory chart uses these to plot actual implied vs required pace.
+  requiredAnnualRate?: number;
+  companyImpliedRate?: number;
+  alignmentStatus?: string;
 };
 
 export const SHELL_REPORT: ReportData = {

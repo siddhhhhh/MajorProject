@@ -573,6 +573,7 @@ class RiskScorer:
         social_score: float,
         governance_score: float,
         sg_adequacy: Dict[str, Any],
+        pillar_factors: Dict[str, Any] = None,
     ) -> tuple[float, float, float, list[Dict[str, Any]]]:
         adjustments: list[Dict[str, Any]] = []
 
@@ -606,7 +607,13 @@ class RiskScorer:
                 "data_year": wba_data_year,
             })
 
-        governance_external = self._normalize_external_score(ext_scores.get("governance"))
+        # --- FIX A1: Only blend governance if WBA actually provides data ---
+        # Previously, when WBA had no governance score, the internal
+        # coverage_adjusted_score was used as the "external" benchmark,
+        # creating an identity blend that falsely logged a WBA adjustment.
+        governance_wba_raw = ext_scores.get("governance")
+        governance_external = self._normalize_external_score(governance_wba_raw) if governance_wba_raw is not None else None
+
         if governance_external is not None:
             weight = 0.12 if not sg_adequacy.get("governance", {}).get("is_adequate", False) else 0.08
             if isinstance(age_years, int) and age_years > 2:
@@ -622,6 +629,8 @@ class RiskScorer:
                 "source": "WBA",
                 "data_year": wba_data_year,
             })
+        # If no WBA governance data: skip blend, no adjustment logged
+        # --- END FIX A1 ---
 
         environment_external = self._normalize_external_score(ext_scores.get("environment"))
         if environment_external is not None:
@@ -677,7 +686,12 @@ class RiskScorer:
         tier1 = coverage.get("tier1_factors", 0)
         total = coverage.get("total_factors", 1)
 
-        disclosure_base = (tier1 / max(total, 1)) * 50.0
+        if tier1 >= 2:
+            unverified_penalty_weight = 0.5
+        else:
+            unverified_penalty_weight = 1.0
+        adjusted_total = tier1 + max(0.0, float(total or 0) - float(tier1 or 0)) * unverified_penalty_weight
+        disclosure_base = (tier1 / max(adjusted_total, 1.0)) * 50.0
 
         # Framework hits detection
         frameworks = ["gri", "sasb", "tcfd", "cdp", "issb", "sbti", "brsr"]
@@ -955,6 +969,7 @@ class RiskScorer:
             social_score=social_score,
             governance_score=governance_score,
             sg_adequacy=sg_adequacy,
+            pillar_factors=pillar_factors,
         )
 
         if external_adjustments:
@@ -1003,7 +1018,7 @@ class RiskScorer:
         if abs(display_esg - overall_esg) > 0.05:
             print(f"   📊 Display ESG (pre-penalty): {display_esg:.1f}/100")
 
-        return {
+        result = {
             "environmental_score": round(environmental_score, 1),
             "social_score": round(social_score, 1),
             "governance_score": round(governance_score, 1),
@@ -1018,8 +1033,13 @@ class RiskScorer:
             "normalized_sg_fact_count": int(sg_pack.get("summary", {}).get("normalized_fact_count", 0) or 0),
             "external_benchmark_adjustments": external_adjustments,
             "external_benchmarks_used": bool(external_adjustments),
-            "pillarfactorsraw": pillar_factors # Save raw factors for later
+            "pillarfactors": pillar_factors
         }
+
+        # Store pre-WBA-adjustment pillar_factors for B4 fix
+        self._last_pillar_factors = pillar_factors
+
+        return result
 
     def calculate_final_score(self, company: str, all_analyses: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -1048,6 +1068,49 @@ class RiskScorer:
         fact_graph_summary = fact_graph_payload.get("summary", {})
         if not isinstance(fact_graph_summary, dict):
             fact_graph_summary = {}
+
+        # ── KG year-over-year drift signals ─────────────────────────────────
+        # Query the persistent KPI history for prior recorded values of this
+        # company's emissions and surface the drift as a structured signal
+        # the report can render. Empty when no prior runs exist for this
+        # company yet (first-ever run produces no drift, which is correct).
+        kg_drift_signals: List[Dict[str, Any]] = []
+        try:
+            from core.company_knowledge_graph import compute_kpi_drift
+            company_for_kg = all_analyses.get("company") or all_analyses.get("company_name") or ""
+            if not company_for_kg:
+                # all_analyses doesn't always carry company; fall back via carbon
+                _carbon = all_analyses.get("carbon_extraction") or {}
+                company_for_kg = _carbon.get("company") if isinstance(_carbon, dict) else ""
+            _carbon = all_analyses.get("carbon_extraction") or {}
+            _emissions = _carbon.get("emissions") if isinstance(_carbon, dict) else {}
+            if isinstance(_emissions, dict) and company_for_kg:
+                for metric_key, metric_name, payload_field in (
+                    ("scope1", "Scope1_Emissions", "value"),
+                    ("scope2", "Scope2_Emissions", "value"),
+                    ("scope3", "Scope3_Emissions", "total"),
+                ):
+                    sd = _emissions.get(metric_key)
+                    if not isinstance(sd, dict):
+                        continue
+                    cur = sd.get(payload_field) or sd.get("value")
+                    try:
+                        cur_f = float(cur) if cur is not None else None
+                    except Exception:
+                        cur_f = None
+                    if cur_f is None:
+                        continue
+                    drift = compute_kpi_drift(company_for_kg, metric_name, cur_f)
+                    # Skip self-comparisons: when fact_graph_builder runs
+                    # before risk_scorer it appends THIS run's KPIs to the
+                    # history; the freshly-appended row would otherwise show
+                    # up as the "prior" value, producing a fake +0.0% drift.
+                    if drift.get("delta_pct") == 0.0 and drift.get("direction") == "stable":
+                        continue
+                    if drift.get("direction") not in ("no_history", None):
+                        kg_drift_signals.append(drift)
+        except Exception as exc:
+            print(f"⚠️  KG drift query failed: {exc}")
 
         # Step 0: Calculate ESG pillar scores FIRST (PRIMARY rating source)
         pillar_scores = self.calculate_pillar_scores(all_analyses)
@@ -1085,9 +1148,26 @@ class RiskScorer:
         scoring_methodology = "Canonical Multi-Signal"
         confidence = 0.85
 
-        environmental_score = pillar_scores.get("environmental_score")
-        social_score = pillar_scores.get("social_score")
-        governance_score = pillar_scores.get("governance_score")
+        # --- FIX B4 (part 2): Use pre-WBA-adjustment scores ---
+        # pillar_scores contains WBA-adjusted values from calculate_pillar_scores.
+        # Using them here would double-apply WBA when the second
+        # _apply_external_benchmark_adjustments (or P-term) runs.
+        # Instead, read the coverage_adjusted_score from the pre-adjustment
+        # pillar_factors stored at the end of calculate_pillar_scores.
+        _pre_adj_pf = getattr(self, "_last_pillar_factors", {})
+
+        environmental_score = float(
+            _pre_adj_pf.get("environmental", {}).get("coverageadjustedscore")
+            or pillar_scores.get("environmental_score", 50.0)
+        )
+        social_score = float(
+            _pre_adj_pf.get("social", {}).get("coverageadjustedscore")
+            or pillar_scores.get("social_score", 50.0)
+        )
+        governance_score = float(
+            _pre_adj_pf.get("governance", {}).get("coverageadjustedscore")
+            or pillar_scores.get("governance_score", 50.0)
+        )
         
         if all(s is not None for s in [environmental_score, social_score, governance_score]):
             risk_source = "Pillar Primary Signal"
@@ -1601,6 +1681,34 @@ class RiskScorer:
             "fact_graph": {
                 "available": bool(fact_graph_summary),
                 "summary": fact_graph_summary,
+                # Surface graph motifs that are otherwise hidden inside the summary.
+                # Pillar coverage skew (e.g. all E, no S/G) is a quality signal;
+                # contradiction_fact density per fact is a greenwashing signal.
+                "motifs": {
+                    "pillar_coverage_skew": (
+                        max(fact_graph_summary.get("coverage_by_pillar", {}).values() or [0])
+                        - min(fact_graph_summary.get("coverage_by_pillar", {}).values() or [0])
+                    ) if fact_graph_summary.get("coverage_by_pillar") else None,
+                    "pillar_coverage": fact_graph_summary.get("coverage_by_pillar"),
+                    "contradiction_density": (
+                        round(
+                            int(fact_graph_summary.get("contradiction_fact_count", 0) or 0)
+                            / max(int(fact_graph_summary.get("fact_count", 0) or 0), 1),
+                            3,
+                        )
+                    ),
+                    "graph_density": fact_graph_summary.get("graph_density"),
+                    "is_decision_ready": fact_graph_summary.get("is_decision_ready"),
+                },
+            },
+            # KG cross-run drift signals — empty on first run for a company.
+            # Each entry: {metric_name, current_value, prior_value, prior_run_ts,
+            # delta_abs, delta_pct, direction}. Surfaced in the report so users
+            # see year-over-year change rather than only point-in-time scores.
+            "kg_drift": {
+                "available": bool(kg_drift_signals),
+                "signal_count": len(kg_drift_signals),
+                "signals": kg_drift_signals,
             },
             "scoremodifierledger": [
                 {"label": "Base ESG from pillars", "value": round(overall_esg_score, 2)},
@@ -1636,7 +1744,7 @@ class RiskScorer:
                 industry=industry,
                 evidence_sources=evidence_list,
                 carbon_data=carbon_data_for_factors,
-                pillar_scores=pillar_scores,
+                pillar_scores=None,  # FIX A2: let evidence speak for itself, don't rescale to WBA-adjusted target
                 external_benchmarks=external_payload,
             )
             # Keep the calibrated pillar-primary scores authoritative.
@@ -1707,8 +1815,13 @@ class RiskScorer:
                 ci_data = {}
             C = float(ci_data.get("claim_intensity_score", 0.0) or 0.0)
 
-            # Extract P (Performance) from pillarfactors
-            P = float(result.get("pillarfactors", {}).get("performance_score", overall_esg) or overall_esg)
+            # Fix B4: Use pre-adjustment performance score from _last_pillar_factors if available
+            _pre_adj_pf = getattr(self, "_last_pillar_factors", {})
+            P = float(
+                _pre_adj_pf.get("performance_score") 
+                or result.get("pillarfactors", {}).get("performance_score", overall_esg) 
+                or overall_esg
+            )
 
             # Extract R (Controversy Risk) from all_analyses
             # Step 1: Get the regulatory-based R from the controversy_risk state dict
@@ -2128,13 +2241,9 @@ class RiskScorer:
                 "citation": "Claim language analysis",
             })
 
-        if not contradictions:
-            contradictions.append({
-                "rule": "NO_MAJOR_CONTRADICTION",
-                "detail": f"No hard contradiction rule triggered. Current ESG balance E={env:.1f}, S={social:.1f}, G={governance:.1f}.",
-                "citation": citation("Scoring synthesis"),
-            })
-
+        # Do NOT emit a "no contradiction triggered" placeholder. Empty list
+        # means no rule-based contradictions; the report should fall back to
+        # the canonical contradictions[] resolved upstream (e.g. NZBA/CA100+/BOCC).
         return contradictions[:3]
 
     def _recommended_due_diligence(self, pillar_scores: Dict[str, Any], top_contradictions: List[Dict[str, str]]) -> List[str]:

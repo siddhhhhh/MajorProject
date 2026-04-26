@@ -40,8 +40,9 @@ The Gap represents the mathematical delta between what is promised ($C$) and wha
 
 ### **Component 3: Controversy Risk ($R$)** (`agents/risk_scorer.py`)
 $R$ is a **Blended Metric** (0.6 Verified / 0.4 Probabilistic) that captures active wrongdoing.
-- **Verified Regulatory Gaps (60% weight)**: Hard data from SEC filings, WBA indicators, and government fines. These are "proven" failures.
+- **Verified Regulatory Gaps (60% weight)**: Hard data from SEC filings (Board Independence, Pay Ratio, Whistleblower policies), WBA indicators, and government fines. These are "proven" failures.
 - **Probabilistic Contradictions (40% weight)**: Signals from the `contradiction_analyzer.py` which pits claims against news reports and NGO findings.
+- **Enhanced Governance Blending**: Governance scores now prioritize high-fidelity `coverageadjustedscore` from WBA/SEC pillar factors over stale top-level scores, with a deterministic fallback to 22.4 for low-disclosure entities.
 - **Calculation**: $R = 0.6 \cdot R_{reg} + 0.4 \cdot \min(100, \text{Contradictions} \cdot 20)$.
 
 ### **Component 4: Disclosure Deficit ($\text{Deficit}$)**
@@ -77,9 +78,10 @@ In the Deep Analysis track, agents often disagree. The **Conflict Resolver** res
 
 ### **C. Regulatory Ingestion & SEC Parsing** (`agents/regulatory_scanner.py`)
 The system directly ingests data from the "Truth Sources" of corporate reporting:
-- **SEC DEF 14A**: Extracts board diversity metrics and the ratio of executive pay linked to ESG targets.
+- **SEC DEF 14A**: Extracts board independence percentages, CEO-to-median-worker pay ratios, and whistleblower/ethics hotline existence.
 - **SEC Form SD**: Scans for "Conflict Minerals" disclosures and supply chain human rights issues.
-- **WBA (World Benchmarking Alliance)**: Ingests specific indicator scores for Social and Governance pillars.
+- **WBA (World Benchmarking Alliance)**: Ingests specific indicator scores and coverage-adjusted metrics for Social and Governance pillars.
+- **External Safeguards**: Implements a three-tier fallback logic (Pillar-Specific -> WBA Baseline -> Absolute Fallback) to ensure score integrity in sparse data environments.
 
 ---
 
@@ -126,6 +128,7 @@ ESGLens operates on an multi-layered evidence pool:
 | **Claim Decomposition** | `agents/claim_decomposer.py` | Breaks marketing fluff into atomic, verifiable sub-claims. |
 | **Temporal Analysis** | `agents/temporal_consistency_agent.py` | Tracks the "Commitment Ledger" across multiple years. |
 | **State Schema** | `core/state_schema.py` | Defines the global `ESGState` structure. |
+| **External Enrichment** | `core/agent_wrappers.py` | Orchestrates WBA/SEC data fetching and supplemental evidence injection. |
 | **LLM Interface** | `core/llm_call.py` | Standardized wrapper for multi-model LLM calls (GPT-4, Claude, etc.). |
 
 ---

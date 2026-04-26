@@ -929,6 +929,34 @@ def _score_structured_indicator(
         fallback_source = "No relevant disclosure"
         verified = False
 
+    megabank_structured_factors = {
+        "Board Independence",
+        "Executive Pay Ratio",
+        "Whistleblower Mechanisms",
+    }
+    if name in megabank_structured_factors and best_policy_tier == 1 and fallback_score == 40.0:
+        bank_evidence_text = " ".join(
+            _evidence_text(ev).lower()
+            for ev in evidence_sources
+            if isinstance(ev, dict)
+        )
+        has_us_bank_mandatory_evidence = any(
+            marker in bank_evidence_text
+            for marker in (
+                "confirmed us bank",
+                "us large-cap bank",
+                "nyse listing standards",
+                "dodd-frank",
+                "section 953",
+                "sarbanes-oxley",
+                "sox",
+            )
+        )
+        if has_us_bank_mandatory_evidence:
+            fallback_score = 65.0
+            fallback_source = best_policy_source or "SEC mandatory structured disclosure"
+            verified = True
+
     # === Banking factor stubs: limited_disclosure exclusion ===
     _BANKING_FACTORS_REQUIRING_STUB = {
         "Green Lending Ratio",

@@ -70,6 +70,9 @@ function apiToReportData(api: ESGReport): ReportData {
     netZeroTarget: api.carbon.net_zero_target,
     carbonBudgetYears: api.carbon.budget_years_remaining ?? 0,
     ieaGapPct: api.carbon.iea_nze_gap_pct ?? 0,
+    requiredAnnualRate: api.carbon.required_annual_rate,
+    companyImpliedRate: api.carbon.company_implied_rate,
+    alignmentStatus: api.carbon.alignment_status,
     claim: api.claim,
     verdict: api.risk_level === "HIGH" ? "CONTRADICTED" : api.risk_level === "LOW" ? "SUPPORTED" : "INCONCLUSIVE",
     summary: api.executive_summary || api.ai_verdict,
@@ -136,26 +139,38 @@ export default function Report() {
   const storeReport = useAnalysisStore((s) => s.currentReport);
   const [apiReport, setApiReport] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
   const [tab, setTab] = useState("Overview");
   const [evFilter, setEvFilter] = useState<string>("All");
   const [flagged, setFlagged] = useState<Record<number, boolean>>({});
 
-  // Try to load from API if we have a real report id (not "shel" / "jpm")
+  // Real-data-first: try the live API for any non-demo id. Demo IDs ("shel",
+  // "jpm" etc.) load from local REPORTS[]. If the API call fails for a REAL
+  // id we surface the error instead of silently falling back to demo data
+  // (which would otherwise display Shell's numbers under another company's name).
+  const isDemoId = id in REPORTS;
   useEffect(() => {
     if (storeReport) {
       setApiReport(apiToReportData(storeReport));
       return;
     }
-    if (id && !REPORTS[id]) {
+    if (id && !isDemoId) {
       setLoading(true);
+      setApiError(null);
       getReport(id)
         .then((data) => setApiReport(apiToReportData(data)))
-        .catch(() => {}) // fall through to demo data
+        .catch((err) => {
+          setApiError(err?.message || "Failed to load report from API");
+          if (typeof console !== "undefined") {
+            console.warn(`[Report] live API fetch failed for id=${id}; no demo fallback`, err);
+          }
+        })
         .finally(() => setLoading(false));
     }
-  }, [id, storeReport]);
+  }, [id, storeReport, isDemoId]);
 
-  const R = apiReport || REPORTS[id] || SHELL_REPORT;
+  // Real data first: live store > API response > demo fallback (only for demo ids)
+  const R = apiReport || (isDemoId ? (REPORTS[id] || SHELL_REPORT) : null);
 
   if (loading) {
     return (
@@ -164,6 +179,36 @@ export default function Report() {
           <div className="text-center">
             <Loader2 className="h-10 w-10 text-teal-bright animate-spin mx-auto mb-4" />
             <div className="text-text-secondary font-mono text-sm">Loading report…</div>
+          </div>
+        </div>
+      </PageWrapper>
+    );
+  }
+
+  // Real-data failure path: the requested id isn't a demo id and the live API
+  // call failed. Surface that explicitly instead of silently rendering Shell's
+  // numbers under another company's name — the user explicitly asked for real
+  // values rather than hardcoded demo fallbacks.
+  if (!R) {
+    return (
+      <PageWrapper>
+        <div className="flex items-center justify-center h-screen">
+          <div className="text-center max-w-md px-6">
+            <div className="text-text-primary text-xl font-display mb-3">
+              Report not found
+            </div>
+            <div className="text-text-secondary text-sm mb-2">
+              No live report exists for id <code className="font-mono">{id}</code>.
+            </div>
+            {apiError && (
+              <div className="text-text-secondary text-xs font-mono mb-4 opacity-70">
+                API error: {apiError}
+              </div>
+            )}
+            <div className="text-text-secondary text-xs">
+              Run a fresh analysis from the New Analysis page, or open one of the demo reports
+              (?id=shel, ?id=jpm) to explore the UI.
+            </div>
           </div>
         </div>
       </PageWrapper>
@@ -191,6 +236,21 @@ export default function Report() {
   ] : DECEPTION;
 
   const activeShap = R.shapDrivers || SHAP;
+
+  // Real-data-first emissions pathway: derive from the report's required vs
+  // implied annual reduction rates if the carbon-pathway agent provided them.
+  // Otherwise fall through to the demo PATHWAY constant so the UI doesn't
+  // collapse for legacy reports.
+  const requiredRate = R.requiredAnnualRate;
+  const impliedRate = R.companyImpliedRate;
+  const activePathway = (typeof requiredRate === "number" && typeof impliedRate === "number" && requiredRate > 0)
+    ? Array.from({ length: 31 }, (_, i) => {
+        const year = 2020 + i;
+        const required = Math.max(0, 100 - (i * requiredRate));
+        const actual = Math.max(0, 100 - (i * impliedRate));
+        return { year, required, actual, gap: actual - required };
+      })
+    : PATHWAY;
 
   return (
     <PageWrapper>
@@ -304,7 +364,7 @@ export default function Report() {
               <h3 className="font-display text-2xl mb-6">2020 → 2050 emissions trajectory</h3>
               <div className="h-72">
                 <ResponsiveContainer>
-                  <ComposedChart data={PATHWAY}>
+                  <ComposedChart data={activePathway}>
                     <XAxis dataKey="year" stroke="hsl(var(--text-muted))" tick={{ fontSize: 11 }} />
                     <YAxis stroke="hsl(var(--text-muted))" tick={{ fontSize: 11 }} />
                     <Tooltip contentStyle={{ background: "hsl(var(--bg-elevated))", border: "1px solid hsl(var(--bg-border))", fontSize: 12 }} />

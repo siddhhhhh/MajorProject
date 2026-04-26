@@ -883,6 +883,34 @@ class CarbonExtractor:
             }
             used_baseline_estimate = True
 
+        # Per-scope fallback — when only some scopes are missing (e.g. JPM
+        # discloses scope1+scope3 but omits scope2), fill the gap from
+        # industry baselines so carbon-pathway analysis can run cleanly.
+        # Each filled scope is tagged "Estimated — disclosure gap" so the
+        # report flags it as inferred, not disclosed.
+        if not used_baseline_estimate:
+            _baseline_industry = self._derive_industry_hint(company, extraction_text, claim)
+            _baseline = self.industry_emissions_baselines.get(
+                _baseline_industry, self.industry_emissions_baselines["unknown"]
+            )
+            for _scope_key, _value_field in (("scope1", "value"), ("scope2", "value"), ("scope3", "total")):
+                _scope_data = extracted_data.get(_scope_key)
+                if (
+                    _scope_data is None
+                    or not isinstance(_scope_data, dict)
+                    or _scope_data.get(_value_field) in (None, "", 0)
+                ) and not (
+                    isinstance(_scope_data, dict) and _scope_data.get("combined_with_scope1")
+                ):
+                    extracted_data[_scope_key] = {
+                        _value_field: _baseline.get(_scope_key),
+                        "unit": "tCO2e",
+                        "year": None,
+                        "source": f"Estimated — disclosure gap (industry baseline: {_baseline_industry})",
+                        "confidence": "low",
+                        "estimated_from_baseline": True,
+                    }
+
         # Step 2: Validate and normalize units
         print("🔍 Validating emission figures...")
         validated_data = self._validate_emissions(extracted_data, company)

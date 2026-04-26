@@ -334,6 +334,8 @@ class ContradictionAnalyzer:
         }
 
     def _extract_contradictions_from_evidence(self, evidence: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        from datetime import datetime as _dt
+        current_year = _dt.now().year
         contradictions = []
         for item in evidence or []:
             description = (
@@ -345,12 +347,38 @@ class ContradictionAnalyzer:
             )
             if not description:
                 continue
+            cleaned = clean_snippet_text(description)[:300]
+            # ── Quality gates: drop snippets that aren't presentation-grade ──
+            # 1. Drop if cleaned text is too short to be a real signal
+            if len(cleaned.strip()) < 40:
+                continue
+            # 2. Drop if first character is lowercase (likely truncated mid-word)
+            first_char = cleaned.lstrip()[:1]
+            if first_char and first_char.isalpha() and first_char.islower():
+                continue
+            # 3. Drop ancient Wayback / archive snippets — old archive content is
+            #    almost never a decision-relevant contradiction for a current claim.
+            url_lower = str(item.get("url") or "").lower()
+            source_lower = str(item.get("source_name") or item.get("source") or "").lower()
+            is_archive = (
+                "web.archive.org" in url_lower
+                or "wayback" in source_lower
+                or "wayback" in url_lower
+            )
+            year = item.get("year")
+            if is_archive:
+                # Without a year, archives are unverifiable; with an old year, stale.
+                if not isinstance(year, int) or year < (current_year - 5):
+                    continue
+            # 4. Drop generic non-archive items that are simply too old
+            if isinstance(year, int) and year < (current_year - 8):
+                continue
             contradictions.append({
                 "severity": "MEDIUM",
-                "description": clean_snippet_text(description)[:300],
+                "description": cleaned,
                 "source": item.get("source_name") or item.get("source") or "Evidence retrieval",
                 "source_url": item.get("url", ""),
-                "year": item.get("year"),
+                "year": year,
                 "confidence": "MEDIUM",
                 "source_type": "retrieved_evidence",
             })

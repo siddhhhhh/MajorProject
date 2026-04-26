@@ -145,18 +145,20 @@ KNOWN_GREENWASHING_CASES: Dict[str, List[Dict]] = {
     "jpmorgan chase": [
         {
             "claim_pattern": r"net.?zero|paris|alignment|sustainable|climate",
-            "description": "Left the Net Zero Banking Alliance (NZBA) in January 2024",
+            "description": "Left the Net Zero Banking Alliance (NZBA) in January 2025",
             "contradiction_text": "Withdrew from net-zero banking coalition while publicly claiming Paris Agreement alignment",
             "source": "NZBA / Reuters",
-            "year": 2024,
+            "source_url": "https://www.unepfi.org/net-zero-banking/members/",
+            "year": 2025,
             "severity": "high",
-            "regulatory_body": "NZBA"
+            "regulatory_body": "NZBA (UNEP FI)"
         },
         {
             "claim_pattern": r"climate action|net.?zero|engagement|transition",
             "description": "Left Climate Action 100+ in February 2024",
             "contradiction_text": "Exited world's largest investor climate engagement initiative",
             "source": "Financial Times",
+            "source_url": "https://www.climateaction100.org/whos-involved/investors/",
             "year": 2024,
             "severity": "high",
             "regulatory_body": "Climate Action 100+"
@@ -166,6 +168,7 @@ KNOWN_GREENWASHING_CASES: Dict[str, List[Dict]] = {
             "description": "Shifted 2030 targets from absolute cuts to cost-based intensity metrics",
             "contradiction_text": "Replaced absolute emission commitments with weaker intensity targets",
             "source": "Bloomberg / JPMC 2024 Climate Report",
+            "source_url": "https://www.jpmorganchase.com/ir/news/2024/climate-report-2024",
             "year": 2024,
             "severity": "high",
             "regulatory_body": "Public disclosure"
@@ -175,6 +178,7 @@ KNOWN_GREENWASHING_CASES: Dict[str, List[Dict]] = {
             "description": "$429B fossil fuel financing since Paris Agreement - ranked #1 globally",
             "contradiction_text": "World's largest fossil fuel financier while claiming sustainable low-carbon alignment",
             "source": "Banking on Climate Chaos 2023 - RAN/BankTrack/Sierra Club",
+            "source_url": "https://www.bankingonclimatechaos.org/",
             "year": 2023,
             "severity": "high",
             "regulatory_body": "NGO investigation"
@@ -184,6 +188,7 @@ KNOWN_GREENWASHING_CASES: Dict[str, List[Dict]] = {
             "description": "Financed $38.1B in fossil fuel expansion in 2022 alone",
             "contradiction_text": "Continued large-scale fossil fuel expansion financing",
             "source": "Banking on Climate Chaos 2023",
+            "source_url": "https://www.bankingonclimatechaos.org/",
             "year": 2023,
             "severity": "high",
             "regulatory_body": "NGO investigation"

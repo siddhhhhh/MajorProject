@@ -149,6 +149,78 @@ class ReportQualityChecker:
         failure_count = len(failed_agents)
         verified_count = len(verified_sources)
 
+        # Surface specific high-impact agent failures so consumers know which
+        # dimensions of the analysis are degraded. Generic "FAILED" counts are
+        # easy to skim past; named failures are actionable.
+        critical_named = {
+            "industry_comparator": "peer benchmarking",
+            "peer_comparison": "peer benchmarking",
+            "carbon_extraction": "scope-1/2/3 extraction",
+            "carbon_pathway_analysis": "carbon pathway alignment",
+            "regulatory_scanning": "regulatory framework scan",
+            "contradiction_analysis": "contradiction detection",
+            "risk_scoring": "headline risk score",
+            "temporal_consistency": "temporal claim-vs-performance comparison",
+            "company_knowledge_graph": "company knowledge graph context",
+        }
+        for agent_name, dim in critical_named.items():
+            if agent_status.get(agent_name) == "FAILED":
+                quality_warnings.append(
+                    f"Critical agent '{agent_name}' FAILED — {dim} dimension is missing from the integrated score."
+                )
+        # Also warn when ANY non-critical agent failed, in aggregate.
+        non_critical_failed = [n for n in failed_agents if n not in critical_named]
+        if non_critical_failed:
+            quality_warnings.append(
+                f"{len(non_critical_failed)} non-critical agent(s) failed: {', '.join(sorted(non_critical_failed)[:5])}."
+            )
+
+        # Calibration sample size — n<10 means score is statistical guesswork
+        # for this sector/claim-type cell. Surface it so the headline isn't
+        # over-trusted. Read from `structured.calibration` (populated by
+        # _build_structured_report → _compute_calibration_live), with state
+        # as a fallback.
+        cal = (structured.get("calibration") if isinstance(structured, dict) else None) or state.get("calibration") or {}
+        if isinstance(cal, dict):
+            n = cal.get("dataset_size") or cal.get("subset_n") or cal.get("n")
+            if isinstance(n, (int, float)):
+                if n < 10:
+                    quality_warnings.append(
+                        f"Calibration sample is very small (n={int(n)}); score is PROVISIONAL and should not anchor investment-grade decisions."
+                    )
+                elif n < 30:
+                    quality_warnings.append(
+                        f"Calibration sample is limited (n={int(n)}); score thresholds remain provisional for this sector/claim-type cell."
+                    )
+
+        # Carbon-scope completeness for net-zero / decarbonisation claims —
+        # missing Scope 2 (or Scope 3 for financials) means the claim cannot
+        # be quantitatively verified.
+        carbon = state.get("carbon") or state.get("carbon_results") or {}
+        emissions = carbon.get("emissions") if isinstance(carbon, dict) else {}
+        if isinstance(emissions, dict):
+            for scope_key, scope_label in [("scope1", "Scope 1"), ("scope2", "Scope 2"), ("scope3", "Scope 3")]:
+                sd = emissions.get(scope_key)
+                if isinstance(sd, dict):
+                    val = sd.get("value") or sd.get("total")
+                    if val in (None, "", 0, "N/A", "NOT DISCLOSED"):
+                        quality_warnings.append(
+                            f"{scope_label} emissions not disclosed; net-zero / decarbonisation claims cannot be quantitatively verified for this scope."
+                        )
+
+        # External benchmark status mismatch — "used_in_scoring=True" with 0
+        # indicators is a contradictory signal. We deliberately do NOT treat
+        # `enabled=True` alone as a problem (the layer is permitted to be on
+        # standby); the warning only fires when the layer claims to have
+        # influenced scoring without supplying any indicators.
+        ext = state.get("external_esg_data") or state.get("external_benchmarks") or {}
+        if isinstance(ext, dict):
+            wba_count = ext.get("wba_indicator_count") or 0
+            if ext.get("used_in_scoring") and (not wba_count or wba_count == 0):
+                quality_warnings.append(
+                    "External benchmark layer marked 'used_in_scoring' but 0 indicators returned; benchmark status is decorative, not load-bearing."
+                )
+
         if not raw_scores:
             confidence_level = "LOW"
         elif failure_count == 0 and verified_count >= 10 and real_peer_count >= 2:
@@ -393,6 +465,124 @@ class ProfessionalReportGenerator:
         floor_label = str(floor_used).strip()
         return floor_label or (str(industry_label or "Unknown").strip() or "Unknown")
 
+    def _build_kg_history_section(self, state: Dict[str, Any], major: str) -> List[str]:
+        """Render Section 11C — Knowledge Graph History.
+
+        Surfaces what the persistent KG knows about this company from prior
+        runs: KPI history depth, year-over-year drift signals, and Fact
+        Graph motif diagnostics. Empty (returns []) when nothing useful
+        accumulated yet (e.g. first-ever run for a company)."""
+        company = str(state.get("company") or "").strip()
+        if not company:
+            return []
+
+        # Pull drift signals from the risk_scoring agent output (where we
+        # populated `kg_drift` during this run).
+        drift_signals: List[Dict[str, Any]] = []
+        for ao in (state.get("agent_outputs") or []):
+            if isinstance(ao, dict) and ao.get("agent") == "risk_scoring":
+                out = ao.get("output") or {}
+                if isinstance(out, dict):
+                    kg = out.get("kg_drift") or {}
+                    if isinstance(kg, dict):
+                        drift_signals = kg.get("signals") or []
+                break
+
+        # Direct query of KPI history file for raw history depth.
+        history_runs = 0
+        history_metrics: List[str] = []
+        try:
+            from core.company_knowledge_graph import get_kpi_history
+            history = get_kpi_history(company)
+            history_runs = len({row.get("run_ts") for row in history if row.get("run_ts")})
+            history_metrics = sorted({row.get("metric_name") for row in history if row.get("metric_name")})
+        except Exception:
+            history_runs = 0
+
+        # Fact Graph motifs from the risk_scoring agent output.
+        fg_motifs: Dict[str, Any] = {}
+        for ao in (state.get("agent_outputs") or []):
+            if isinstance(ao, dict) and ao.get("agent") == "risk_scoring":
+                out = ao.get("output") or {}
+                if isinstance(out, dict):
+                    fg = out.get("fact_graph") or {}
+                    if isinstance(fg, dict):
+                        fg_motifs = fg.get("motifs") or {}
+                break
+
+        # If neither drift nor history nor motifs exist, skip the section.
+        if not drift_signals and history_runs == 0 and not fg_motifs:
+            return []
+
+        section: List[str] = [major, "SECTION 11C: KNOWLEDGE GRAPH HISTORY", major]
+        section.append(
+            "This section surfaces what the persistent Company KG and Fact Graph"
+        )
+        section.append(
+            "know about this company across all prior analyses — year-over-year"
+        )
+        section.append(
+            "drift signals and graph-shape diagnostics that one-shot scores miss."
+        )
+        section.append("")
+
+        section.append(f"KPI history depth (this company): {history_runs} prior run(s) recorded")
+        if history_metrics:
+            section.append(f"Tracked metrics in KG: {', '.join(history_metrics[:6])}")
+        section.append("")
+
+        if drift_signals:
+            section.append(f"YEAR-OVER-YEAR DRIFT SIGNALS ({len(drift_signals)} detected)")
+            section.append("-" * 70)
+            for d in drift_signals[:8]:
+                if not isinstance(d, dict):
+                    continue
+                arrow = {"improved": "↓ improved", "worsened": "↑ worsened", "stable": "→ stable"}.get(
+                    d.get("direction", ""), d.get("direction", "?")
+                )
+                pct = d.get("delta_pct")
+                pct_str = f"{pct:+.1f}%" if isinstance(pct, (int, float)) else "n/a"
+                section.append(
+                    f"  • {d.get('metric_name', '?'):<25} {arrow:<14} ({pct_str})  "
+                    f"prior: {d.get('prior_value')}  current: {d.get('current_value')}"
+                )
+                _ts = d.get("prior_run_ts") or ""
+                if _ts:
+                    section.append(f"      compared to run on {_ts[:10]}")
+            section.append("")
+        else:
+            section.append("YEAR-OVER-YEAR DRIFT SIGNALS")
+            section.append("-" * 70)
+            section.append("  No prior recorded values for this company yet —")
+            section.append("  drift signals will appear from the second run onward.")
+            section.append("")
+
+        if fg_motifs:
+            section.append("FACT GRAPH MOTIFS (this run)")
+            section.append("-" * 70)
+            cov = fg_motifs.get("pillar_coverage") or {}
+            if cov:
+                cov_str = "  ".join(f"{k}={v}" for k, v in cov.items())
+                section.append(f"  Pillar coverage:        {cov_str}")
+            skew = fg_motifs.get("pillar_coverage_skew")
+            if isinstance(skew, (int, float)):
+                _interp = "balanced" if skew <= 2 else ("moderate skew" if skew <= 5 else "heavy skew — analysis is one-pillar-dominated")
+                section.append(f"  Pillar coverage skew:   {skew}  ({_interp})")
+            cd = fg_motifs.get("contradiction_density")
+            if isinstance(cd, (int, float)):
+                _interp = "low" if cd < 0.2 else ("moderate" if cd < 0.5 else "high — many evidence items oppose the claim")
+                section.append(f"  Contradiction density:  {cd:.3f}  ({_interp})")
+            gd = fg_motifs.get("graph_density")
+            if isinstance(gd, (int, float)):
+                section.append(f"  Graph density:          {gd:.3f}")
+            ready = fg_motifs.get("is_decision_ready")
+            if ready is not None:
+                section.append(f"  Decision-ready graph:   {'Yes' if ready else 'No'}")
+            section.append("")
+
+        section.append(major)
+        return section
+
     def _render_esg_mismatch_section(self, state: Dict[str, Any], major: str) -> List[str]:
         """Render a dedicated mismatch section so it is always visible in text reports."""
         section = [major, "SECTION 12: ESG MISMATCH DETECTOR", major]
@@ -434,11 +624,13 @@ class ProfessionalReportGenerator:
                 section.append(f"     Status: {status} | Progress: {progress}")
             section.append("")
 
-        if gaps:
+        # Filter out non-dict placeholders ("Inconclusive due to insufficient data."
+        # is a string, not a structured gap) — only emit the subsection when
+        # there is actual structured content.
+        structured_gaps = [g for g in gaps if isinstance(g, dict)]
+        if structured_gaps:
             section.append("Past promise-implementation gaps:")
-            for idx, item in enumerate(gaps[:3], start=1):
-                if not isinstance(item, dict):
-                    continue
+            for idx, item in enumerate(structured_gaps[:3], start=1):
                 failed = str(item.get("Failed Pledge") or item.get("failed_pledge") or "Unspecified pledge").strip()
                 flagged = str(item.get("Flagged Status") or item.get("flagged_status") or "No flagged status").strip()
                 risk = str(item.get("Risk Level") or item.get("risk_level") or "Unknown").strip()
@@ -457,7 +649,7 @@ class ProfessionalReportGenerator:
                 section.append(f"     Evidence: {evidence}")
             section.append("")
 
-        if not future and not gaps:
+        if not future and not structured_gaps:
             section.append("No structured mismatch entries were provided by the mismatch detector.")
 
         section.append(major)
@@ -551,14 +743,23 @@ class ProfessionalReportGenerator:
         if len(workflow) > 300:
             workflow = workflow[:297] + "..."
 
-        gw_score = self._safe_float(scores.get("greenwashingriskscore"), 55.0)
-        esg_score = scores.get("esg_score")
-        if not isinstance(esg_score, (int, float)):
-            esg_score = max(0.0, min(100.0, 100.0 - gw_score))
-        rating = str(scores.get("ratinggrade") or scores.get("rating_grade") or scores.get("esg_rating") or self._rating_from_esg_score(esg_score))
-        band = str(scores.get("risklevel") or scores.get("risk_level") or self._risk_band(gw_score)).upper()
-        if rating.upper() in {"CCC", "C"} and band in {"LOW", "MODERATE"}:
-            band = "HIGH"
+        # ── Scores/ratings: trust report_consistency first ──────────────────
+        _rc = structured.get("report_consistency", {}) if isinstance(structured.get("report_consistency"), dict) else {}
+        if _rc:
+            gw_score = float(_rc.get("final_gw_calibrated", 55.0))
+            esg_score = float(_rc.get("final_esg_display", 50.0))
+            rating = str(_rc.get("final_rating", "BBB"))
+            band = str(_rc.get("final_band", "MODERATE")).upper()
+        else:
+            # Fallback: old derivation for backward compatibility
+            gw_score = self._safe_float(scores.get("greenwashingriskscore"), 55.0)
+            esg_score = scores.get("esg_score")
+            if not isinstance(esg_score, (int, float)):
+                esg_score = max(0.0, min(100.0, 100.0 - gw_score))
+            rating = str(scores.get("ratinggrade") or scores.get("rating_grade") or scores.get("esg_rating") or self._rating_from_esg_score(esg_score))
+            band = str(scores.get("risklevel") or scores.get("risk_level") or self._risk_band(gw_score)).upper()
+            if rating.upper() in {"CCC", "C"} and band in {"LOW", "MODERATE"}:
+                band = "HIGH"
         conf_raw = scores.get("confidence")
         conf_pct = float(conf_raw * 100) if isinstance(conf_raw, (int, float)) and conf_raw <= 1 else self._safe_float(conf_raw, 0.0)
         if conf_pct <= 0:
@@ -618,192 +819,90 @@ class ProfessionalReportGenerator:
         else:
             cal_status = "Calibration not available — threshold not computed"
 
-        contradiction_output = agents.get("contradiction_analysis", {}).get("output", {}) if isinstance(agents.get("contradiction_analysis"), dict) else {}
-        contradiction_items = []
-        if isinstance(contradiction_output, dict):
-            contradiction_items = (
-                contradiction_output.get("contradictions")
-                or contradiction_output.get("specific_contradictions")
-                or []
-            )
-        if not isinstance(contradiction_items, list):
+        # ── Contradictions: trust structured resolver first ─────────────────
+        _resolved_items = evidence.get("contradiction_items_resolved")
+        _resolved_count = evidence.get("contradictions_count_resolved")
+        if isinstance(_resolved_items, list) and _resolved_items:
+            # Canonical path: use pre-resolved, pre-deduped contradictions
+            contradiction_items = _resolved_items
+            contradiction_count = int(_resolved_count) if isinstance(_resolved_count, int) else len(_resolved_items)
+            contradiction_output = agents.get("contradiction_analysis", {}).get("output", {}) if isinstance(agents.get("contradiction_analysis"), dict) else {}
+        else:
+            # Fallback: old derivation (backward compat when structured is missing)
+            print("  [WARN] contradiction_items_resolved missing from structured — using fallback chain")
+            contradiction_output = agents.get("contradiction_analysis", {}).get("output", {}) if isinstance(agents.get("contradiction_analysis"), dict) else {}
             contradiction_items = []
-
-        # ── Prioritized fallback for contradiction items ──────────────────
-        # If the agent output is empty, try state-level contradiction_results
-        # (which the contradiction_analysis_node writes), then fall back to
-        # the scorer's top_contradictions list.
-        if not contradiction_items:
-            state_contras = state.get("contradiction_results", {})
-            if isinstance(state_contras, dict):
+            if isinstance(contradiction_output, dict):
                 contradiction_items = (
-                    state_contras.get("contradictions")
-                    or state_contras.get("specific_contradictions")
+                    contradiction_output.get("contradictions")
+                    or contradiction_output.get("specific_contradictions")
                     or []
                 )
             if not isinstance(contradiction_items, list):
                 contradiction_items = []
-
-        if not contradiction_items:
-            risk_results = state.get("riskresults", {})
-            if isinstance(risk_results, dict):
-                top_contra = safe_get(risk_results, "topcontradictions", default=[])
-                if not isinstance(top_contra, list):
-                    top_contra = safe_get(risk_results, "raw", "topcontradictions", default=[])
-                if isinstance(top_contra, list):
-                    contradiction_items = [
-                        {"description": c.get("detail") or c.get("description", ""),
-                         "severity": c.get("severity", "HIGH"),
-                         "source": c.get("citation") or c.get("source", "risk_scoring")}
-                        for c in top_contra if isinstance(c, dict)
-                    ]
-
-        # === FIX 3 UPSTREAM: pillar_factors.contradictions ===
-        # top_contradictions above is often empty. The known-case DB entries
-        # (NZBA exit, CA100+, fossil fuel financing) always land here instead.
-        if not contradiction_items:
-            _rr = state.get("riskresults") or {}
-            _pf_contras = [
-                c for c in ((_rr.get("pillarfactors") or {}).get("contradictions") or [])
-                if isinstance(c, dict)
-                and str(c.get("severity", "")).upper() == "HIGH"
-            ]
-            if _pf_contras:
-                contradiction_items = [
-                    {
-                        "description": str(
-                            c.get("description") or c.get("detail") or c.get("text") or ""
-                        ).strip(),
-                        "severity": str(c.get("severity", "HIGH")).upper(),
-                        "source": str(
-                            c.get("source") or c.get("citation") or "Known verified case"
-                        ),
-                        "year": c.get("year", "N/A"),
-                        "confidence": str(c.get("confidence") or "HIGH"),
-                    }
-                    for c in _pf_contras
+            # State-level fallback
+            if not contradiction_items:
+                state_contras = state.get("contradiction_results", {})
+                if isinstance(state_contras, dict):
+                    contradiction_items = (
+                        state_contras.get("contradictions")
+                        or state_contras.get("specific_contradictions")
+                        or []
+                    )
+                if not isinstance(contradiction_items, list):
+                    contradiction_items = []
+            # Risk results fallback
+            if not contradiction_items:
+                risk_results = state.get("riskresults", {})
+                if isinstance(risk_results, dict):
+                    top_contra = safe_get(risk_results, "topcontradictions", default=[])
+                    if not isinstance(top_contra, list):
+                        top_contra = safe_get(risk_results, "raw", "topcontradictions", default=[])
+                    if isinstance(top_contra, list):
+                        contradiction_items = [
+                            {"description": c.get("detail") or c.get("description", ""),
+                             "severity": c.get("severity", "HIGH"),
+                             "source": c.get("citation") or c.get("source", "risk_scoring")}
+                            for c in top_contra if isinstance(c, dict)
+                        ]
+            # pillarfactors.contradictions fallback
+            if not contradiction_items:
+                _rr = state.get("riskresults") or {}
+                _pf_contras = [
+                    c for c in ((_rr.get("pillarfactors") or {}).get("contradictions") or [])
+                    if isinstance(c, dict)
+                    and str(c.get("severity", "")).upper() == "HIGH"
                 ]
-        # === END FIX 3 UPSTREAM ===
-
-        # Deduplicate by contradiction text content
-        seen_texts = set()
-        deduped_items = []
-        for item in contradiction_items:
-            if not isinstance(item, dict):
-                continue
-            text_key = str(item.get("description") or item.get("text") or item.get("contradiction_text") or "").strip().lower()
-            if text_key and text_key not in seen_texts:
-                seen_texts.add(text_key)
-                deduped_items.append(item)
-            elif not text_key:
-                deduped_items.append(item)
-        contradiction_items = deduped_items
-        # ─────────────────────────────────────────────────────────────────
-        contradiction_count = int(contradiction_output.get("contradictions_found", len(contradiction_items))) if isinstance(contradiction_output, dict) else len(contradiction_items)
-        if contradiction_count < len(contradiction_items):
-            contradiction_count = len(contradiction_items)
-
-        risk_results = state.get("riskresults", {})
-        if not isinstance(risk_results, dict):
-            risk_results = {}
-        contradiction_agent = agents.get("contradiction_analysis", {})
-        contradiction_output = (
-            contradiction_agent.get("output")
-            if isinstance(contradiction_agent, dict)
-            else {}
-        )
-
-        # SECTION 7 - CONTRADICTION COLLECTION (exhaustive fallback chain)
-        _contradiction_payload = (
-            contradiction_output
-            or contradiction_agent
-            or state.get("contradiction_results")
-            or state.get("contradiction_analysis")
-            or state.get("contradictionanalysis")
-            or state.get("adversarial_triangulation")
-            or risk_results.get("top_contradictions")
-            or risk_results.get("topcontradictions")
-            or (risk_results.get("pillarfactors") or {}).get("contradictions")
-            or state.get("adversarial_audit")
-            or risk_results.get("adversarial_audit")
-            or {}
-        )
-        if isinstance(_contradiction_payload, dict):
-            _raw_items = (
-                _contradiction_payload.get("contradictions")
-                or _contradiction_payload.get("contradiction_list")
-                or _contradiction_payload.get("specific_contradictions")
-                or _contradiction_payload.get("items")
-                or []
-            )
-        elif isinstance(_contradiction_payload, list):
-            _raw_items = _contradiction_payload
-        else:
-            _raw_items = []
-
-        _adversarial_audit = risk_results.get("adversarial_audit") or state.get("adversarial_audit") or {}
-        if not isinstance(_adversarial_audit, dict):
-            _adversarial_audit = {}
-        _audit_count = int(_adversarial_audit.get("contradictions_count", 0) or 0)
-
-        _wide_items = [
-            c for c in _raw_items
-            if isinstance(c, dict)
-            and str(c.get("severity", "HIGH")).upper() in ("HIGH", "MEDIUM")
-            and str(c.get("verified", "true")).lower() != "false"
-        ]
-
-        if len(_wide_items) < _audit_count:
-            _verdict_findings = (
-                risk_results.get("key_findings")
-                or (risk_results.get("verdict") or {}).get("key_findings")
-                or state.get("key_findings")
-                or []
-            )
-            if isinstance(_verdict_findings, list):
-                for finding in _verdict_findings:
-                    if isinstance(finding, dict) and str(finding.get("level", "")).upper() == "HIGH":
-                        _wide_items.append({
-                            "description": finding.get("text") or finding.get("finding") or str(finding),
-                            "severity": "HIGH",
-                            "verified": True,
-                            "source": "adversarial_audit_fallback",
-                        })
-                    if len(_wide_items) >= _audit_count:
-                        break
-
-        if len(_wide_items) < _audit_count:
-            _pf_contras = (risk_results.get("pillarfactors") or {}).get("contradictions") or []
-            if isinstance(_pf_contras, list):
-                for c in _pf_contras:
-                    if isinstance(c, dict) and str(c.get("severity", "")).upper() in ("HIGH", "MEDIUM"):
-                        _wide_items.append({
+                if _pf_contras:
+                    contradiction_items = [
+                        {
                             "description": str(c.get("description") or c.get("detail") or c.get("text") or "").strip(),
                             "severity": str(c.get("severity", "HIGH")).upper(),
-                            "verified": c.get("verified", True),
                             "source": str(c.get("source") or c.get("citation") or "Known verified case"),
                             "year": c.get("year", "N/A"),
                             "confidence": str(c.get("confidence") or "HIGH"),
-                        })
-                    if len(_wide_items) >= _audit_count:
-                        break
-
-        _seen_texts = set()
-        _deduped = []
-        for c in (contradiction_items or []) + _wide_items:
-            if not isinstance(c, dict):
-                continue
-            _norm = str(c.get("description") or c.get("text") or c.get("finding") or c.get("contradiction_text") or "").lower()[:120]
-            if _norm and _norm not in _seen_texts:
-                _seen_texts.add(_norm)
-                _deduped.append(c)
-            elif not _norm:
-                _deduped.append(c)
-        contradiction_items = _deduped
-        contradiction_count = max(contradiction_count, len(contradiction_items), _audit_count)
+                        }
+                        for c in _pf_contras
+                    ]
+            # Dedup (only needed in fallback path — canonical path already deduped)
+            seen_texts = set()
+            deduped_items = []
+            for item in contradiction_items:
+                if not isinstance(item, dict):
+                    continue
+                text_key = str(item.get("description") or item.get("text") or item.get("contradiction_text") or "").strip().lower()[:120]
+                if text_key and text_key not in seen_texts:
+                    seen_texts.add(text_key)
+                    deduped_items.append(item)
+                elif not text_key:
+                    deduped_items.append(item)
+            contradiction_items = deduped_items
+            contradiction_count = int(contradiction_output.get("contradictions_found", len(contradiction_items))) if isinstance(contradiction_output, dict) else len(contradiction_items)
+            if contradiction_count < len(contradiction_items):
+                contradiction_count = len(contradiction_items)
 
         print(f"  [Section 7] contradiction_items collected: {len(contradiction_items)} "
-              f"(audit said: {_audit_count})")
+              f"(resolved={isinstance(_resolved_items, list) and bool(_resolved_items)})")
 
         regulatory = (
             state.get("regulatory_results")
@@ -998,7 +1097,7 @@ class ProfessionalReportGenerator:
             "quality_warnings": quality.get("quality_warnings", []),
             "report_confidence": report_confidence,
             "limitations": structured.get("limitations", []) or [],
-            "external_benchmarks": {
+            "external_benchmarks": structured.get("benchmarks") or {
                 "enabled": external_enabled,
                 "used": external_used,
                 "sources": external_sources,
@@ -1007,8 +1106,20 @@ class ProfessionalReportGenerator:
                 "wba_company_name": external_data.get("wba_company_name"),
                 "wba_indicator_count": external_data.get("wba_indicator_count", 0),
                 "wba_data_year": external_data.get("wba_data_year"),
+                "wba_adjustment_allowed": external_data.get("wba_indicator_count", 0) > 0,
                 "error": external_data.get("error"),
             },
+            # Decision state from canonical resolver
+            "decision": structured.get("decision") or {},
+            "abstain_recommended": (structured.get("decision") or {}).get("abstain_recommended", False),
+            "decision_status": (structured.get("decision") or {}).get("decision_status", "SCORED"),
+            "abstention_reason": (structured.get("decision") or {}).get("abstention_reason", ""),
+            "score_disclaimer": (structured.get("decision") or {}).get("score_disclaimer", ""),
+            # GW delta from canonical resolver
+            "gw_raw": _rc.get("final_gw_raw", gw_score) if _rc else gw_score,
+            "gw_delta": _rc.get("final_gw_delta", 0.0) if _rc else 0.0,
+            # Calibration render status
+            "calibration_render_status": calibration.get("render_status", "uncalibrated"),
             # 2026 Engine High-Fidelity Diagnostics
             "feature_signals": {
                 "claim_decomposition": claim_decomposition,
@@ -1186,6 +1297,79 @@ class ProfessionalReportGenerator:
                 if k and stance_val:
                     tri_stance_map[k] = stance_val
 
+        # Cross-reference Section 4 citations against the canonical contradictions list
+        # so sources that produced HIGH-severity contradictions show "Contradicts" here
+        # instead of defaulting to "Neutral" (Section 4 ↔ Section 7 consistency).
+        # Build per-contradiction records keyed by canonical name + URL domain,
+        # so we can both (a) override matching citation rows AND (b) append
+        # phantom contradiction sources that were never in the evidence pool.
+        contradiction_records: List[Dict[str, Any]] = []
+        seen_contra_keys: Set[str] = set()
+        # Pull from every reasonable source the live + replay paths might use.
+        # Live pipeline writes to state["contradiction_results"]; replay also
+        # sets state["contradictions"]; either way the contradiction_analysis
+        # agent_output has the data — falling back through all three guarantees
+        # we don't silently miss them.
+        _contra_sources_to_check: List[Any] = [
+            state.get("contradictions"),
+            (state.get("contradiction_results") or {}).get("specific_contradictions"),
+            (state.get("contradiction_results") or {}).get("contradictions"),
+            (state.get("contradiction_results") or {}).get("contradiction_list"),
+        ]
+        # Last-resort fallback: dig into agent_outputs for the contradiction_analysis entry.
+        for _ao_row in (state.get("agent_outputs") or []):
+            if isinstance(_ao_row, dict) and _ao_row.get("agent") == "contradiction_analysis":
+                _ao_out = _ao_row.get("output") or {}
+                if isinstance(_ao_out, dict):
+                    _contra_sources_to_check.extend([
+                        _ao_out.get("contradictions"),
+                        _ao_out.get("specific_contradictions"),
+                        _ao_out.get("contradiction_list"),
+                    ])
+                break
+        for _contra_src in _contra_sources_to_check:
+            if not isinstance(_contra_src, list):
+                continue
+            for _row in _contra_src:
+                if not isinstance(_row, dict):
+                    continue
+                _sn = str(_row.get("source") or _row.get("source_name") or "").strip()
+                _url = str(_row.get("source_url") or _row.get("url") or "").strip()
+                _dom = (urlparse(_url).netloc or "").replace("www.", "").lower() if _url else ""
+                _key = (_sn.lower() + "|" + _dom).strip("|")
+                if not _key or _key in seen_contra_keys:
+                    continue
+                seen_contra_keys.add(_key)
+                contradiction_records.append({
+                    "source_name": _sn,
+                    "source_url": _url,
+                    "domain": _dom,
+                    "severity": str(_row.get("severity") or "").upper(),
+                    # Tokens used for substring matching against citation source names
+                    # (e.g. contradiction "NZBA / Reuters" should match citation "Reuters").
+                    "tokens": [
+                        t for t in re.findall(r"[a-z][a-z0-9]+", _sn.lower())
+                        if len(t) >= 4 and t not in {
+                            "report", "data", "press", "news", "scan", "evidence",
+                            "https", "http", "from", "with", "this", "that"
+                        }
+                    ],
+                })
+
+        def _citation_matches_contradiction(src_lc: str, dom_lc: str) -> Dict[str, Any] | None:
+            for rec in contradiction_records:
+                if rec.get("domain") and dom_lc and rec["domain"] == dom_lc:
+                    return rec
+                if rec.get("source_name") and src_lc and rec["source_name"].lower() == src_lc:
+                    return rec
+                # Token substring match (e.g. "reuters" within "nzba / reuters").
+                for tok in rec.get("tokens") or []:
+                    if tok in src_lc:
+                        return rec
+            return None
+
+        matched_contra_keys: Set[str] = set()
+
         source_tier_counts = {
             "t1": 0,
             "t2": 0,
@@ -1226,6 +1410,15 @@ class ProfessionalReportGenerator:
 
             tri_stance = tri_stance_map.get(src.lower())
             stance = self._business_evidence_role(c, tri_stance)
+            # Override to Contradicts when this source matches the canonical
+            # contradictions list — Section 4 must agree with Section 7.
+            if stance != "Contradicts" and contradiction_records:
+                _hit = _citation_matches_contradiction(src.lower(), source_domain)
+                if _hit is not None:
+                    stance = "Contradicts"
+                    matched_contra_keys.add(
+                        (_hit.get("source_name", "").lower() + "|" + _hit.get("domain", "")).strip("|")
+                    )
             if stance in role_counts:
                 role_counts[stance] += 1
 
@@ -1240,6 +1433,32 @@ class ProfessionalReportGenerator:
                 "stance": stance,
             })
 
+        # Append phantom contradiction sources — items flagged in Section 7 that
+        # were not in the retrieved evidence pool. Without this Section 4 hides
+        # the contradicting evidence the headline score relies on.
+        for rec in contradiction_records:
+            _key = (rec.get("source_name", "").lower() + "|" + rec.get("domain", "")).strip("|")
+            if _key in matched_contra_keys:
+                continue
+            _name = rec.get("source_name") or rec.get("domain") or "Contradicting source"
+            _dedupe = self._citation_dedupe_key(
+                {"source": _name, "url": rec.get("source_url"), "source_name": _name},
+                _name,
+            )
+            if _dedupe in seen_sources:
+                continue
+            seen_sources.add(_dedupe)
+            citation_rows.append({
+                "source": _name,
+                "source_type": self._business_source_type(
+                    {"source": _name, "url": rec.get("source_url"), "source_name": _name},
+                    False,
+                ),
+                "verified": "Yes",
+                "stance": "Contradicts",
+            })
+            role_counts["Contradicts"] += 1
+
         tri_score = triangulation.get("triangulation_score") if triangulation else None
         adv_ratio = triangulation.get("adversarial_ratio") if triangulation else None
         supporting_count = int(self._safe_float(triangulation.get("corroborating_sources"), role_counts["Supports"])) if triangulation else role_counts["Supports"]
@@ -1249,12 +1468,23 @@ class ProfessionalReportGenerator:
         if contradicting_count == 0 and role_counts["Contradicts"] > 0:
             contradicting_count = role_counts["Contradicts"]
             
-        # 3. FIX SECTION 4 vs 7 CONTRADICTION
-        actual_contra = len(v.get("contradictions", []))
-        if actual_contra > 0 and contradicting_count == 0:
-            contradicting_count = actual_contra
-        strength_label, strength_reason = self._evidence_strength_label(tri_score, supporting_count, contradicting_count, len(v["citations"]))
-        contradiction_label, contradiction_reason = self._contradiction_level_label(adv_ratio, supporting_count, contradicting_count)
+        # Use canonical contradiction_count to ensure Section 4 matches Section 7.
+        # Trust the canonical count whenever it exceeds what the local stance/triangulation
+        # accounting picked up — those upstream sources were missing HIGH-severity items
+        # (e.g. when adversarial_ratio is 0 but resolved contradictions list has 4 entries).
+        canonical_contra = int(v.get("contradiction_count", 0) or 0)
+        if canonical_contra > contradicting_count:
+            contradicting_count = canonical_contra
+        # When we have material verified contradictions, suppress any "Strong/Low" verdict
+        # that would otherwise arise from a stale tri_score with no contradicting flag.
+        if canonical_contra >= 3:
+            tri_score_for_label = None  # force the label fn off the score>=75 fast path
+            adv_ratio_for_label = max(self._safe_float(adv_ratio, 0.0), 0.5)
+        else:
+            tri_score_for_label = tri_score
+            adv_ratio_for_label = adv_ratio
+        strength_label, strength_reason = self._evidence_strength_label(tri_score_for_label, supporting_count, contradicting_count, len(v["citations"]))
+        contradiction_label, contradiction_reason = self._contradiction_level_label(adv_ratio_for_label, supporting_count, contradicting_count)
         evidence_summary = self._evidence_summary_sentence(strength_label, contradiction_label, supporting_count, contradicting_count)
         unique_label = "source" if len(citation_rows) == 1 else "sources"
         retrieved_label = "source" if len(v["citations"]) == 1 else "sources"
@@ -1370,13 +1600,20 @@ class ProfessionalReportGenerator:
             f"  Raw risk score (pre-calibration) = {raw_gw_score:.1f}/100",
             f"  Final risk score (post-calibration) = {v['gw_score']:.1f}/100  (delta: {calibrated_delta:+.1f})",
             "",
-            f"ENVIRONMENTAL PILLAR - {self._pillar_score_text(e_score, e_missing)}",
-            self._pillar_insight_line("Environmental", None if e_missing else e_score, pillar_snapshot["Environmental"]["block"]),
-            "-" * 78,
-            f"  {'Factor':<34} {'Signal':<18} {'Source':<20} {'Weight':<7} {'Contribution to Score':<22} {'Data Quality':<18}",
-            "  " + "-" * 123,
         ]
-        modifier_ledger = v["scores"].get("scoremodifierledger", v["scores"].get("score_modifier_ledger", [])) if isinstance(v.get("scores"), dict) else []
+        # ── Score Modifier Ledger + GW Formula Inputs ────────────────────
+        # Render BEFORE the pillar tables so they don't break the
+        # Environmental factor table flow. Look in both the canonical scores
+        # dict AND its `raw` (risk_scorer_result) subkey.
+        _scores_dict = v.get("scores") if isinstance(v.get("scores"), dict) else {}
+        _raw_dict = _scores_dict.get("raw") if isinstance(_scores_dict.get("raw"), dict) else {}
+        modifier_ledger = (
+            _scores_dict.get("scoremodifierledger")
+            or _scores_dict.get("score_modifier_ledger")
+            or _raw_dict.get("scoremodifierledger")
+            or _raw_dict.get("score_modifier_ledger")
+            or []
+        )
         if isinstance(modifier_ledger, list) and modifier_ledger:
             score_header.extend([
                 "SCORE MODIFIER LEDGER",
@@ -1424,6 +1661,15 @@ class ProfessionalReportGenerator:
             score_header.append("  Formula: GW = α·max(0,(C-P)/σ)·100 + β·R + γ·(1-D/100)·100 + δ·T")
             score_header.append("  ESG and Greenwashing scores are INDEPENDENT — computed from separate inputs.")
             score_header.append("")
+        # ── End modifier ledger / formula inputs ─────────────────────────
+
+        score_header.extend([
+            f"ENVIRONMENTAL PILLAR - {self._pillar_score_text(e_score, e_missing)}",
+            self._pillar_insight_line("Environmental", None if e_missing else e_score, pillar_snapshot["Environmental"]["block"]),
+            "-" * 78,
+            f"  {'Factor':<34} {'Signal':<18} {'Source':<32} {'Weight':<7} {'Contribution to Score':<22} {'Data Quality':<18}",
+            "  " + "-" * 135,
+        ])
 
         def _append_pillar_rows(block: Dict[str, Any], fallback_score: float, expected_total: int, score_missing: bool = False) -> Tuple[int, int, float]:
             sub = self._pillar_sub_indicators(block)
@@ -1439,7 +1685,7 @@ class ProfessionalReportGenerator:
                     f"  {'Factor evidence unavailable':<34} {'Limited Disclosure':<18} "
                     f"{'risk_scoring':<20} {'-':<7} {'Limited Disclosure':<22} {'Limited Disclosure':<18}"
                 )
-                score_header.append("  " + "-" * 123)
+                score_header.append("  " + "-" * 135)
                 score_header.append(f"  Reported pillar score: {self._pillar_score_text(fallback_score, score_missing)}")
                 score_header.append(f"  Coverage: 0/{total_indicators} indicators scored - Limited Disclosure")
                 score_header.append("  Coverage-adjusted score: Data Not Available")
@@ -1479,15 +1725,15 @@ class ProfessionalReportGenerator:
                 contribution_txt = f"{float(pts):.2f}" if isinstance(pts, (int, float)) else "Limited Disclosure"
                 quality = self._factor_data_quality_label(factor, scored)
                 score_header.append(
-                    f"  {name[:34]:<34} {signal[:18]:<18} {src[:20]:<20} "
+                    f"  {self._smart_truncate(name, 34):<34} {signal[:18]:<18} {self._smart_truncate(src, 32):<32} "
                     f"{weight_txt:<7} {contribution_txt[:22]:<22} {quality[:18]:<18}"
                 )
                 if len(full_name) > 34:
-                    score_header.append(self._indent_wrapped(f"Full factor: {full_name}", width=118, indent="      "))
-                if len(src_full) > 20:
-                    score_header.append(self._indent_wrapped(f"Source detail: {src_full}", width=118, indent="      "))
+                    score_header.append(self._indent_wrapped(f"Full factor: {full_name}", width=130, indent="      "))
+                if len(src_full) > 32:
+                    score_header.append(self._indent_wrapped(f"Source detail: {src_full}", width=130, indent="      "))
 
-            score_header.append("  " + "-" * 123)
+            score_header.append("  " + "-" * 135)
             score_header.append(f"  Reported pillar score: {self._pillar_score_text(fallback_score, score_missing)}")
             coverage_note = "" if scored_indicators == total_indicators else " - Limited Disclosure on remaining indicators"
             score_header.append(f"  Coverage: {scored_indicators}/{total_indicators} indicators scored{coverage_note}")
@@ -1512,8 +1758,8 @@ class ProfessionalReportGenerator:
             f"SOCIAL PILLAR - {self._pillar_score_text(s_score, s_missing)}",
             self._pillar_insight_line("Social", None if s_missing else s_score, pillar_snapshot["Social"]["block"]),
             "-" * 78,
-            f"  {'Factor':<34} {'Signal':<18} {'Source':<20} {'Weight':<7} {'Contribution to Score':<22} {'Data Quality':<18}",
-            "  " + "-" * 123,
+            f"  {'Factor':<34} {'Signal':<18} {'Source':<32} {'Weight':<7} {'Contribution to Score':<22} {'Data Quality':<18}",
+            "  " + "-" * 135,
         ])
         social_block = pillar_factors.get("social", {}) if isinstance(pillar_factors, dict) else {}
         social_scored, social_total, _ = _append_pillar_rows(social_block, s_score, 5, s_missing)
@@ -1522,8 +1768,8 @@ class ProfessionalReportGenerator:
             f"GOVERNANCE PILLAR - {self._pillar_score_text(g_score, g_missing)}",
             self._pillar_insight_line("Governance", None if g_missing else g_score, pillar_snapshot["Governance"]["block"]),
             "-" * 78,
-            f"  {'Factor':<34} {'Signal':<18} {'Source':<20} {'Weight':<7} {'Contribution to Score':<22} {'Data Quality':<18}",
-            "  " + "-" * 123,
+            f"  {'Factor':<34} {'Signal':<18} {'Source':<32} {'Weight':<7} {'Contribution to Score':<22} {'Data Quality':<18}",
+            "  " + "-" * 135,
         ])
         gov_block = pillar_factors.get("governance", {}) if isinstance(pillar_factors, dict) else {}
         governance_scored, governance_total, _ = _append_pillar_rows(gov_block, g_score, 6, g_missing)
@@ -1555,9 +1801,14 @@ class ProfessionalReportGenerator:
             "─" * 50,
         ])
         if ext_enabled:
-            score_header.append(
-                f"  Status: {'Adjusted using external benchmark data' if ext_used else 'Available (no numeric adjustment applied)'}"
-            )
+            _wba_n = int(ext.get("wba_indicator_count") or 0)
+            if ext_used and _wba_n > 0:
+                _status_text = "Adjusted using external benchmark data"
+            elif ext_used and _wba_n == 0:
+                _status_text = "Attempted — external benchmark layer returned 0 indicators (no adjustment applied)"
+            else:
+                _status_text = "Available (no numeric adjustment applied)"
+            score_header.append(f"  Status: {_status_text}")
             score_header.append(
                 f"  WBA company match: {ext.get('wba_company_name') or v['company']}"
             )
@@ -1616,40 +1867,52 @@ class ProfessionalReportGenerator:
 
         curated_reg_gaps = self._curate_regulatory_gaps(v["regulatory"])
 
-        # === FIX A1+A2: Fallback uses riskresults ===
-        if not curated_contradictions:
-            _pf_contras = state.get("riskresults", {}).get("pillarfactors", {}).get("contradictions", [])
-            _top_contras = state.get("riskresults", {}).get("topcontradictions", [])
-            _raw_fallbacks = _pf_contras if _pf_contras else _top_contras
-            if _raw_fallbacks:
-                _fallback_from_state = []
-                for _c in _raw_fallbacks:
-                    if not isinstance(_c, dict):
-                        continue
-                    _sev = str(_c.get("severity", "")).upper()
-                    if _sev not in ("HIGH", "MEDIUM"):
-                        _sev = "HIGH"
-                    _stmt = str(
-                        _c.get("description") or _c.get("detail") or
-                        _c.get("text") or _c.get("contradiction_text") or ""
-                    ).strip()
-                    if not _stmt or len(_stmt) < 20:
-                        continue
-                    _fallback_from_state.append({
-                        "severity": _sev,
-                        "statement": _stmt[:190],
-                        "source": str(_c.get("citation") or _c.get("source") or "Risk scoring analysis"),
-                        "year": str(_c.get("year", "N/A")),
-                        "confidence": str(_c.get("confidence") or "Derived"),
-                    })
-                if _fallback_from_state:
-                    curated_contradictions = _fallback_from_state[:5]
-        # === END FIX A1+A2 ===
+        # ── Canonical contradiction merge: ALWAYS pull in the resolved items
+        # so Section 7 reflects the full set (NZBA exit, CA100+ exit, BOCC, etc.)
+        # rather than only what `_curate_contradictions` finds in unified_evidence.
+        # Dedupe by normalized statement so we don't double-count.
+        if v.get("contradiction_items"):
+            _seen_keys = set()
+            for _existing in curated_contradictions:
+                _k = re.sub(r"[^a-z0-9]+", " ", (_existing.get("statement") or "").lower()).strip()
+                if _k:
+                    _seen_keys.add(_k[:80])
+            for _c in v["contradiction_items"][:10]:
+                if not isinstance(_c, dict):
+                    continue
+                _stmt = str(
+                    _c.get("description") or _c.get("text")
+                    or _c.get("contradiction_text") or _c.get("detail") or ""
+                ).strip()[:190]
+                if not _stmt or len(_stmt) < 10:
+                    continue
+                # Skip placeholder telemetry text
+                _stmt_l = _stmt.lower()
+                if "no hard contradiction rule" in _stmt_l or "current esg balance" in _stmt_l:
+                    continue
+                _k = re.sub(r"[^a-z0-9]+", " ", _stmt_l).strip()[:80]
+                if _k in _seen_keys:
+                    continue
+                _seen_keys.add(_k)
+                curated_contradictions.append({
+                    "severity": str(_c.get("severity", "HIGH")).upper(),
+                    "statement": _stmt,
+                    "source": str(_c.get("source") or _c.get("citation") or "Evidence analysis"),
+                    "year": str(_c.get("year", "N/A")),
+                    "confidence": str(_c.get("confidence", "HIGH")).upper(),
+                })
+            # Re-sort by severity rank (HIGH first)
+            _sev_rank = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
+            curated_contradictions.sort(key=lambda r: (_sev_rank.get(str(r.get("severity", "MEDIUM")).upper(), 3), r.get("statement", "")))
+            curated_contradictions = curated_contradictions[:7]
+
+        # Use canonical contradiction_count for the section header
+        _section7_contra_count = v.get("contradiction_count", len(curated_contradictions))
 
         section4 = [major, "SECTION 7: CONTRADICTIONS & REGULATORY ALERTS", major]
         section4.append(self._regulatory_alert_summary(curated_reg_gaps))
         section4.append("")
-        section4.append(f"CLAIM CONTRADICTIONS  ({len(curated_contradictions)} decision-relevant)")
+        section4.append(f"CLAIM CONTRADICTIONS  ({_section7_contra_count} decision-relevant)")
         section4.append("-" * 61)
         if not curated_contradictions:
             section4.append("No high-quality contradictions directly linked to the assessed claim were found in the curated evidence set.")
@@ -1677,23 +1940,31 @@ class ProfessionalReportGenerator:
                 f"Highest-risk jurisdiction: {multi_reg.get('highest_risk_jurisdiction', 'N/A')}"
             )
         section4.append("")
-        framework_width = 34
+        # Wider framework column eliminates the previous mid-word "Liti / gation" wrap.
+        framework_width = 50
         gap_width = 58
         section4.append(f"  {'Framework':<{framework_width}} {'Status':<14} {'Key Risk / Gap':<{gap_width}}")
-        section4.append("  " + "-" * 110)
+        section4.append("  " + "-" * 126)
         if not curated_reg_gaps:
             section4.append(f"  {'No material gaps':<{framework_width}} {'OK':<14} {'No decision-relevant regulatory gaps were found in the curated scan.':<{gap_width}}")
         else:
+            import textwrap as _tw
             for row in curated_reg_gaps:
                 desc = row["description"]
                 framework = row["framework"]
-                first = desc[:gap_width]
-                section4.append(f"  {framework[:framework_width]:<{framework_width}} {row['status']:<14} {first:<{gap_width}}")
-                if len(framework) > framework_width:
-                    section4.append(self._indent_wrapped(framework[framework_width:].strip(), width=104, indent="    Framework continued: "))
+                # Word-aware wrap of framework name onto multiple cell rows
+                framework_lines = _tw.wrap(framework, width=framework_width) or [framework[:framework_width]]
+                first_fwk = framework_lines[0]
+                first_desc = desc[:gap_width]
+                section4.append(f"  {first_fwk:<{framework_width}} {row['status']:<14} {first_desc:<{gap_width}}")
+                # Subsequent framework-name lines render in the framework column only
+                for fwk_continuation in framework_lines[1:]:
+                    section4.append(f"  {fwk_continuation:<{framework_width}}")
                 if len(desc) > gap_width:
-                    section4.append(self._indent_wrapped(desc[gap_width:].strip(), width=104, indent=" " * 52))
-        section4.append("  " + "-" * 110)
+                    desc_remaining_indent = " " * (framework_width + 16)
+                    for cont in _tw.wrap(desc[gap_width:].strip(), width=gap_width):
+                        section4.append(f"{desc_remaining_indent}{cont}")
+        section4.append("  " + "-" * 126)
         section4.append(major)
 
         section5 = [major, "SECTION 8: CARBON EMISSIONS & CLIMATE DATA", major]
@@ -1798,8 +2069,21 @@ class ProfessionalReportGenerator:
             v["report_confidence"] = "TIER_2 (Indicative)"
             missing_scopes = ["Scope 1", "Scope 2", "Scope 3"]
         else:
-            section5.append(f"  {'Scope':<12} {'Emissions (tCO2e)':<20} {'Year':<6} {'Source':<18} {'Quality':<10}")
-            section5.append("  " + "-" * 70)
+            # Carbon-level fallback source: prefer the disclosure document name when scope-level source is missing/generic.
+            carbon_default_source = (
+                carbon.get("data_source")
+                or safe_get(carbon, "emissions", "data_source", default=None)
+                or "Reported Disclosure"
+            )
+            def _resolve_source(scope_source: Any) -> str:
+                s = str(scope_source or "").strip()
+                # Generic placeholders → fall back to carbon-level disclosure label
+                if not s or s.lower() in {"pdf extraction", "n/a", "unknown", "none"}:
+                    return str(carbon_default_source)
+                return s
+
+            section5.append(f"  {'Scope':<12} {'Emissions (tCO2e)':<20} {'Year':<6} {'Source':<36} {'Quality':<10}")
+            section5.append("  " + "-" * 88)
             missing_scopes = []
             numeric_vals = []
             quality_tier = str(safe_get(carbon, "data_quality", "data_confidence", default="Unknown") or "Unknown").title()
@@ -1810,7 +2094,8 @@ class ProfessionalReportGenerator:
                 if value is None and isinstance(row, dict):
                     value = row.get("value")
                 year = (row.get("year") if isinstance(row, dict) else None) or (row.get("reporting_year") if isinstance(row, dict) else None) or "N/A"
-                source = (row.get("source") if isinstance(row, dict) else None) or (row.get("data_source") if isinstance(row, dict) else None) or "PDF extraction"
+                raw_source = (row.get("source") if isinstance(row, dict) else None) or (row.get("data_source") if isinstance(row, dict) else None)
+                source = _resolve_source(raw_source)
                 quality = (row.get("confidence") if isinstance(row, dict) else None) or (row.get("data_confidence") if isinstance(row, dict) else None) or quality_tier
 
                 if name == "Scope 3" and scope3_corrected:
@@ -1820,7 +2105,7 @@ class ProfessionalReportGenerator:
                         f"CORRECTED from raw {value} "
                         f"({scope3_correction_unit} -> tCO2e)"
                     )
-                    section5.append(f"  {'Scope 3*':<12} {vtxt:<20} {str(year):<6} {str(source)[:18]:<18} {str(quality)[:10]:<10}")
+                    section5.append(f"  {'Scope 3*':<12} {vtxt:<20} {str(year):<6} {str(source)[:36]:<36} {str(quality)[:10]:<10}")
                     continue
 
                 if isinstance(value, (int, float)):
@@ -1829,7 +2114,7 @@ class ProfessionalReportGenerator:
                 else:
                     vtxt = "N/A"
                     missing_scopes.append(name)
-                section5.append(f"  {name:<12} {vtxt:<20} {str(year):<6} {str(source)[:18]:<18} {str(quality)[:10]:<10}")
+                section5.append(f"  {name:<12} {vtxt:<20} {str(year):<6} {str(source)[:36]:<36} {str(quality)[:10]:<10}")
 
             if scope3_corrected:
                 raw_scope3 = None
@@ -1840,10 +2125,10 @@ class ProfessionalReportGenerator:
                 section5.append(
                     f"  Scope 3    [CORRECTED] ~{scope3_corrected:,.0f} tCO2e  (raw extracted: {raw_scope3} - likely {scope3_correction_unit} error, multiplied to tCO2e. Verify against source document.)"
                 )
-            section5.append("  " + "-" * 70)
+            section5.append("  " + "-" * 88)
             total_val = sum(numeric_vals) if numeric_vals else None
             section5.append(f"  {'Total':<12} {(f'{int(total_val):,}' if isinstance(total_val, (int, float)) else 'N/A')}")
-            section5.append("  " + "-" * 70)
+            section5.append("  " + "-" * 88)
             dq = self._safe_float(safe_get(carbon, "data_quality", "overall_score"), 0.0)
             dq_conf = str(safe_get(carbon, "data_quality", "data_confidence", default="Low"))
             
@@ -2264,23 +2549,37 @@ class ProfessionalReportGenerator:
             confidence_ceiling = cal.get("confidence_ceiling_pct")
 
             if v["threshold"] is not None:
-                if v["gw_score"] >= v["threshold"] + 10:
+                # Suppress threshold certainty language when calibration is not sector-matched
+                _cal_render = v.get("calibration_render_status", "uncalibrated")
+                if _cal_render == "calibrated":
+                    if v["gw_score"] >= v["threshold"] + 10:
+                        zone_text = (
+                            f"Sits {v['gw_score'] - v['threshold']:.1f}pts above threshold - in the "
+                            "calibration sample, scores this high are predominantly associated "
+                            "with confirmed greenwashing cases."
+                        )
+                    elif v["gw_score"] <= v["threshold"] - 10:
+                        zone_text = (
+                            f"Sits {v['threshold'] - v['gw_score']:.1f}pts below threshold - in the "
+                            "calibration sample, scores this low are more commonly associated "
+                            "with legitimate ESG disclosures than with greenwashing."
+                        )
+                    else:
+                        zone_text = (
+                            f"Sits near the {v['threshold']:.1f} threshold in the grey zone - both legitimate "
+                            "firms and greenwashers are observed at this score level. "
+                            "Additional human review is recommended."
+                        )
+                elif _cal_render == "sector_mismatch":
                     zone_text = (
-                        f"Sits {v['gw_score'] - v['threshold']:.1f}pts above threshold - in the "
-                        "calibration sample, scores this high are predominantly associated "
-                        "with confirmed greenwashing cases."
-                    )
-                elif v["gw_score"] <= v["threshold"] - 10:
-                    zone_text = (
-                        f"Sits {v['threshold'] - v['gw_score']:.1f}pts below threshold - in the "
-                        "calibration sample, scores this low are more commonly associated "
-                        "with legitimate ESG disclosures than with greenwashing."
+                        f"Threshold {v['threshold']:.1f} is derived from cross-sector fallback data, "
+                        "not matched industry peers. Interpret with significant caution — "
+                        "sector-specific calibration was not available."
                     )
                 else:
                     zone_text = (
-                        f"Sits near the {v['threshold']:.1f} threshold in the grey zone - both legitimate "
-                        "firms and greenwashers are observed at this score level. "
-                        "Additional human review is recommended."
+                        f"Threshold {v['threshold']:.1f} is available but the calibration dataset is "
+                        "too small or absent for this sector. Treat as indicative only."
                     )
             else:
                 zone_text = "Threshold not available \u2014 score interpretation requires manual review."
@@ -2288,16 +2587,32 @@ class ProfessionalReportGenerator:
             status_label = f"{cal_state} (n={dataset_size} cases)"
             section9.append(f"Status:                 {status_label}")
             section9.append(f"Calibration subset:     {dataset_size} cases (industry: {subset_industry}, claim type: {subset_claim_type})")
-            if isinstance(dataset_size, int) and dataset_size < 15:
-                section9.append("Spearman r:             NOT REPORTED (n<15 minimum sample)")
+            # IMPORTANT: the Spearman below is computed from the LINGUISTIC
+            # STUB scorer (rule-based text matching) vs ground-truth labels —
+            # NOT from the 30-agent pipeline. Label it clearly so readers don't
+            # mistake it for pipeline-level validation.
+            if isinstance(dataset_size, int) and dataset_size < 6:
+                section9.append("Linguistic-stub Spearman r:  NOT REPORTED (subset n<6 — see system-level reference)")
             elif isinstance(spearman_r, (int, float)):
-                section9.append(f"Spearman r:             {spearman_r:.4f}")
+                if isinstance(dataset_size, int) and dataset_size < 10:
+                    section9.append(f"Linguistic-stub Spearman r:  {spearman_r:.4f}  (small subset, interpret cautiously)")
+                else:
+                    section9.append(f"Linguistic-stub Spearman r:  {spearman_r:.4f}")
             else:
-                section9.append("Spearman r:             unavailable")
+                section9.append("Linguistic-stub Spearman r:  unavailable")
             if isinstance(spearman_p_reported, (int, float)):
-                section9.append(f"p-value:                {spearman_p_reported:.4f}")
+                section9.append(f"p-value:                     {spearman_p_reported:.4f}")
             else:
-                section9.append(f"p-value:                {spearman_p_reported}")
+                section9.append(f"p-value:                     {spearman_p_reported}")
+            section9.append(
+                "Pipeline Spearman r:         NOT MEASURED (the 30-agent pipeline has not been"
+            )
+            section9.append(
+                "                             benchmarked against the ground-truth dataset; the"
+            )
+            section9.append(
+                "                             value above measures only the linguistic-stub scorer)"
+            )
             if v["threshold"] is not None:
                 section9.append(f"Optimal threshold:      {v['threshold']:.2f}")
             else:
@@ -2305,6 +2620,24 @@ class ProfessionalReportGenerator:
             if isinstance(mean_gw, (int, float)) and isinstance(mean_leg, (int, float)):
                 section9.append(f"Mean greenwashing:      {mean_gw:.2f}")
                 section9.append(f"Mean legitimate:        {mean_leg:.2f}")
+
+            # ── System-level reference (whole dataset) ──────────────────
+            sys_n = cal.get("system_dataset_size")
+            sys_r = cal.get("system_spearman_r")
+            sys_p = cal.get("system_spearman_p")
+            sys_gw_m = cal.get("system_mean_greenwashing")
+            sys_leg_m = cal.get("system_mean_legitimate")
+            if isinstance(sys_n, int) and sys_n > 0 and (isinstance(sys_r, (int, float)) or isinstance(sys_gw_m, (int, float))):
+                section9.append("")
+                section9.append("System-level reference (full ground-truth dataset):")
+                section9.append(f"  Cases (system):       {sys_n}")
+                if isinstance(sys_r, (int, float)):
+                    if isinstance(sys_p, (int, float)):
+                        section9.append(f"  Linguistic-stub Spearman r (system):  {sys_r:.4f}  (p={sys_p:.4f})")
+                    else:
+                        section9.append(f"  Linguistic-stub Spearman r (system):  {sys_r:.4f}")
+                if isinstance(sys_gw_m, (int, float)) and isinstance(sys_leg_m, (int, float)):
+                    section9.append(f"  Mean greenwashing:    {sys_gw_m:.2f}    Mean legitimate:    {sys_leg_m:.2f}")
 
             if adjacent_used:
                 if adjacent_industries:
@@ -2357,29 +2690,115 @@ class ProfessionalReportGenerator:
             section10.append(f"  - {self._wrap_paragraph(str(lim), width=74)}")
         section10.append("\n" + major)
 
+        # SECTION 11B - Commitment Timeline. Pull from state.commitment_ledger
+        # OR from the commitment_ledger_update agent's output. If neither has
+        # meaningful data, leave section10b empty so the renderer skips the block.
         commitment = state.get("commitment_ledger") if isinstance(state.get("commitment_ledger"), dict) else {}
-        section10b = [major, "SECTION 11B: COMMITMENT TIMELINE", major]
-        section10b.append("This section tracks how company commitments evolve over time and whether accountability weakens.")
-        section10b.append("")
         if not commitment:
-            section10b.append("No commitment ledger output was available for this run.")
-        else:
+            for _ao in (state.get("agent_outputs") or []):
+                if isinstance(_ao, dict) and _ao.get("agent") == "commitment_ledger_update":
+                    _out = _ao.get("output") or {}
+                    if isinstance(_out, dict):
+                        commitment = _out
+                    break
+
+        # Supplement the runtime snapshot with the FULL historical record from
+        # the ledger DB so Section 11B reflects multi-year evolution, not just
+        # the single new commitment from this run.
+        try:
+            from commitment_tracker.ledger import CommitmentLedger as _CL
+            _company = state.get("company") or v.get("company")
+            if _company:
+                _ledger = _CL()
+                _hist_score = _ledger.compute_promise_degradation_score(_company)
+                with _ledger._connect() as _conn:
+                    _hist_rev_rows = _conn.execute(
+                        "SELECT revision_date, revision_type, severity_score, explanation, original_text, revised_text "
+                        "FROM commitment_revisions WHERE company=? ORDER BY revision_date",
+                        (_company,),
+                    ).fetchall()
+                    _hist_commit_count = _conn.execute(
+                        "SELECT COUNT(DISTINCT run_date) FROM commitments WHERE company=?",
+                        (_company,),
+                    ).fetchone()[0]
+                _hist_revisions = [
+                    {
+                        "revision_date": r["revision_date"],
+                        "revision_type": r["revision_type"],
+                        "severity": r["severity_score"],
+                        "explanation": r["explanation"],
+                        "original_text": r["original_text"],
+                        "revised_text": r["revised_text"],
+                    }
+                    for r in _hist_rev_rows
+                ]
+                # Prefer historical figures whenever they exceed the runtime snapshot
+                # (the snapshot only knows about this single run).
+                if _hist_score > float(commitment.get("promise_degradation_score") or 0.0):
+                    commitment = dict(commitment)
+                    commitment["promise_degradation_score"] = _hist_score
+                if _hist_revisions and not commitment.get("revision_events"):
+                    commitment = dict(commitment)
+                    commitment["revision_events"] = _hist_revisions
+                if _hist_commit_count > int(commitment.get("inserted_commitments") or 0):
+                    commitment = dict(commitment)
+                    commitment.setdefault("historical_commitment_runs", _hist_commit_count)
+        except Exception:
+            pass
+
+        _has_meaningful_commitment_data = (
+            isinstance(commitment, dict)
+            and (
+                commitment.get("inserted_commitments") not in (None, 0)
+                or (isinstance(commitment.get("revision_events"), list) and commitment.get("revision_events"))
+                or commitment.get("promise_degradation_score") not in (None, 0, 0.0)
+                or commitment.get("historical_commitment_runs") not in (None, 0)
+            )
+        )
+        section10b: List[str] = []
+        if _has_meaningful_commitment_data:
+            section10b = [major, "SECTION 11B: COMMITMENT TIMELINE", major]
+            section10b.append("This section tracks how company commitments evolve over time and whether accountability weakens.")
+            section10b.append("")
             section10b.append(f"Promise Degradation Score: {commitment.get('promise_degradation_score', 'N/A')}/100 (Higher score indicates greater backsliding)")
             section10b.append(f"Commitments Recorded This Run: {commitment.get('inserted_commitments', 0)}")
+            _hist_runs = commitment.get("historical_commitment_runs")
+            if isinstance(_hist_runs, int) and _hist_runs > 0:
+                section10b.append(f"Distinct historical commitment-tracking runs (this company): {_hist_runs}")
             revisions = commitment.get("revision_events", []) if isinstance(commitment.get("revision_events"), list) else []
             if revisions:
                 section10b.append("")
-                section10b.append("Revision events detected:")
-                for idx, rev in enumerate(revisions[:5], start=1):
+                section10b.append(f"Revision events detected ({len(revisions)} total, showing most recent {min(len(revisions), 5)}):")
+                for idx, rev in enumerate(revisions[-5:], start=1):
                     if not isinstance(rev, dict):
                         continue
+                    _date = rev.get("revision_date") or ""
+                    _date_str = f" [{_date}]" if _date else ""
                     section10b.append(
-                        f"  {idx}. {rev.get('revision_type', 'reframed')} | Severity {rev.get('severity', 0)}/100"
+                        f"  {idx}.{_date_str} {rev.get('revision_type', 'reframed')} | Severity {rev.get('severity', 0)}/100"
                     )
-                    section10b.append(f"     {rev.get('explanation', '')}")
+                    if rev.get("original_text"):
+                        section10b.append(f"     before: {self._smart_truncate(rev.get('original_text'), 100)}")
+                    if rev.get("revised_text"):
+                        section10b.append(f"     after:  {self._smart_truncate(rev.get('revised_text'), 100)}")
+                    if rev.get("explanation"):
+                        section10b.append(f"     why: {self._smart_truncate(rev.get('explanation'), 100)}")
             else:
                 section10b.append("No substantive commitment weakening events were detected in this run.")
-        section10b.append(major)
+            section10b.append(major)
+        # else: leave empty — block will be filtered out of ordered_keys
+
+        # ── SECTION 11C: KNOWLEDGE GRAPH HISTORY ─────────────────────────
+        # Surfaces what the persistent KG knows about this company across
+        # all prior runs: KPI history count, year-over-year drift signals,
+        # and Fact Graph motif diagnostics. Empty for first-ever runs.
+        section11c: List[str] = []
+        try:
+            kg_block = self._build_kg_history_section(state, major)
+            if kg_block:
+                section11c = kg_block
+        except Exception as exc:
+            print(f"⚠️  KG history section render failed: {exc}")
 
         section11 = self._render_esg_mismatch_section(state, major)
 
@@ -2387,17 +2806,38 @@ class ProfessionalReportGenerator:
         appendix_b = [major, "APPENDIX B: TEMPORAL ESG CONSISTENCY", major, self._plain_textify(self._generate_temporal_consistency_section(state)), "", major]
         appendix_c = [major, "APPENDIX C: EVIDENCE & OFFSET INTEGRITY", major, self._plain_textify(self._generate_realism_diagnostics_section(state)), "", major]
 
-        raw_scores = v.get("scores", {}).get("raw", {}) if isinstance(v.get("scores", {}).get("raw", {}), dict) else {}
-        score_disclaimer = str(raw_scores.get("score_disclaimer", "") or "").strip()
-        decision_status = str(raw_scores.get("decision_status", "SCORED") or "SCORED").strip()
-        abstainrecommended = bool(raw_scores.get("abstainrecommended", raw_scores.get("abstain_recommended", False)))
-        abstentionreason = str(raw_scores.get("abstentionreason", raw_scores.get("abstention_reason", "")) or "").strip() if abstainrecommended else ""
+        # ── Decision state from canonical resolver (Phase 3: render from v) ──
+        score_disclaimer = str(v.get("score_disclaimer", "")).strip()
+        decision_status = str(v.get("decision_status", "SCORED")).strip()
+        abstainrecommended = bool(v.get("abstain_recommended", False))
+        abstentionreason = str(v.get("abstention_reason", "")).strip()
 
         gw_score_disp = f"{v['gw_score']:.1f} / 100"
-        # Prefer displayesgscore (coverage-adjusted, pre-penalty) for the header.
-        _display_esg = safe_get(v["scores"], "pillarscores", "displayesgscore", default=None)
-        _header_esg = float(_display_esg) if _display_esg is not None else v.get('esg_score', 0)
-        esg_score_disp = f"{_header_esg:.1f} / 100"
+        # ESG display: use canonical resolved score (already in v["esg_score"])
+        # If a separate raw (un-adjusted) ESG score is available, show both side-by-side
+        # so the audience can see industry-adjustment effects without flipping to JSON.
+        _v_scores = v.get("scores", {}) if isinstance(v.get("scores"), dict) else {}
+        _v_pillar = _v_scores.get("pillar_scores", {}) if isinstance(_v_scores.get("pillar_scores"), dict) else {}
+        _esg_display_value = _v_pillar.get("displayesgscore")
+        _esg_overall_value = _v_pillar.get("overall_esg_score")
+        if (
+            isinstance(_esg_display_value, (int, float))
+            and isinstance(_esg_overall_value, (int, float))
+            and abs(float(_esg_display_value) - float(_esg_overall_value)) >= 0.5
+        ):
+            # Show both — raw pillar-derived and industry-adjusted
+            esg_score_disp = f"{float(_esg_overall_value):.1f} / 100  (raw pillar-derived)  |  {float(_esg_display_value):.1f} / 100  (industry-adjusted)"
+        else:
+            esg_score_disp = f"{v['esg_score']:.1f} / 100"
+
+        # Industry baseline reference (MSCI ESG Industry Materiality Map etc.) for context.
+        _baseline_risk = _v_scores.get("raw", {}).get("industry_baseline_risk") if isinstance(_v_scores.get("raw"), dict) else None
+        _baseline_source = _v_scores.get("raw", {}).get("industry_source") if isinstance(_v_scores.get("raw"), dict) else None
+        baseline_line = ""
+        if isinstance(_baseline_risk, (int, float)) and _baseline_source:
+            baseline_line = f"  Industry Baseline Risk:   {float(_baseline_risk):.1f} / 100  (source: {_baseline_source})"
+        elif isinstance(_baseline_risk, (int, float)):
+            baseline_line = f"  Industry Baseline Risk:   {float(_baseline_risk):.1f} / 100"
         n_size = cal.get("dataset_size")
         band_disp = str(v['band'])
         if n_size is None or n_size < 30:
@@ -2428,9 +2868,371 @@ class ProfessionalReportGenerator:
 
         if score_disclaimer:
             verdict_justification.append(score_disclaimer)
-        if abstainrecommended:
-            reason = abstentionreason or "Evidence quality checks triggered an abstention recommendation."
-            verdict_justification.append(f"Decision status: {decision_status}. Justification: {reason}")
+        # Only show abstention language when abstention is actually recommended
+        if abstainrecommended and abstentionreason:
+            verdict_justification.append(f"Decision status: {decision_status}. Justification: {abstentionreason}")
+
+        # ──────────────────────────────────────────────────────────────────
+        # NEW SECTIONS: surface JSON-rich content into the TXT report so the
+        # presentation reflects the full depth of the analysis (materiality,
+        # component drivers, compliance framework status, audit trail).
+        # ──────────────────────────────────────────────────────────────────
+        _scores_block = v.get("scores", {}) if isinstance(v.get("scores"), dict) else {}
+        _raw_risk = _scores_block.get("raw", {}) if isinstance(_scores_block.get("raw"), dict) else {}
+        _pillar_scores = _scores_block.get("pillar_scores", {}) if isinstance(_scores_block.get("pillar_scores"), dict) else {}
+        _materiality = _pillar_scores.get("materiality_profile", {}) if isinstance(_pillar_scores.get("materiality_profile"), dict) else {}
+        _pillar_weighting = _pillar_scores.get("pillar_weighting", {}) if isinstance(_pillar_scores.get("pillar_weighting"), dict) else {"E": 0.35, "S": 0.30, "G": 0.35}
+        _component_scores = _scores_block.get("component_scores", {}) if isinstance(_scores_block.get("component_scores"), dict) else {}
+        _adversarial_audit = (
+            _raw_risk.get("adversarial_audit")
+            or state.get("adversarial_audit")
+            or {}
+        )
+        if not isinstance(_adversarial_audit, dict):
+            _adversarial_audit = {}
+        # Compliance frameworks: try multiple known locations
+        # 1. risk_results.compliance (rare)
+        # 2. regulatory_scanning agent output's compliance_result.frameworks (canonical)
+        # 3. agent output's compliance_score.frameworks (alias)
+        _compliance = _raw_risk.get("compliance") if isinstance(_raw_risk.get("compliance"), dict) else {}
+        _compliance_frameworks = _compliance.get("frameworks") if isinstance(_compliance.get("frameworks"), list) else []
+        if not _compliance_frameworks:
+            for _ao in (state.get("agent_outputs") or []):
+                if isinstance(_ao, dict) and _ao.get("agent") == "regulatory_scanning":
+                    _out = _ao.get("output") or {}
+                    if not isinstance(_out, dict):
+                        continue
+                    # canonical location
+                    _cr = _out.get("compliance_result") or _out.get("compliance_score") or {}
+                    if isinstance(_cr, dict) and isinstance(_cr.get("frameworks"), list):
+                        _compliance_frameworks = _cr["frameworks"]
+                        if not _compliance:
+                            _compliance = _cr
+                        break
+                    # legacy fallbacks
+                    _fr = _out.get("frameworks") or _out.get("compliance_frameworks")
+                    if isinstance(_fr, list):
+                        _compliance_frameworks = _fr
+                        if not _compliance:
+                            _compliance = _out
+                        break
+
+        # ── 5A: MATERIALITY PROFILE ──────────────────────────────────────
+        materiality_lines = [major, "SECTION 5A: MATERIALITY PROFILE", major]
+        e_w = float(_pillar_weighting.get("E", 0.35) or 0.35)
+        s_w = float(_pillar_weighting.get("S", 0.30) or 0.30)
+        g_w = float(_pillar_weighting.get("G", 0.35) or 0.35)
+        # Some pipelines emit materiality.weights as the canonical source
+        if isinstance(_materiality.get("weights"), dict):
+            _mw = _materiality["weights"]
+            try:
+                e_w = float(_mw.get("E", e_w))
+                s_w = float(_mw.get("S", s_w))
+                g_w = float(_mw.get("G", g_w))
+            except (TypeError, ValueError):
+                pass
+        materiality_industry = str(_materiality.get("industry") or v.get("industry") or "Unknown")
+        rationale = str(_materiality.get("rationale") or "Default 35/30/35 weighting (no industry-specific materiality profile loaded).")
+        topics = _materiality.get("material_topics") or []
+        if not isinstance(topics, list):
+            topics = []
+        materiality_lines.append(self._wrap_paragraph(
+            f"This assessment uses an industry-specific materiality profile to weight Environmental, "
+            f"Social, and Governance pillars. For {materiality_industry}, the weighting reflects which "
+            f"factors most influence long-term value creation and risk exposure.",
+            width=80,
+        ))
+        materiality_lines.append("")
+        materiality_lines.append(f"  Industry profile:        {materiality_industry}")
+        materiality_lines.append(f"  Environmental weight:    {e_w*100:.1f}%")
+        materiality_lines.append(f"  Social weight:           {s_w*100:.1f}%")
+        materiality_lines.append(f"  Governance weight:       {g_w*100:.1f}%")
+        materiality_lines.append("")
+        if topics:
+            materiality_lines.append("  Material topics for this industry:")
+            for t in topics[:8]:
+                materiality_lines.append(f"    • {str(t).strip()}")
+            materiality_lines.append("")
+        materiality_lines.append("  Weighting rationale:")
+        materiality_lines.append(self._indent_wrapped(rationale, width=76, indent="    "))
+        materiality_lines.append(major)
+
+        # ── 5C: SCORE COMPONENT BREAKDOWN ────────────────────────────────
+        component_lines = [major, "SECTION 5C: SCORE COMPONENT BREAKDOWN", major]
+        component_lines.append(self._wrap_paragraph(
+            "The greenwashing risk score is the weighted aggregation of seven underlying drivers. "
+            "Each driver scores 0-100 (higher = more risk). This breakdown shows where the headline "
+            "score originates so reviewers can challenge specific contributors.",
+            width=80,
+        ))
+        component_lines.append("")
+        if _component_scores:
+            _label_map = {
+                "claim_verification":      "Claim Verification Strength",
+                "evidence_quality":        "Evidence Quality / Credibility",
+                "source_credibility":      "Source Credibility Mix",
+                "sentiment_divergence":    "Sentiment Divergence (claim vs reality)",
+                "narrative_discrepancy_gsi": "Narrative Discrepancy (GSI)",
+                "historical_pattern":      "Historical Pattern Risk",
+                "contradiction_severity":  "Contradiction Severity",
+            }
+            component_lines.append(f"  {'Driver':<42} {'Score (0-100)':>14}   {'Reading':<14}")
+            component_lines.append("  " + "-" * 78)
+            for key, val in _component_scores.items():
+                if not isinstance(val, (int, float)):
+                    continue
+                label = _label_map.get(key, str(key).replace("_", " ").title())
+                v_num = float(val)
+                if v_num >= 60:
+                    reading = "Elevated risk"
+                elif v_num >= 35:
+                    reading = "Moderate"
+                else:
+                    reading = "Low"
+                component_lines.append(f"  {label[:42]:<42} {v_num:>10.1f}     {reading:<14}")
+            component_lines.append("  " + "-" * 78)
+            component_lines.append("")
+            component_lines.append(
+                "  Read alongside Section 5: pillar scores describe what the company looks like;"
+            )
+            component_lines.append(
+                "  component scores describe what's driving the greenwashing assessment."
+            )
+        else:
+            component_lines.append("  Component-level decomposition was not produced for this run.")
+        component_lines.append(major)
+
+        # ── 7B: REGULATORY FRAMEWORK FULL STATUS ─────────────────────────
+        compliance_lines = [major, "SECTION 7B: REGULATORY FRAMEWORK STATUS (FULL)", major]
+        compliance_lines.append(self._wrap_paragraph(
+            "Section 7 lists frameworks where gaps were detected. This section shows the full set of "
+            "frameworks evaluated — including those where compliance signals were positive — so the "
+            "regulatory picture is balanced rather than gap-only.",
+            width=80,
+        ))
+        compliance_lines.append("")
+        if _compliance_frameworks:
+            comp_score = _compliance.get("score") if isinstance(_compliance, dict) else None
+            comp_risk = _compliance.get("risk_level") if isinstance(_compliance, dict) else None
+            if isinstance(comp_score, (int, float)) or comp_risk:
+                _bits = []
+                if isinstance(comp_score, (int, float)):
+                    _bits.append(f"Compliance Score: {float(comp_score):.1f}/100")
+                if comp_risk:
+                    _bits.append(f"Risk Level: {comp_risk}")
+                compliance_lines.append("  " + "    ".join(_bits))
+                compliance_lines.append("")
+            compliance_lines.append(f"  {'Jurisdiction':<10} {'Framework':<42} {'Status':<11} {'Material':<8} {'Sources':<8}")
+            compliance_lines.append("  " + "-" * 84)
+            # Dedupe by (jurisdiction, framework, status). Multiple URL-level
+            # rows for the same framework/status are aggregated into one row
+            # with a count of sources reviewed.
+            _grouped: Dict[tuple, Dict[str, Any]] = {}
+            _order: List[tuple] = []
+            for fr in _compliance_frameworks:
+                if not isinstance(fr, dict):
+                    continue
+                juris = str(fr.get("jurisdiction", "—")).strip()
+                fwk = str(fr.get("framework", "Unknown")).strip()
+                status = str(fr.get("status", "uncertain")).upper().strip()
+                key = (juris, fwk, status)
+                if key not in _grouped:
+                    _grouped[key] = {
+                        "jurisdiction": juris,
+                        "framework": fwk,
+                        "status": status,
+                        "material": bool(fr.get("material_misstatement_risk")),
+                        "violation": str(fr.get("specific_violation") or "").strip(),
+                        "source_count": 0,
+                    }
+                    _order.append(key)
+                _grouped[key]["source_count"] += 1
+                # Promote material flag if any underlying row marks it
+                if fr.get("material_misstatement_risk"):
+                    _grouped[key]["material"] = True
+                # Keep the longest available violation text
+                _v = str(fr.get("specific_violation") or "").strip()
+                if len(_v) > len(_grouped[key]["violation"]):
+                    _grouped[key]["violation"] = _v
+            # Sort: GAP / ACTIVE_ENFORCEMENT first, then UNCERTAIN, then COMPLIANT.
+            _status_rank = {"GAP": 0, "ACTIVE_ENFORCEMENT": 0, "UNCERTAIN": 1, "COMPLIANT": 2}
+            _order.sort(key=lambda k: (_status_rank.get(k[2], 3), k[0], k[1]))
+            for key in _order:
+                row = _grouped[key]
+                juris = row["jurisdiction"][:10]
+                fwk = row["framework"]
+                if len(fwk) > 42:
+                    fwk = fwk[:39] + "..."
+                status = row["status"][:11]
+                material = "Yes" if row["material"] else "No"
+                src_n = row["source_count"]
+                src_label = f"{src_n}" if src_n > 1 else "1"
+                compliance_lines.append(f"  {juris:<10} {fwk:<42} {status:<11} {material:<8} {src_label:<8}")
+                if row["violation"] and row["status"] != "COMPLIANT":
+                    compliance_lines.append(f"      └─ {row['violation'][:120]}")
+            compliance_lines.append("  " + "-" * 84)
+            compliance_lines.append(
+                f"  Sources column = number of underlying URL-level evidence rows merged into the framework status."
+            )
+        else:
+            compliance_lines.append("  Framework-level status not available for this run.")
+        compliance_lines.append(major)
+
+        # ── 10B: ADVERSARIAL AUDIT TRAIL ─────────────────────────────────
+        audit_lines = [major, "SECTION 10B: ADVERSARIAL AUDIT TRAIL", major]
+        audit_lines.append(self._wrap_paragraph(
+            "Each agent in the pipeline produces an output and a confidence. The adversarial audit "
+            "looks across agent outputs for coordination risk (agreement that may indicate echo bias) "
+            "and confidence spread (disagreement that signals uncertainty). High coordination is not "
+            "necessarily good — it can mask blind spots; high spread is not necessarily bad — it "
+            "reflects honest uncertainty.",
+            width=80,
+        ))
+        audit_lines.append("")
+        if _adversarial_audit:
+            def _fmt(val, suffix=""):
+                if isinstance(val, (int, float)):
+                    return f"{val:.2f}{suffix}" if not float(val).is_integer() else f"{int(val)}{suffix}"
+                return str(val) if val is not None else "N/A"
+            agents_seen = _adversarial_audit.get("agents_seen") or []
+            agent_count = len(agents_seen) if isinstance(agents_seen, list) else 0
+            successful = _adversarial_audit.get("successful_agents", agent_count)
+            failed = _adversarial_audit.get("failed_agents", 0)
+            audit_lines.append(f"  Agents executed:              {agent_count}")
+            audit_lines.append(f"  Successful agents:            {successful}")
+            audit_lines.append(f"  Failed agents:                {failed}")
+            audit_lines.append(f"  Mean agent confidence:        {_fmt(_adversarial_audit.get('mean_agent_confidence'))}")
+            audit_lines.append(f"  Confidence spread:            {_fmt(_adversarial_audit.get('confidence_spread'))}")
+            audit_lines.append(f"  Coordination risk:            {_fmt(_adversarial_audit.get('coordination_risk'))} ({_adversarial_audit.get('coordination_risk_band','UNKNOWN')})")
+            audit_lines.append(f"  Debate conflict ratio:        {_fmt(_adversarial_audit.get('debate_conflict_ratio'))}")
+            audit_lines.append(f"  Contradictions observed:      {_fmt(_adversarial_audit.get('contradictions_count'))}")
+            audit_lines.append(f"  Regulatory gaps observed:     {_fmt(_adversarial_audit.get('regulatory_gap_count'))}")
+            cp = _adversarial_audit.get("confidence_penalty")
+            if isinstance(cp, (int, float)):
+                audit_lines.append(f"  Confidence penalty applied:   +{float(cp)*100:.1f}pp from coordination/disagreement")
+            audit_lines.append("")
+            audit_lines.append(
+                "  Interpretation: a low confidence spread (<0.30) with high coordination (>0.70) "
+                "indicates the pipeline is cohesive but may share a blind spot. A high confidence "
+                "spread (>0.50) signals real disagreement among independent analyses — review the "
+                "individual agent findings before relying on the headline score."
+            )
+        else:
+            audit_lines.append("  Adversarial audit was not produced for this run.")
+        audit_lines.append(major)
+
+        # ── 7C: ENFORCEMENT & FINES HISTORY ──────────────────────────────
+        # Pull from governance_analysis.signals.regulatory_legal — surfaces
+        # the regulatory fine signals an audience would otherwise miss.
+        enforcement_lines = [major, "SECTION 7C: ENFORCEMENT & FINES HISTORY", major]
+        _gov_signals = {}
+        for _ao in (state.get("agent_outputs") or []):
+            if isinstance(_ao, dict) and _ao.get("agent") == "governance_analysis":
+                _out = _ao.get("output") or {}
+                if isinstance(_out, dict):
+                    _gov_signals = _out.get("signals") or {}
+                break
+        # Also try state-level fallback (replay populates this)
+        if not _gov_signals:
+            _gov_state = state.get("governance_analysis") or {}
+            if isinstance(_gov_state, dict):
+                _gov_signals = _gov_state.get("signals") or {}
+        _reg_legal = _gov_signals.get("regulatory_legal") if isinstance(_gov_signals.get("regulatory_legal"), dict) else {}
+        _fine_count = _reg_legal.get("regulatory_fine_signals", 0)
+        _fine_sources = _reg_legal.get("sources") or []
+        if not isinstance(_fine_sources, list):
+            _fine_sources = []
+        enforcement_lines.append(self._wrap_paragraph(
+            "Historical regulatory penalties, enforcement actions, and litigation references "
+            "surfaced by the governance analysis. These are independent signals that complement "
+            "the contradiction and compliance frameworks above.",
+            width=80,
+        ))
+        enforcement_lines.append("")
+        if _fine_count or _fine_sources:
+            enforcement_lines.append(f"  Regulatory fine / enforcement signals detected: {_fine_count}")
+            enforcement_lines.append(f"  Source records reviewed:                      {len(_fine_sources)}")
+            enforcement_lines.append("")
+            if _fine_sources:
+                enforcement_lines.append("  Source records:")
+                for _src in _fine_sources[:8]:
+                    if not isinstance(_src, dict):
+                        continue
+                    title = str(_src.get("title") or "(untitled)").strip()[:110]
+                    url = str(_src.get("url") or "").strip()
+                    enforcement_lines.append(f"    • {title}")
+                    if url:
+                        enforcement_lines.append(f"      {url}")
+                enforcement_lines.append("")
+                enforcement_lines.append(
+                    "  These references are aggregated from regulatory/legal search and have "
+                    "not been independently verified against case dockets. Treat as leads for "
+                    "diligence, not adjudicated findings."
+                )
+        else:
+            enforcement_lines.append("  No regulatory fine or enforcement signals were detected in this run.")
+        enforcement_lines.append(major)
+
+        # ── 9B: RECENT NEWS & ACTIVE COVERAGE ────────────────────────────
+        # Pull from realtime_monitoring agent's articles[] — surfaces
+        # current public discourse around the company that may not yet be
+        # codified into formal contradictions or regulatory filings.
+        news_lines = [major, "SECTION 9B: RECENT NEWS & ACTIVE COVERAGE", major]
+        _articles = []
+        for _ao in (state.get("agent_outputs") or []):
+            if isinstance(_ao, dict) and _ao.get("agent") == "realtime_monitoring":
+                _out = _ao.get("output") or {}
+                if isinstance(_out, dict):
+                    _articles = _out.get("articles") or []
+                break
+        # State-level fallback
+        if not _articles:
+            _rt_state = state.get("realtime_monitoring") or {}
+            if isinstance(_rt_state, dict):
+                _articles = _rt_state.get("articles") or []
+        if not isinstance(_articles, list):
+            _articles = []
+        news_lines.append(self._wrap_paragraph(
+            "Current news coverage and public discourse signals captured by the real-time "
+            "monitoring agent. These items reflect what would inform a market participant's "
+            "view today; they are NOT graded contradictions.",
+            width=80,
+        ))
+        news_lines.append("")
+        if _articles:
+            news_lines.append(f"  Articles surfaced: {len(_articles)}  (showing top {min(7, len(_articles))})")
+            news_lines.append("")
+            for i, _art in enumerate(_articles[:7], start=1):
+                if not isinstance(_art, dict):
+                    continue
+                title = self._normalize_scraped_text((_art.get("title") or "(untitled)").strip())
+                src = (_art.get("source_name") or _art.get("source_id") or "").strip()
+                src_type = (_art.get("source_type") or "").strip()
+                url = (_art.get("url") or "").strip()
+                snippet = (_art.get("snippet") or _art.get("relevant_text") or "").strip()
+                # Trim whitespace runs in snippet, then re-space joined camelCase
+                # tokens left over from HTML scraping (e.g. "JPMorganChase&Co.").
+                snippet = self._normalize_scraped_text(" ".join(snippet.split()))
+                date_str = (_art.get("date") or "")[:10] if _art.get("date") else ""
+                hdr_bits = [f"[{i}]"]
+                if src or src_type:
+                    label = src or src_type
+                    if src and src_type and src_type not in src:
+                        label = f"{src} ({src_type})"
+                    hdr_bits.append(label)
+                if date_str:
+                    hdr_bits.append(date_str)
+                news_lines.append("  " + " | ".join(hdr_bits))
+                news_lines.append(self._indent_wrapped(title, width=88, indent="      "))
+                if url:
+                    news_lines.append(f"      {url}")
+                if snippet:
+                    news_lines.append(self._indent_wrapped(snippet[:280], width=88, indent="      "))
+                news_lines.append("")
+        else:
+            news_lines.append("  No real-time news items were captured for this run.")
+        news_lines.append(major)
+        # ── END NEW SECTIONS ─────────────────────────────────────────────
 
         blocks = {
             "cover": "\n".join([
@@ -2462,6 +3264,7 @@ class ProfessionalReportGenerator:
                 f"  Confidence:               {v['confidence_pct']:.1f}%",
                 data_coverage_str,
                 f"  Calibration Status:       {cal_status_disp}",
+                *([baseline_line] if baseline_line else []),
                 *([""] + ["  Score justification:", *[f"  - {line}" for line in verdict_justification]] if verdict_justification else []),
                 "",
                 "  One-sentence plain-English summary:",
@@ -2475,15 +3278,22 @@ class ProfessionalReportGenerator:
             "section1": "\n".join([major, "SECTION 3: EXECUTIVE SUMMARY", major, self._wrap_paragraph(section1_text, width=80), "", major]),
             "section_anatomy": "\n".join(section_anatomy),
             "section2": "\n".join(sec2_lines),
+            "materiality_profile": "\n".join(materiality_lines),
             "section3": "\n".join(score_header),
+            "component_breakdown": "\n".join(component_lines),
             "section6": "\n".join(section6),
             "section4": "\n".join(section4),
+            "compliance_full": "\n".join(compliance_lines),
+            "enforcement_history": "\n".join(enforcement_lines),
             "section5": "\n".join(section5),
             "section5b": "\n".join(section5b),
             "section7": "\n".join(section7),
+            "recent_news": "\n".join(news_lines),
             "section9": "\n".join(section9),
             "section10": "\n".join(section10),
+            "audit_metadata": "\n".join(audit_lines),
             "section10b": "\n".join(section10b),
+            "section11c": "\n".join(section11c),
             "section11": "\n".join(section11),
             "appendix_a": "\n".join(appendix_a),
             "appendix_b": "\n".join(appendix_b),
@@ -2491,10 +3301,19 @@ class ProfessionalReportGenerator:
             "end": "\n".join([major, "END OF REPORT", major, f"Report ID: {report_id}   Generated: {date_line}   ESGLens v4.0", major]),
         }
 
+        # Logical reading flow: 3 → 3B → 4 → 5A → 5 → 5C → 6 → 7 → 7B → 7C
+        # → 8 → 8B → 9 → 9B → 10 → 10B → 11 → 11B → 12 → appendices
         ordered_keys = [
-            "cover", "verdict", "section1", "section_anatomy", "section2", "section3", "section6", "section4", "section5", "section5b",
-            "section7", "section9", "section10", "section10b", "section11", "appendix_a", "appendix_b", "appendix_c", "end",
+            "cover", "verdict", "section1", "section_anatomy", "section2",
+            "materiality_profile", "section3", "component_breakdown",
+            "section6", "section4", "compliance_full", "enforcement_history",
+            "section5", "section5b", "section7", "recent_news",
+            "section9", "audit_metadata", "section10", "section10b",
+            "section11c", "section11", "appendix_a", "appendix_b", "appendix_c", "end",
         ]
+        # Drop empty blocks so optional sections (e.g. SECTION 11B Commitment
+        # Timeline when no ledger data exists) don't leave a hollow heading.
+        ordered_keys = [k for k in ordered_keys if blocks.get(k, "").strip()]
         report = "\n\n".join(blocks[k] for k in ordered_keys)
 
         if len(report.encode("utf-8")) > 500_000:
@@ -2512,6 +3331,203 @@ class ProfessionalReportGenerator:
             report = report[:490_000] + "\n\n[TRUNCATED AT 500KB]"
 
         return report
+
+    # ------------------------------------------------------------------
+    # Canonical resolver helpers — called ONCE from _build_structured_report
+    # ------------------------------------------------------------------
+
+    def _resolve_contradictions(self, state, risk_results, agents):
+        """Single arbitration point for contradiction items and count.
+        Returns {"items": [...], "count": int} with deduplication applied.
+        """
+        items = []
+        # Source 1: state["contradiction_results"] (primary)
+        contra_state = state.get("contradiction_results", {})
+        if isinstance(contra_state, dict):
+            raw = contra_state.get("contradictions") or contra_state.get("specific_contradictions") or []
+            if isinstance(raw, list):
+                items.extend(c for c in raw if isinstance(c, dict))
+        # Source 2: riskresults topcontradictions
+        if not items:
+            top_contra = risk_results.get("topcontradictions", [])
+            if isinstance(top_contra, list):
+                for c in top_contra:
+                    if isinstance(c, dict):
+                        items.append({
+                            "description": c.get("detail") or c.get("description", ""),
+                            "severity": c.get("severity", "HIGH"),
+                            "source": c.get("citation") or c.get("source", "risk_scoring"),
+                            "year": c.get("year", "N/A"),
+                            "confidence": str(c.get("confidence") or "HIGH"),
+                        })
+        # Source 3: pillarfactors.contradictions (known-case DB entries)
+        if not items:
+            pf_contras = (risk_results.get("pillarfactors") or {}).get("contradictions", [])
+            if isinstance(pf_contras, list):
+                for c in pf_contras:
+                    if isinstance(c, dict) and str(c.get("severity", "")).upper() in ("HIGH", "MEDIUM"):
+                        items.append({
+                            "description": str(c.get("description") or c.get("detail") or c.get("text") or "").strip(),
+                            "severity": str(c.get("severity", "HIGH")).upper(),
+                            "source": str(c.get("source") or c.get("citation") or "Known verified case"),
+                            "year": c.get("year", "N/A"),
+                            "confidence": str(c.get("confidence") or "HIGH"),
+                        })
+        # Source 4: agent_outputs contradiction_analysis
+        if not items:
+            contra_agent = agents.get("contradiction_analysis", {})
+            contra_output = contra_agent.get("output", {}) if isinstance(contra_agent, dict) else {}
+            if isinstance(contra_output, dict):
+                raw = contra_output.get("contradictions") or contra_output.get("specific_contradictions") or []
+                if isinstance(raw, list):
+                    items.extend(c for c in raw if isinstance(c, dict))
+        # Source 5: adversarial_audit key_findings fallback
+        if not items:
+            audit = risk_results.get("adversarial_audit") or state.get("adversarial_audit") or {}
+            if isinstance(audit, dict):
+                audit_count = int(audit.get("contradictions_count", 0) or 0)
+                if audit_count > 0:
+                    findings = (risk_results.get("key_findings")
+                                or (risk_results.get("verdict") or {}).get("key_findings")
+                                or state.get("key_findings") or [])
+                    if isinstance(findings, list):
+                        for f in findings:
+                            if isinstance(f, dict) and str(f.get("level", "")).upper() == "HIGH":
+                                items.append({
+                                    "description": f.get("text") or f.get("finding") or str(f),
+                                    "severity": "HIGH",
+                                    "source": "adversarial_audit_fallback",
+                                })
+        # Deduplicate by normalized text (canonical — renderer must not re-dedup)
+        seen = set()
+        deduped = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            text_key = str(
+                item.get("description") or item.get("text")
+                or item.get("contradiction_text") or item.get("detail") or ""
+            ).strip().lower()[:120]
+            if text_key and text_key not in seen:
+                seen.add(text_key)
+                deduped.append(item)
+            elif not text_key:
+                deduped.append(item)
+        # Enforce adversarial_audit count as floor
+        audit = risk_results.get("adversarial_audit") or state.get("adversarial_audit") or {}
+        audit_count = int(audit.get("contradictions_count", 0) or 0) if isinstance(audit, dict) else 0
+        return {"items": deduped, "count": max(len(deduped), audit_count)}
+
+    def _resolve_decision_state(self, risk_results):
+        """Single arbitration point for abstention, decision status, and score disclaimer.
+        Rule: abstention_reason is blanked when abstain_recommended is False.
+        """
+        abstain = bool(risk_results.get("abstainrecommended", risk_results.get("abstain_recommended", False)))
+        decision_status = str(risk_results.get("decision_status", "SCORED") or "SCORED").strip()
+        score_disclaimer = str(risk_results.get("score_disclaimer", "") or "").strip()
+        if abstain:
+            reason = str(
+                risk_results.get("abstentionreason")
+                or risk_results.get("abstention_reason")
+                or "Evidence quality checks triggered an abstention recommendation."
+            ).strip()
+        else:
+            reason = ""
+        return {
+            "abstain_recommended": abstain,
+            "decision_status": decision_status,
+            "abstention_reason": reason,
+            "score_disclaimer": score_disclaimer,
+        }
+
+    def _resolve_score_basis(self, scores, risk_results):
+        """Single arbitration point for ESG display score, rating basis, GW raw/calibrated, band."""
+        pillar_scores = scores.get("pillar_scores", {}) if isinstance(scores.get("pillar_scores"), dict) else {}
+        display_esg = pillar_scores.get("displayesgscore")
+        if display_esg is None:
+            display_esg = pillar_scores.get("overall_esg_score")
+        if display_esg is None:
+            display_esg = scores.get("esg_score")
+        if display_esg is None:
+            display_esg = risk_results.get("esg_score")
+        display_esg = float(display_esg) if isinstance(display_esg, (int, float)) else 50.0
+        rating = str(
+            scores.get("esg_rating") or risk_results.get("ratinggrade")
+            or risk_results.get("rating_grade") or self._rating_from_esg_score(display_esg)
+        )
+        gw_calibrated = float(scores.get("greenwashingriskscore", 55.0))
+        gw_raw = float(
+            risk_results.get("greenwashingscoreraw")
+            or risk_results.get("greenwashing_score_raw")
+            or gw_calibrated
+        )
+        band = str(
+            scores.get("risk_level") or risk_results.get("risklevel")
+            or risk_results.get("risk_level") or self._risk_band(gw_calibrated)
+        ).upper()
+        if rating.upper() in {"CCC", "C"} and band in {"LOW", "MODERATE"}:
+            band = "HIGH"
+        return {
+            "display_esg_score": round(display_esg, 1),
+            "rating_basis_score": round(display_esg, 1),
+            "rating": rating,
+            "band": band,
+            "gw_raw": round(gw_raw, 1),
+            "gw_calibrated": round(gw_calibrated, 1),
+            "gw_delta": round(gw_calibrated - gw_raw, 1),
+        }
+
+    def _resolve_benchmark_provenance(self, risk_results, state):
+        """Single arbitration point for WBA/WRI benchmark provenance.
+        Rule: wba_adjustment_allowed is False when wba_indicator_count == 0.
+        """
+        ext_benchmarks = risk_results.get("external_benchmarks", {})
+        if not isinstance(ext_benchmarks, dict):
+            ext_benchmarks = {}
+        ext_state = state.get("external_esg_data", {})
+        if not isinstance(ext_state, dict):
+            ext_state = {}
+        merged = dict(ext_state)
+        merged.update(ext_benchmarks)
+        wba_indicator_count = int(merged.get("wba_indicator_count", 0) or 0)
+        wba_adjustment_allowed = wba_indicator_count > 0
+        sources = merged.get("sources", {}) if isinstance(merged.get("sources"), dict) else {}
+        ext_scores = merged.get("scores", {}) if isinstance(merged.get("scores"), dict) else {}
+        pillar_scores = risk_results.get("pillarscores") or risk_results.get("pillar_scores") or {}
+        adjustments = pillar_scores.get("external_benchmark_adjustments", []) if isinstance(pillar_scores, dict) else []
+        if not isinstance(adjustments, list):
+            adjustments = []
+        if not wba_adjustment_allowed:
+            adjustments = [a for a in adjustments if isinstance(a, dict) and a.get("source") != "WBA"]
+        return {
+            "enabled": bool(merged.get("enabled") or sources),
+            "used": bool(pillar_scores.get("external_benchmarks_used", False)) if isinstance(pillar_scores, dict) else False,
+            "sources": sources,
+            "scores": ext_scores,
+            "adjustments": adjustments,
+            "wba_company_name": merged.get("wba_company_name"),
+            "wba_indicator_count": wba_indicator_count,
+            "wba_data_year": merged.get("wba_data_year"),
+            "wba_adjustment_allowed": wba_adjustment_allowed,
+            "error": merged.get("error"),
+        }
+
+    def _resolve_calibration_render_status(self, calibration):
+        """Returns one of: 'calibrated', 'sector_mismatch', 'uncalibrated'"""
+        if not isinstance(calibration, dict):
+            return "uncalibrated"
+        cal_status = calibration.get("calibration_status", "NOT_AVAILABLE")
+        if cal_status == "NOT_AVAILABLE":
+            return "uncalibrated"
+        dataset_size = calibration.get("dataset_size")
+        if not isinstance(dataset_size, int) or dataset_size < 5:
+            return "uncalibrated"
+        no_industry_match = bool(calibration.get("no_industry_match"))
+        fallback_used = bool(calibration.get("fallback_used"))
+        if no_industry_match or (fallback_used and calibration.get("fallback_reason") == "NO_PEER_CASES"):
+            return "sector_mismatch"
+        return "calibrated"
+
 
     # ------------------------------------------------------------------
     # Structured representation builders
@@ -2539,6 +3555,23 @@ class ProfessionalReportGenerator:
 
         report_id = f"{analysis_timestamp.strftime('%Y%m%d-%H%M%S')}-{company.upper()[:4]}"
 
+        # ── Canonical resolvers (single arbitration point) ────────────────
+        risk_results = scores.get("raw", {}) if isinstance(scores.get("raw"), dict) else {}
+
+        resolved_contradictions = self._resolve_contradictions(state, risk_results, agents)
+        resolved_decision = self._resolve_decision_state(risk_results)
+        resolved_scores = self._resolve_score_basis(scores, risk_results)
+        resolved_benchmarks = self._resolve_benchmark_provenance(risk_results, state)
+        calibration_render_status = self._resolve_calibration_render_status(calibration)
+
+        # Store resolved contradictions in evidence for downstream consumption
+        evidence_struct["contradiction_items_resolved"] = resolved_contradictions["items"]
+        evidence_struct["contradictions_count_resolved"] = resolved_contradictions["count"]
+
+        # Store calibration render status
+        calibration["render_status"] = calibration_render_status
+        # ── End canonical resolvers ───────────────────────────────────────
+
         return {
             "metadata": {
                 "timestamp_dt": analysis_timestamp,
@@ -2557,6 +3590,22 @@ class ProfessionalReportGenerator:
             "peers": peers,
             "calibration": calibration,
             "limitations": limitations,
+            "decision": resolved_decision,
+            "benchmarks": resolved_benchmarks,
+            "report_consistency": {
+                "final_contradiction_count": resolved_contradictions["count"],
+                "final_gw_raw": resolved_scores["gw_raw"],
+                "final_gw_calibrated": resolved_scores["gw_calibrated"],
+                "final_gw_delta": resolved_scores["gw_delta"],
+                "final_esg_display": resolved_scores["display_esg_score"],
+                "final_rating": resolved_scores["rating"],
+                "final_rating_basis": resolved_scores["rating_basis_score"],
+                "final_band": resolved_scores["band"],
+                "final_decision_status": resolved_decision["decision_status"],
+                "final_abstain_recommended": resolved_decision["abstain_recommended"],
+                "final_calibration_label": calibration_render_status,
+                "wba_adjustment_allowed": resolved_benchmarks["wba_adjustment_allowed"],
+            },
         }
 
     def _extract_core_scoring(self, state: Dict[str, Any]) -> Dict[str, Any]:
@@ -3561,7 +4610,12 @@ class ProfessionalReportGenerator:
             if not statement or not self._is_human_readable_text(statement):
                 continue
             statement_l = statement.lower()
-            weak_markers = ["generic", "not enough information", "unclear", "possibly", "may be unrelated", "official source located"]
+            weak_markers = [
+                "generic", "not enough information", "unclear", "possibly",
+                "may be unrelated", "official source located",
+                "no hard contradiction rule",  # internal placeholder text — never decision-relevant
+                "current esg balance",         # placeholder telemetry from rule scoring
+            ]
             if any(marker in statement_l for marker in weak_markers):
                 continue
             if claim_terms and not any(term in statement_l for term in claim_terms):
@@ -3838,8 +4892,145 @@ class ProfessionalReportGenerator:
             return ""
         return textwrap.fill(cleaned, width=width, initial_indent=indent, subsequent_indent=indent)
 
+    @staticmethod
+    def _slim_key_findings(kf: Dict[str, Any]) -> Dict[str, Any]:
+        """Strip multi-MB payloads from agent_results before JSON export.
+
+        Some agents (notably report_parser) carry parsed PDF chunks / raw
+        full_text that bloat the export 14× without adding decision-relevant
+        info — downstream agents already consumed it and the user can
+        re-derive from cache/parsed_reports/. We replace large blobs with a
+        compact stub so the audit trail still shows the agent ran.
+
+        Set env var ESG_VERBOSE_JSON=1 (or pass `verbose=True` upstream) to
+        retain the full payloads — required for audit/compliance review where
+        users need to verify which parsed text produced each finding.
+        """
+        if not isinstance(kf, dict):
+            return kf
+        # Verbose mode — return everything untouched.
+        if str(os.environ.get("ESG_VERBOSE_JSON", "")).lower() in ("1", "true", "yes", "on"):
+            return kf
+        # Keys that are always parsed text dumps; keep only a length stub.
+        STRIP_KEYS = {"chunks", "raw_chunks", "pdf_chunks", "full_text", "raw_text", "page_text"}
+        # Per-value byte cap for *any* string/list/dict value.
+        MAX_VALUE_BYTES = 30_000
+        out: Dict[str, Any] = {}
+        # If report_parser provided downloaded_reports[], pass the local PDF
+        # paths into the stub so users can jump straight to the source docs.
+        _report_paths: List[str] = []
+        try:
+            _dr = kf.get("downloaded_reports")
+            if isinstance(_dr, list):
+                for _row in _dr:
+                    if isinstance(_row, dict):
+                        _p = _row.get("local_path") or _row.get("url")
+                        if _p:
+                            _report_paths.append(str(_p))
+        except Exception:
+            pass
+
+        for k, v in kf.items():
+            if k in STRIP_KEYS:
+                _audit = {
+                    "_stripped": True,
+                    "_how_to_audit": (
+                        "Set env var ESG_VERBOSE_JSON=1 and re-run to retain the full payload, "
+                        "OR open the cached parsed PDFs at cache/parsed_reports/parsed_<hash>.json "
+                        "(one per source document). The downloaded_reports[] field above lists the "
+                        "originating PDF paths so you can map each finding back to its source."
+                    ),
+                    "_cache_dir": "cache/parsed_reports/",
+                    "_source_documents": _report_paths or None,
+                }
+                if isinstance(v, list):
+                    _audit.update({"_count": len(v), "_first_chunk_preview": (str(v[0])[:300] if v else None)})
+                    out[k] = _audit
+                elif isinstance(v, str):
+                    _audit.update({"_chars": len(v), "_preview": v[:300]})
+                    out[k] = _audit
+                else:
+                    out[k] = v
+                continue
+            try:
+                size = len(json.dumps(v, default=str))
+            except Exception:
+                out[k] = v
+                continue
+            if size > MAX_VALUE_BYTES:
+                # Keep a peek + summary so the audit trail records what was there.
+                if isinstance(v, list):
+                    out[k] = {
+                        "_stripped": True,
+                        "_count": len(v),
+                        "_size_bytes": size,
+                        "_sample": v[:3],
+                        "_note": "Large list elided to keep JSON export under 500KB.",
+                    }
+                elif isinstance(v, dict):
+                    out[k] = {
+                        "_stripped": True,
+                        "_keys": list(v.keys())[:20],
+                        "_size_bytes": size,
+                        "_note": "Large dict elided to keep JSON export under 500KB.",
+                    }
+                elif isinstance(v, str):
+                    out[k] = {
+                        "_stripped": True,
+                        "_chars": len(v),
+                        "_preview": v[:300],
+                        "_note": "Large string truncated to keep JSON export under 500KB.",
+                    }
+                else:
+                    out[k] = v
+            else:
+                out[k] = v
+        return out
+
+    @staticmethod
+    def _smart_truncate(text: Any, width: int, ellipsis: str = "…") -> str:
+        """Truncate at the last word boundary before `width`. Avoids mid-word cuts
+        like "Web source / Company Report (par" that look like garbled output."""
+        s = str(text or "")
+        if len(s) <= width:
+            return s
+        cut = s[: max(1, width - len(ellipsis))]
+        # Walk back to the last whitespace; if none found, fall back to a hard cut.
+        last_ws = cut.rfind(" ")
+        if last_ws >= max(8, width // 3):
+            cut = cut[:last_ws].rstrip(" -/:,;")
+        return cut + ellipsis
+
+    @staticmethod
+    def _normalize_scraped_text(text: Any) -> str:
+        """Re-insert spaces into scraped text where HTML stripping concatenated tokens.
+
+        Scraped news/profile text often comes back as e.g. "JPMorganChase& Co.",
+        "ESGSustainability", "ESGEnvironmentalScore". The two transformations:
+          1. Acronym (3+ uppercase) → TitleCase split: "ESGSustainability" → "ESG Sustainability".
+          2. Lowercase → uppercase split (camelCase): "JPMorganChase" → "JPMorgan Chase".
+        Order matters: rule 1 first so "JPMorgan" (only 2 uppers) is not over-split.
+        Letter↔digit boundaries are also separated for readability.
+        """
+        if text is None:
+            return ""
+        s = str(text)
+        # Acronym (3+ uppers) followed by TitleCase word.
+        s = re.sub(r"([A-Z]{3,})([A-Z][a-z])", r"\1 \2", s)
+        # Standard camelCase boundary.
+        s = re.sub(r"([a-z])([A-Z])", r"\1 \2", s)
+        # Letter↔digit boundaries (e.g. "Scope3" → "Scope 3", "2030target" → "2030 target").
+        s = re.sub(r"([a-zA-Z])(\d)", r"\1 \2", s)
+        s = re.sub(r"(\d)([a-zA-Z])", r"\1 \2", s)
+        # Collapse any double-space that may now exist.
+        s = re.sub(r"  +", " ", s)
+        return s
+
     def _format_verdict_finding(self, line: str) -> str:
-        cleaned = self._clean_executive_text(line, max_len=120)
+        # Use a generous max_len so the source string isn't truncated mid-name
+        # ("EU | EU" instead of "EU | EU Regulatory Evidence"). textwrap.fill
+        # below handles the 78-char visual line wrapping cleanly.
+        cleaned = self._clean_executive_text(line, max_len=220)
         if not cleaned:
             cleaned = "[i] INFO - Analysis completed without displayable raw extraction text"
         return textwrap.fill(cleaned, width=78, initial_indent="  - ", subsequent_indent="    ")
@@ -4098,7 +5289,9 @@ class ProfessionalReportGenerator:
         clean_findings: List[str] = []
         seen_messages: Set[str] = set()
         for finding in findings:
-            cleaned = self._clean_executive_text(finding, max_len=120)
+            # Generous max_len so framework names like "EU | EU Regulatory Evidence"
+            # aren't truncated mid-name. textwrap downstream handles visual wrapping.
+            cleaned = self._clean_executive_text(finding, max_len=220)
             if not cleaned:
                 continue
             key = re.sub(r"^\[[!~i]\]\s+\w+\s+-\s+", "", cleaned.lower())
@@ -4449,9 +5642,44 @@ class ProfessionalReportGenerator:
                 else:
                     confidence_region = "grey_zone"
 
+            # ── System-level (whole dataset) reference stats ──────────────
+            # Useful when the sector-specific subset is small: the audience
+            # can still see the overall correlation strength.
+            system_spearman_r: Any = None
+            system_spearman_p: Any = None
+            try:
+                sp_sys = spearmanr(df['predicted_score'].astype(float).values,
+                                   df['greenwashing_label'].astype(float).values)
+                if sp_sys is not None and sp_sys.correlation == sp_sys.correlation:
+                    system_spearman_r = float(sp_sys.correlation)
+                if sp_sys is not None and sp_sys.pvalue == sp_sys.pvalue:
+                    system_spearman_p = float(sp_sys.pvalue)
+            except Exception:
+                pass
+            sys_gw_mean = float(df.loc[df['greenwashing_label'] == 1, 'predicted_score'].mean()) if (df['greenwashing_label'] == 1).any() else None
+            sys_leg_mean = float(df.loc[df['greenwashing_label'] == 0, 'predicted_score'].mean()) if (df['greenwashing_label'] == 0).any() else None
+
             return {
-                "spearman_r": spearman_r,
+                # IMPORTANT: this Spearman correlates the LINGUISTIC STUB scorer
+                # (ml_models/score_calibrator.linguistic_greenwashing_score, ~30 LOC of
+                # rule-based text matching) against ground-truth labels. It does NOT
+                # measure how well the 30-agent pipeline ranks greenwashers vs
+                # legitimate companies. The pipeline has not been benchmarked
+                # against the labelled dataset; until it is, `pipeline_spearman_r`
+                # remains null and the headline calibration claim should not be
+                # over-interpreted. See plan item #11 ("Make Spearman calibration
+                # honest") for the validation script that would populate it.
+                "spearman_r": spearman_r,  # deprecated alias of linguistic_stub_spearman_r
+                "linguistic_stub_spearman_r": spearman_r,
                 "spearman_p": spearman_p,
+                "linguistic_stub_spearman_p": spearman_p,
+                "pipeline_spearman_r": None,
+                "pipeline_spearman_p": None,
+                "calibration_methodology": (
+                    "Sub-sample Spearman of linguistic_greenwashing_score (rule-based text scorer) "
+                    "vs ground-truth labels. Pipeline correlation is unmeasured pending a "
+                    "validate_pipeline.py run against the full labelled dataset."
+                ),
                 "p_value_reported": p_value_report,
                 "point_biserial_r": None,
                 "mannwhitney_p": None,
@@ -4461,6 +5689,13 @@ class ProfessionalReportGenerator:
                 "calibration_status": calibration_status,
                 "confidence_region": confidence_region,
                 "dataset_size": subset_n,
+                "system_dataset_size": int(len(df)),
+                "system_spearman_r": system_spearman_r,  # deprecated alias
+                "system_linguistic_stub_spearman_r": system_spearman_r,
+                "system_spearman_p": system_spearman_p,
+                "system_linguistic_stub_spearman_p": system_spearman_p,
+                "system_mean_greenwashing": sys_gw_mean,
+                "system_mean_legitimate": sys_leg_mean,
                 "industries_represented": industries,
                 "sector_counts": sector_counts,
                 "subset_industry": company_industry,
@@ -5323,15 +6558,16 @@ Score: {score:.1f}/100 — {level}
         if cal_state == "NOT_AVAILABLE":
             lines.append("  Spearman r:        Not available — no ground truth data")
             lines.append("  Optimal Threshold: Not available")
-        elif isinstance(n_size, int) and n_size < 15:
-            lines.append("  Spearman r:        NOT REPORTED (n<15 minimum sample)")
+        elif isinstance(n_size, int) and n_size < 6:
+            lines.append("  Spearman r:        NOT REPORTED (subset n<6 — see system-level reference below)")
             optimal = calibration.get("optimal_threshold")
             if isinstance(optimal, (int, float)):
                 lines.append(f"  Optimal Threshold: {optimal:.1f}/100")
             else:
                 lines.append("  Optimal Threshold: Not available")
         elif isinstance(spearman_r, (int, float)):
-            lines.append(f"  Spearman r:        {spearman_r:.4f} ({cal_state})")
+            caveat = "  (small subset, interpret cautiously)" if isinstance(n_size, int) and n_size < 10 else ""
+            lines.append(f"  Spearman r:        {spearman_r:.4f} ({cal_state}){caveat}")
             optimal = calibration.get("optimal_threshold")
             if isinstance(optimal, (int, float)):
                 lines.append(f"  Optimal Threshold: {optimal:.1f}/100")
@@ -5339,6 +6575,19 @@ Score: {score:.1f}/100 — {level}
                 lines.append("  Optimal Threshold: Not available")
         else:
             lines.append("  Spearman r:        Computation failed")
+
+        # System-level reference for the whole ground-truth dataset.
+        sys_n = calibration.get("system_dataset_size")
+        sys_r = calibration.get("system_spearman_r")
+        sys_p = calibration.get("system_spearman_p")
+        if isinstance(sys_n, int) and sys_n > 0 and isinstance(sys_r, (int, float)):
+            lines.append("")
+            lines.append("System-level reference (whole ground-truth dataset):")
+            lines.append(f"  Cases (system):    {sys_n}")
+            if isinstance(sys_p, (int, float)):
+                lines.append(f"  Spearman r:        {sys_r:.4f}  (p={sys_p:.4f})")
+            else:
+                lines.append(f"  Spearman r:        {sys_r:.4f}")
 
         # Company-specific sector note
         if cal_state != "NOT_AVAILABLE" and dataset_size and industries_repr:
@@ -6468,21 +7717,46 @@ KEY PERFORMANCE METRICS
             or {}
         )
 
+        # Canonicalize agent names so duplicates (e.g. claim_extractor / claim_extraction)
+        # don't appear as two rows in agent_results.
+        _AGENT_NAME_ALIASES = {
+            "claim_extractor": "claim_extraction",
+        }
         agent_results = []
+        _seen_names = set()
         for name, info in sorted(agents_struct.items()):
+            canonical_name = _AGENT_NAME_ALIASES.get(name, name)
+            if canonical_name in _seen_names:
+                continue
+            _seen_names.add(canonical_name)
             output = info.get("output") if isinstance(info, dict) else {}
             if not isinstance(output, dict):
                 output = {"raw": output}
-            status = "FAILED" if info.get("error") else "SUCCESS" if info.get("has_findings") else "NO_DATA"
+            # Status enum: SUCCESS only when there is no embedded error in output.
+            # An agent that ran but returned `key_findings.error` is operationally FAILED.
+            _has_embedded_error = (
+                isinstance(output, dict)
+                and any(
+                    isinstance(output.get(k), str) and str(output.get(k)).strip()
+                    for k in ("error", "exception", "failure_reason")
+                )
+            )
+            if info.get("error") or _has_embedded_error:
+                status = "FAILED"
+            elif info.get("has_findings"):
+                status = "SUCCESS"
+            else:
+                status = "NO_DATA"
             key_findings = {
                 k: v
                 for k, v in output.items()
                 if k not in {"raw_response", "prompt", "status", "confidence"}
                 and not isinstance(v, (bytes, type(None)))
             }
+            key_findings = self._slim_key_findings(key_findings)
             agent_results.append(
                 {
-                    "agent": name,
+                    "agent": canonical_name,
                     "status": status,
                     "confidence": info.get("confidence"),
                     "key_findings": key_findings,
@@ -6511,17 +7785,85 @@ KEY PERFORMANCE METRICS
             pillar_ext_adjustments = []
         pillar_ext_used = bool(pillar_scores.get("external_benchmarks_used", False)) if isinstance(pillar_scores, dict) else False
 
+        # ── Canonical scores: trust report_consistency first ──
+        _rc = structured.get("report_consistency", {}) if isinstance(structured.get("report_consistency"), dict) else {}
+        if _rc:
+            final_gw = float(_rc.get("final_gw_calibrated", 55.0))
+            final_esg = float(_rc.get("final_esg_display", 50.0))
+            final_rating = str(_rc.get("final_rating", "BBB"))
+            final_band = str(_rc.get("final_band", "MODERATE"))
+        else:
+            final_gw = float(scores.get("greenwashingriskscore", 55.0))
+            final_esg = float(esg_score if esg_score is not None else 50.0)
+            final_rating = str(scores.get("esg_rating") or scores.get("rating") or "BBB")
+            final_band = str(scores.get("risk_level") or "MODERATE")
+
+        # ── Reproducibility metadata: makes the JSON audit-grade ────────────
+        # Best-effort git SHA. Never crash the export if git is unavailable.
+        _git_sha = None
+        try:
+            import subprocess as _sp
+            _r = _sp.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                capture_output=True, text=True, timeout=2,
+            )
+            if _r.returncode == 0:
+                _git_sha = _r.stdout.strip() or None
+        except Exception:
+            _git_sha = None
+        # Capture model provenance from env first; fall back to whatever the
+        # llm_router has registered as defaults so the field is never empty
+        # when LLMs were genuinely used.
+        _model_versions: Dict[str, Any] = {
+            "groq_model": os.environ.get("GROQ_MODEL"),
+            "gemini_model": os.environ.get("GEMINI_MODEL"),
+            "openrouter_default_model": os.environ.get("OPENROUTER_DEFAULT_MODEL"),
+            "openai_model": os.environ.get("OPENAI_MODEL"),
+            "anthropic_model": os.environ.get("ANTHROPIC_MODEL"),
+        }
+        try:
+            from core.llm_router import ROUTING_TABLE as _RT  # type: ignore
+            if isinstance(_RT, dict):
+                for _agent, _chain in _RT.items():
+                    if isinstance(_chain, list) and _chain:
+                        _primary = _chain[0]
+                        _provider = getattr(getattr(_primary, "provider", None), "value", None) or "unknown"
+                        _mid = getattr(_primary, "model_id", None)
+                        if _mid:
+                            _model_versions.setdefault(f"agent.{_agent}", f"{_provider}:{_mid}")
+        except Exception:
+            pass
+        _model_versions = {k: v for k, v in _model_versions.items() if v}
+        if not _model_versions:
+            # Even with all envs unset, record the fact that the router was
+            # invoked so the audit trail isn't a silent {}.
+            _model_versions = {"_note": "model identifiers not captured at runtime; check env vars / llm_router config"}
+        # Add Python + scoring metadata for reproducibility.
+        try:
+            import sys as _sys
+            _model_versions["python_version"] = _sys.version.split()[0]
+        except Exception:
+            pass
+
         export = {
+            # Schema/version metadata (audit reproducibility)
+            "schema_version": "esg_report_v1.1",
+            "pipeline_version": "ESGLens v4.0",
+            "git_sha": _git_sha,
+            "generated_at_utc": datetime.utcnow().isoformat() + "Z",
+            "model_versions": _model_versions,
+            # Core report fields
             "report_id": report_metadata.get("report_id"),
             "analysis_date": report_metadata.get("analysis_date"),
             "company": analysis_state.get("company"),
             "industry": analysis_state.get("industry"),
             "claim_analyzed": analysis_state.get("claim"),
             "scores": {
-                "greenwashingriskscore": scores.get("greenwashingriskscore"),
-                "greenwashing_score_raw": risk_scoring_output.get("greenwashingscoreraw"),
-                "esg_score": esg_score,
-                "esg_rating": scores.get("esg_rating"),
+                "greenwashingriskscore": final_gw,
+                "greenwashing_score_raw": _rc.get("final_gw_raw", risk_scoring_output.get("greenwashingscoreraw")),
+                "esg_score": final_esg,
+                "esg_rating": final_rating,
+                "risk_level": final_band,
                 "environmental": pillar_scores.get("environmental_score"),
                 "social": pillar_scores.get("social_score"),
                 "governance": pillar_scores.get("governance_score"),
@@ -6529,14 +7871,26 @@ KEY PERFORMANCE METRICS
                 "confidence_penalty": risk_scoring_output.get("confidence_penalty"),
                 "confidence_penalty_applied": risk_scoring_output.get("confidence_penalty_applied", 0),
                 "report_tier": risk_scoring_output.get("report_tier"),
-                "score_disclaimer": risk_scoring_output.get("score_disclaimer", ""),
-                "decision_status": risk_scoring_output.get("decision_status"),
-                "abstain_recommended": risk_scoring_output.get("abstainrecommended", False),
-                "abstention_reason": risk_scoring_output.get("abstentionreason", ""),
+                "score_disclaimer": _rc.get("score_disclaimer", risk_scoring_output.get("score_disclaimer", "")),
+                "decision_status": _rc.get("final_decision_status", risk_scoring_output.get("decision_status")),
+                "abstain_recommended": _rc.get("final_abstain_recommended", risk_scoring_output.get("abstainrecommended", False)),
+                # Mirror the arbitrated decision-block reason (already blanked when
+                # abstain_recommended is False by _resolve_decision_state). Fall back
+                # to the raw scorer text only if the structured decision is absent.
+                "abstention_reason": (
+                    (structured.get("decision") or {}).get("abstention_reason", "")
+                    or (
+                        ""
+                        if not (_rc.get("final_abstain_recommended") or risk_scoring_output.get("abstainrecommended"))
+                        else _rc.get("abstention_reason", risk_scoring_output.get("abstentionreason", ""))
+                    )
+                ),
                 "historical_archive_quality": risk_scoring_output.get("historical_archive_quality", {}),
                 "adversarial_audit": analysis_state.get("adversarial_audit", {}),
                 "compliance": regulatory.get("compliance_score"),
             },
+            "decision": structured.get("decision") or {},
+            "report_consistency": _rc,
             "pillarfactors": raw_scores.get("pillarfactors") or {},
             "contradictions": contradictions,
             "regulatory_gaps": [
@@ -6584,16 +7938,35 @@ KEY PERFORMANCE METRICS
             ],
             "agent_results": agent_results,
             "calibration": {
+                # Deprecated alias kept so older consumers don't break; the
+                # honest name is `linguistic_stub_spearman_r`.
                 "spearman_r": calibration.get("spearman_r"),
                 "spearman_p": calibration.get("spearman_p"),
+                "linguistic_stub_spearman_r": calibration.get("linguistic_stub_spearman_r", calibration.get("spearman_r")),
+                "linguistic_stub_spearman_p": calibration.get("linguistic_stub_spearman_p", calibration.get("spearman_p")),
+                "pipeline_spearman_r": calibration.get("pipeline_spearman_r"),
+                "pipeline_spearman_p": calibration.get("pipeline_spearman_p"),
+                "calibration_methodology": calibration.get("calibration_methodology",
+                    "Sub-sample Spearman of linguistic_greenwashing_score vs ground-truth labels. "
+                    "Pipeline correlation is unmeasured."
+                ),
                 "point_biserial_r": calibration.get("point_biserial_r"),
                 "optimal_threshold": calibration.get("optimal_threshold"),
                 "dataset_size": calibration.get("dataset_size"),
                 "calibration_status": calibration.get("calibration_status"),
+                "calibration_label": calibration.get("calibration_label"),
+                "render_status": calibration.get("render_status"),
             },
             "external_benchmarks": {
                 "enabled": bool(external_meta.get("enabled") or external_state.get("enabled") or external_sources),
-                "used_in_scoring": pillar_ext_used,
+                # Only claim "used_in_scoring" when at least one indicator was
+                # actually returned AND a pillar adjustment was applied. Otherwise
+                # the field is misleading: status reads "Adjusted" while the layer
+                # contributed nothing to the headline number.
+                "used_in_scoring": bool(
+                    pillar_ext_used
+                    and int(external_meta.get("wba_indicator_count", external_state.get("wba_indicator_count", 0)) or 0) > 0
+                ),
                 "sources": external_sources,
                 "scores": external_scores,
                 "adjustments": pillar_ext_adjustments,

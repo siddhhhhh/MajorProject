@@ -8,6 +8,7 @@ all translation happens here.
 from __future__ import annotations
 
 import hashlib
+import re
 import os
 from typing import Any, Dict, List, Optional
 
@@ -26,7 +27,7 @@ from api.models import (
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _safe_float(v: Any, default: float = 0.0) -> float:
+def _safe_float(v: Any, default=0.0):
     try:
         return float(v)
     except (TypeError, ValueError):
@@ -127,12 +128,18 @@ def _map_carbon(raw: Dict) -> CarbonData:
     else:
         net_zero_target = str(carbon_ext.get("net_zero_target", "Unknown"))
 
-    # IEA gap from carbon_pathway_analysis
+    # IEA gap from carbon_pathway_analysis (real values, not hardcoded)
     cpa = raw.get("carbon_pathway_analysis") or {}
     if isinstance(cpa, dict) and "data" in cpa:
         cpa = cpa["data"]
-    iea_gap = _safe_float(cpa.get("iea_gap_pct") or cpa.get("gap_pct"), None) if isinstance(cpa, dict) else None
+    iea_gap = _safe_float(cpa.get("iea_gap_pct") or cpa.get("gap_pct") or cpa.get("pathway_gap"), None) if isinstance(cpa, dict) else None
     budget_years = _safe_float(cpa.get("budget_years_remaining") or cpa.get("remaining_years"), None) if isinstance(cpa, dict) else None
+    # Annual reduction rates — needed by the frontend trajectory chart so it
+    # plots the company's actual implied rate vs the IEA-required rate instead
+    # of a hardcoded 12%/yr placeholder line.
+    required_rate = _safe_float(cpa.get("required_annual_rate") or cpa.get("required_rate"), None) if isinstance(cpa, dict) else None
+    implied_rate = _safe_float(cpa.get("company_implied_rate") or cpa.get("implied_rate"), None) if isinstance(cpa, dict) else None
+    alignment_status = str(cpa.get("alignment_status") or "") if isinstance(cpa, dict) else ""
 
     # data quality
     adv = (raw.get("scores") or {}).get("adversarial_audit") or {}
@@ -148,6 +155,9 @@ def _map_carbon(raw: Dict) -> CarbonData:
         data_quality=data_quality,
         iea_nze_gap_pct=iea_gap,
         budget_years_remaining=budget_years,
+        required_annual_rate=required_rate,
+        company_implied_rate=implied_rate,
+        alignment_status=alignment_status,
     )
 
 
@@ -333,50 +343,77 @@ def _map_risk_drivers(raw: Dict) -> List[RiskDriver]:
     if not isinstance(expl, dict):
         expl = {}
 
-    drivers = expl.get("top_risk_drivers") or expl.get("shap_values") or []
-    
-    # Fallback to agent_results
-    if not drivers:
-        agent_results = raw.get("agent_results") or []
-        for ar in agent_results:
-            if isinstance(ar, dict) and ar.get("agent") == "explainability":
-                kf = ar.get("key_findings") or {}
-                if isinstance(kf, dict):
-                    drivers = kf.get("top_factors") or []
-                break
+    # Step 1: collect REAL drivers (top-level + explainability agent output)
+    drivers = list(expl.get("top_risk_drivers") or expl.get("shap_values") or [])
+    agent_results = raw.get("agent_results") or []
+    for ar in agent_results:
+        if isinstance(ar, dict) and ar.get("agent") == "explainability":
+            kf = ar.get("key_findings") or {}
+            if isinstance(kf, dict):
+                # Normalize agent's `top_factors` shape ({feature, impact, direction})
+                # into the driver shape used downstream ({name, impact, direction, shap_value}).
+                for factor in (kf.get("top_factors") or []):
+                    if not isinstance(factor, dict):
+                        continue
+                    drivers.append({
+                        "name": str(factor.get("feature") or factor.get("name") or "Unnamed driver"),
+                        "impact": str(factor.get("impact") or "MEDIUM").upper(),
+                        "direction": str(factor.get("direction") or "increases_risk").lower().replace(" ", "_"),
+                        # Real SHAP value if the explainability agent produced one;
+                        # otherwise leave None so we can flag it as un-quantified.
+                        "shap_value": _safe_float(factor.get("shap_value"), None),
+                    })
+            break
 
-    # If still no drivers or too few, infer from scores / contradictions
-    if not drivers or len(drivers) < 3:
-        drivers = []
-        # Check contradictions
-        contras = _map_contradictions(raw)
-        if contras:
-            drivers.append({"name": "Claim-Evidence Contradictions", "impact": "HIGH", "direction": "increases_risk", "shap_value": 15.0})
-        
-        # Check regulatory gaps
-        regs = _map_regulatory(raw)
-        if any(r.status == "NON-COMPLIANT" for r in regs):
-            drivers.append({"name": "Regulatory Alignment Gaps", "impact": "HIGH", "direction": "increases_risk", "shap_value": 12.0})
+    # Track which driver names came from real data so fallback inference
+    # doesn't double-add the same risk dimension.
+    seen_names = {str(d.get("name", "")).lower().strip() for d in drivers if isinstance(d, dict)}
 
-        # Check scope 3 disclosure
-        carb = _map_carbon(raw)
-        if carb.scope3 == 0 and carb.total > 0:
-            drivers.append({"name": "Scope 3 Disclosure Gap", "impact": "MEDIUM", "direction": "increases_risk", "shap_value": 8.0})
-            
-        # Check governance
-        pillars = raw.get("pillarfactors") or {}
-        gov = pillars.get("governance", {})
-        if isinstance(gov, dict) and _safe_float(gov.get("score"), 100) < 40:
-            drivers.append({"name": "Governance and Oversight Weakness", "impact": "MEDIUM", "direction": "increases_risk", "shap_value": 7.0})
-            
-        # Check validated targets (reduces risk)
-        if "validated" in carb.net_zero_target.lower() or "sbti" in carb.net_zero_target.lower():
-            drivers.append({"name": "Science-Based Target Validation", "impact": "MEDIUM", "direction": "reduces_risk", "shap_value": -5.0})
-            
-        # Check greenwashing
-        gw = _map_greenwashing(raw)
-        if gw.overall_score > 60:
-            drivers.append({"name": "Elevated Greenwashing Signals", "impact": "HIGH", "direction": "increases_risk", "shap_value": 10.0})
+    def _add_fallback(name: str, impact: str, direction: str, shap_value: float):
+        """Add an inferred driver only if no real driver already covers this dimension."""
+        if name.lower() in seen_names:
+            return
+        # Fuzzy collision check: if any real driver mentions a substantive token
+        # from this fallback name, treat as already-covered.
+        tokens = {t for t in re.findall(r"[a-z]{4,}", name.lower())}
+        for sn in seen_names:
+            if any(t in sn for t in tokens):
+                return
+        drivers.append({
+            "name": name,
+            "impact": impact,
+            "direction": direction,
+            "shap_value": shap_value,
+            "_inferred": True,  # mark as heuristic-derived, not from explainability agent
+        })
+        seen_names.add(name.lower())
+
+    # Step 2: fill gaps with inferred drivers — these are HEURISTIC fallbacks
+    # used only when the explainability agent didn't surface this dimension.
+    # The hardcoded SHAP magnitudes are illustrative weights, not real SHAP values.
+    contras = _map_contradictions(raw)
+    if contras:
+        _add_fallback("Claim-Evidence Contradictions", "HIGH", "increases_risk", 15.0)
+
+    regs = _map_regulatory(raw)
+    if any(r.status == "NON-COMPLIANT" for r in regs):
+        _add_fallback("Regulatory Alignment Gaps", "HIGH", "increases_risk", 12.0)
+
+    carb = _map_carbon(raw)
+    if carb.scope3 == 0 and carb.total > 0:
+        _add_fallback("Scope 3 Disclosure Gap", "MEDIUM", "increases_risk", 8.0)
+
+    pillars = raw.get("pillarfactors") or {}
+    gov = pillars.get("governance", {})
+    if isinstance(gov, dict) and _safe_float(gov.get("score"), 100) < 40:
+        _add_fallback("Governance and Oversight Weakness", "MEDIUM", "increases_risk", 7.0)
+
+    if "validated" in carb.net_zero_target.lower() or "sbti" in carb.net_zero_target.lower():
+        _add_fallback("Science-Based Target Validation", "MEDIUM", "reduces_risk", -5.0)
+
+    gw = _map_greenwashing(raw)
+    if gw.overall_score > 60:
+        _add_fallback("Elevated Greenwashing Signals", "HIGH", "increases_risk", 10.0)
 
     for d in drivers:
         if not isinstance(d, dict):
@@ -511,6 +548,31 @@ def map_report_to_schema(raw: Dict, report_id: str) -> ESGReport:
     ai_verdict = _map_verdict(raw)
     exec_summary = str(raw.get("executive_summary") or raw.get("summary") or ai_verdict[:500])
 
+    # ── New fields surfaced from session work (#2, #6, #12, #13) ──────────
+    # Pull the risk_scoring agent's output for kg_drift and fact_graph motifs.
+    _risk_scoring_kf = {}
+    _evidence_retrieval_kf = {}
+    for ar in (raw.get("agent_results") or []):
+        if not isinstance(ar, dict):
+            continue
+        if ar.get("agent") == "risk_scoring":
+            _risk_scoring_kf = ar.get("key_findings") or {}
+        elif ar.get("agent") == "evidence_retrieval":
+            _evidence_retrieval_kf = ar.get("key_findings") or {}
+
+    kg_drift_block = _risk_scoring_kf.get("kg_drift") if isinstance(_risk_scoring_kf, dict) else {}
+    if not isinstance(kg_drift_block, dict):
+        kg_drift_block = {}
+
+    fact_graph_block = _risk_scoring_kf.get("fact_graph") if isinstance(_risk_scoring_kf, dict) else {}
+    fact_graph_motifs_block = (fact_graph_block or {}).get("motifs", {}) if isinstance(fact_graph_block, dict) else {}
+    if not isinstance(fact_graph_motifs_block, dict):
+        fact_graph_motifs_block = {}
+
+    retriever_tally_block = _evidence_retrieval_kf.get("retriever_tally") if isinstance(_evidence_retrieval_kf, dict) else {}
+    if not isinstance(retriever_tally_block, dict):
+        retriever_tally_block = {}
+
     report = ESGReport(
         id=report_id,
         company=company,
@@ -540,6 +602,13 @@ def map_report_to_schema(raw: Dict, report_id: str) -> ESGReport:
         temporal_risk=temporal_risk,
         claim_trend=claim_trend,
         environmental_trend=env_trend,
+        # New fields ─────────────────────────────────────────────────────
+        quality_warnings=raw.get("quality_warnings") or [],
+        model_versions=raw.get("model_versions") or {},
+        calibration=raw.get("calibration") or {},
+        kg_drift=kg_drift_block,
+        fact_graph_motifs=fact_graph_motifs_block,
+        retriever_tally=retriever_tally_block,
     )
     
     from api.validation_layer import apply_final_validation

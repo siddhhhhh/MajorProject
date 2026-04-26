@@ -29,6 +29,11 @@ class CarbonData(BaseModel):
     data_quality: int = 0        # 0-100
     iea_nze_gap_pct: Optional[float] = None
     budget_years_remaining: Optional[float] = None
+    # Real annual reduction rates from carbon_pathway agent — None when the
+    # agent didn't compute them (frontend then falls back to its placeholder).
+    required_annual_rate: Optional[float] = None
+    company_implied_rate: Optional[float] = None
+    alignment_status: str = ""
 
     # Validation fields
     scope2_status: str = "UNKNOWN"
@@ -146,6 +151,20 @@ class ESGReport(BaseModel):
     # Validation fields
     contradiction_flag: bool = False
     validation_notes: List[str] = []
+
+    # ── New fields surfaced from session work (#2, #6, #12, #13) ──────────
+    # Honest quality warnings populated by ReportQualityChecker.
+    quality_warnings: List[str] = []
+    # Per-agent model provenance (provider:model_id per agent_name).
+    model_versions: Dict[str, Any] = {}
+    # Spearman calibration honesty: linguistic-stub vs unmeasured pipeline.
+    calibration: Dict[str, Any] = {}
+    # KG year-over-year drift signals (signal_count + per-metric deltas).
+    kg_drift: Dict[str, Any] = {}
+    # Fact-graph motif diagnostics (pillar coverage, contradiction density).
+    fact_graph_motifs: Dict[str, Any] = {}
+    # Per-retriever yield tally so silent-failure sources are visible.
+    retriever_tally: Dict[str, int] = {}
 
 
 # ── Request models ────────────────────────────────────────────────────────────

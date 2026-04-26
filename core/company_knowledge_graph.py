@@ -654,7 +654,41 @@ class CompanyKnowledgeGraph:
         path = out_dir / f"{_slugify(company)}_company_kg_payload.json"
         with path.open("w", encoding="utf-8") as f:
             json.dump(package, f, indent=2, ensure_ascii=False)
+        # Also append KPIs from this run to a per-company JSONL history so
+        # downstream agents can query year-over-year drift across runs.
+        # The main payload above OVERWRITES each run, which loses history;
+        # this JSONL is APPEND-ONLY for cross-run intelligence.
+        try:
+            self._append_kpi_history(package, company, out_dir)
+        except Exception as exc:
+            print(f"⚠️  KPI history append failed: {exc}")
         return str(path)
+
+    def _append_kpi_history(self, package: Dict[str, Any], company: str, out_dir: Path) -> None:
+        """Append this run's KPI snapshots to a per-company JSONL history file."""
+        kpi_entries = [
+            e for e in (package.get("entities") or [])
+            if isinstance(e, dict) and e.get("label") == "KPI"
+        ]
+        if not kpi_entries:
+            return
+        history_path = out_dir / f"{_slugify(company)}_kpi_history.jsonl"
+        run_ts = datetime.now(timezone.utc).isoformat()
+        with history_path.open("a", encoding="utf-8") as f:
+            for entry in kpi_entries:
+                props = entry.get("properties") or {}
+                row = {
+                    "run_ts": run_ts,
+                    "company": company,
+                    "node_key": entry.get("node_key"),
+                    "metric_name": props.get("name"),
+                    "value": props.get("value"),
+                    "unit": props.get("unit"),
+                    "year": props.get("year"),
+                    "source_tier": props.get("source_tier"),
+                    "source_type": props.get("source_type"),
+                }
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
     def _extract_graph_texts(self, state: Dict[str, Any]) -> List[Dict[str, Any]]:
         texts: List[Dict[str, Any]] = []
@@ -1073,6 +1107,26 @@ class CompanyKnowledgeGraph:
         driver = self._get_driver()
         if driver is None:
             status["status"] = "driver_unavailable"
+            status["neo4j_warning"] = "Neo4j driver could not be created; local payload still written."
+            return status
+
+        # Defense in depth: connection-establishment failures should NOT mark
+        # the agent FAILED, since the local JSON payload already persisted
+        # successfully and downstream consumers (drift queries, KG history
+        # section) read from that file. Only TRUE Cypher errors should bubble.
+        try:
+            driver.verify_connectivity()
+        except Exception as conn_exc:
+            try:
+                driver.close()
+            except Exception:
+                pass
+            status["status"] = "neo4j_unreachable"
+            status["neo4j_warning"] = (
+                f"Neo4j unreachable ({type(conn_exc).__name__}: {str(conn_exc)[:120]}); "
+                "local JSON payload still written and KG history features will work. "
+                "To enable Neo4j sync set NEO4J_URI/USERNAME/PASSWORD correctly."
+            )
             return status
 
         try:
@@ -1119,3 +1173,85 @@ class CompanyKnowledgeGraph:
             driver.close()
 
         return status
+
+
+def get_kpi_history(company: str, metric_name=None, exclude_run_ts=None):
+    """Return prior KPI snapshots for a company.
+
+    If metric_name is provided, filter to that metric. Sorted newest-first.
+    Pass `exclude_run_ts` to skip the current run's freshly-appended row when
+    computing drift.
+    """
+    history_path = Path("reports") / "company_kg" / f"{_slugify(company)}_kpi_history.jsonl"
+    if not history_path.exists():
+        return []
+    rows = []
+    try:
+        with history_path.open(encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                if metric_name and row.get("metric_name") != metric_name:
+                    continue
+                if exclude_run_ts and row.get("run_ts") == exclude_run_ts:
+                    continue
+                rows.append(row)
+    except Exception:
+        return []
+    rows.sort(key=lambda r: r.get("run_ts") or "", reverse=True)
+    return rows
+
+
+def compute_kpi_drift(company: str, metric_name: str, current_value):
+    """Compare a current KPI value against the most recent prior recorded
+    value in the per-company KPI history. Returns drift % and direction.
+
+    Direction: 'improved' / 'worsened' / 'stable' / 'no_history'.
+    For emissions/waste/fines, lower=improved; for renewable_pct etc.,
+    higher=improved (decided via the `lower_is_better` heuristic).
+    """
+    if current_value is None:
+        return {"direction": "no_history", "_note": "current value is None"}
+    history = get_kpi_history(company, metric_name=metric_name)
+    if not history:
+        return {"direction": "no_history", "_note": "no prior runs in KPI history"}
+    prior = None
+    for row in history:
+        if row.get("value") is not None:
+            prior = row
+            break
+    if prior is None:
+        return {"direction": "no_history", "_note": "no prior values found"}
+    try:
+        prior_v = float(prior.get("value"))
+    except Exception:
+        return {"direction": "no_history", "_note": "prior value not numeric"}
+    delta = float(current_value) - prior_v
+    delta_pct = (delta / prior_v * 100.0) if prior_v else None
+    lower_is_better = any(
+        tok in (metric_name or "").lower()
+        for tok in ("emissions", "co2", "ghg", "waste", "fines")
+    )
+    if abs(delta_pct or 0) < 1.0:
+        direction = "stable"
+    elif lower_is_better:
+        direction = "improved" if delta < 0 else "worsened"
+    else:
+        direction = "improved" if delta > 0 else "worsened"
+    return {
+        "metric_name": metric_name,
+        "current_value": float(current_value),
+        "prior_value": prior_v,
+        "prior_run_ts": prior.get("run_ts"),
+        "prior_year": prior.get("year"),
+        "delta_abs": round(delta, 4),
+        "delta_pct": round(delta_pct, 2) if delta_pct is not None else None,
+        "direction": direction,
+        "lower_is_better": lower_is_better,
+        "history_runs_seen": len(history),
+    }

@@ -220,29 +220,65 @@ class GovernanceAgent:
             soup = BeautifulSoup(resp.text[:600000], "html.parser")
             text = soup.get_text(" ", strip=True).lower()
 
+            # Board independence — number AFTER keyword OR number BEFORE keyword
+            board_independence_pct = (
+                self._first_percent(text, r"(?:board independence|independent directors|independent non-executive directors)[^\d]{0,40}(\d{1,3}(?:\.\d+)?)\s*%")
+                or self._first_percent(text, r"(\d{1,3}(?:\.\d+)?)\s*%\s{0,40}(?:of\s+(?:the\s+)?)?(?:board members|directors)\s{0,40}(?:are\s+)?independent")
+                or self._first_percent(text, r"(\d{1,2})\s+of\s+\d{1,2}\s+(?:directors|board members)\s{0,40}(?:are\s+)?independent")
+            )
+            # Board gender — bidirectional
+            board_gender_pct = (
+                self._first_percent(text, r"(?:board gender|women on board|female directors|women in the board)[^\d]{0,40}(\d{1,3}(?:\.\d+)?)\s*%")
+                or self._first_percent(text, r"(\d{1,3}(?:\.\d+)?)\s*%\s{0,40}(?:of\s+(?:the\s+)?)?(?:directors|board members)\s{0,40}(?:are\s+)?women")
+            )
+            # CEO-to-worker pay ratio — NUMBER:1 format, bidirectional
+            ceo_worker_pay_ratio = (
+                self._first_number(text, r"(?:ceo(?:-to-worker)?\s+pay\s+ratio|pay\s+ratio|ceo-to-median\s+worker)[^\d]{0,45}(\d{1,4}(?:\.\d+)?)")
+                or self._first_number(text, r"(\d{1,4}(?:\.\d+)?)\s*(?:to\s*1|:1|x)\s{0,30}(?:ceo\s+pay|pay\s+ratio|compensation\s+ratio)")
+                or self._first_number(text, r"ratio\s+of\s+(?:the\s+)?annual\s+total\s+compensation[^\d]{0,60}(\d{1,4}(?:\.\d+)?)\s*(?:to\s*1|:1)")
+            )
+            # LTI ESG % — bidirectional
+            lti_esg_pct = (
+                self._first_percent(text, r"(?:long[-\s]?term\s+incentive|lti|incentive\s+plan)[^\d]{0,40}(\d{1,3}(?:\.\d+)?)\s*%[^\n\r]{0,60}esg")
+                or self._first_percent(text, r"esg\s{0,40}(\d{1,3}(?:\.\d+)?)\s*%\s{0,40}(?:of\s+)?(?:lti|long[-\s]?term)")
+            )
+            # Board size
+            board_size = self._first_number(
+                text,
+                r"board\s+(?:consists?|comprises?)\s+of\s+(\d{1,2})\s+(?:directors|members)"
+            )
+            audit_committee_independence = (
+                "audit committee" in text and "100" in text and "independent" in text
+            )
             return {
-                "board_independence_pct": self._first_percent(text, r"(?:board independence|independent directors|independent non-executive directors)[^\d]{0,40}(\d{1,3}(?:\.\d+)?)\s*%"),
-                "board_gender_pct": self._first_percent(text, r"(?:board gender|women on board|female directors|women in the board)[^\d]{0,40}(\d{1,3}(?:\.\d+)?)\s*%"),
-                "ceo_worker_pay_ratio": self._first_number(text, r"(?:ceo(?:-to-worker)? pay ratio|pay ratio|ceo-to-median worker)[^\d]{0,45}(\d{1,4}(?:\.\d+)?)"),
-                "lti_esg_pct": self._first_percent(text, r"(?:long[- ]term incentive|lti|incentive plan)[^\d]{0,40}(\d{1,3}(?:\.\d+)?)\s*%[^\n\r]{0,60}esg"),
-                "board_size": self._first_number(text, r"board (?:consists|comprises) of (\d{1,2}) (?:directors|members)"),
-                "audit_committee_independence": "audit committee" in text and "100%" in text and "independent" in text,
+                "board_independence_pct": board_independence_pct,
+                "board_gender_pct": board_gender_pct,
+                "ceo_worker_pay_ratio": ceo_worker_pay_ratio,
+                "lti_esg_pct": lti_esg_pct,
+                "board_size": board_size,
+                "audit_committee_independence": audit_committee_independence,
             }
         except Exception:
             return {}
 
     def _extract_board_signals(self, combined_text: str, sec_proxy: Dict[str, Any]) -> Dict[str, Any]:
-        board_ind = self._first_percent(combined_text, r"(?:board independence|independent directors|independent non-executive directors|non-executive directors)[^\d]{0,40}(\d{1,3}(?:\.\d+)?)\s*%")
-        board_gender = self._first_percent(combined_text, r"(?:board gender|women on board|female directors)[^\d]{0,40}(\d{1,3}(?:\.\d+)?)\s*%")
+        board_ind = (
+            self._first_percent(combined_text, r"(?:board independence|independent directors|independent non-executive directors|non-executive directors)[^\d]{0,40}(\d{1,3}(?:\.\d+)?)\s*%")
+            or self._first_percent(combined_text, r"(\d{1,3}(?:\.\d+)?)\s*%\s{0,40}(?:of\s+(?:the\s+)?)?(?:board members|directors)\s{0,40}(?:are\s+)?independent")
+        )
+        board_gender = (
+            self._first_percent(combined_text, r"(?:board gender|women on board|female directors)[^\d]{0,40}(\d{1,3}(?:\.\d+)?)\s*%")
+            or self._first_percent(combined_text, r"(\d{1,3}(?:\.\d+)?)\s*%\s{0,30}women\s{0,30}(?:director|board)")
+        )
         tenure = self._first_number(combined_text, r"(?:director tenure|average tenure)[^\d]{0,30}(\d{1,2}(?:\.\d+)?)")
         interlocks = self._first_number(combined_text, r"serves on[^\d]{0,30}(\d{1,2}) boards")
 
         for filing in sec_proxy.get("filings", []):
             parsed = filing.get("parsed_metrics", {})
             if board_ind is None and parsed.get("board_independence_pct") is not None:
-                board_ind = parsed.get("board_independence_pct")
+                board_ind = parsed["board_independence_pct"]
             if board_gender is None and parsed.get("board_gender_pct") is not None:
-                board_gender = parsed.get("board_gender_pct")
+                board_gender = parsed["board_gender_pct"]
 
         return {
             "board_independence_pct": board_ind,
@@ -252,15 +288,21 @@ class GovernanceAgent:
         }
 
     def _extract_compensation_signals(self, combined_text: str, sec_proxy: Dict[str, Any]) -> Dict[str, Any]:
-        pay_ratio = self._first_number(combined_text, r"(?:ceo(?:-to-worker)? pay ratio|pay ratio)[^\d]{0,30}(\d{1,4}(?:\.\d+)?)")
-        lti_esg = self._first_percent(combined_text, r"(?:lti|long[- ]term incentive)[^\d]{0,35}(\d{1,3}(?:\.\d+)?)\s*%[^\n\r]{0,40}esg")
+        pay_ratio = (
+            self._first_number(combined_text, r"(?:ceo(?:-to-worker)?\s+pay\s+ratio|pay\s+ratio)[^\d]{0,30}(\d{1,4}(?:\.\d+)?)")
+            or self._first_number(combined_text, r"(\d{1,4}(?:\.\d+)?)\s*(?:to\s*1|:1)\s{0,30}(?:ceo\s+pay|compensation\s+ratio)")
+        )
+        lti_esg = (
+            self._first_percent(combined_text, r"(?:lti|long[-\s]?term\s+incentive)[^\d]{0,35}(\d{1,3}(?:\.\d+)?)\s*%[^\n\r]{0,40}esg")
+            or self._first_percent(combined_text, r"esg\s{0,40}(\d{1,3}(?:\.\d+)?)\s*%\s{0,40}lti")
+        )
 
         for filing in sec_proxy.get("filings", []):
             parsed = filing.get("parsed_metrics", {})
             if pay_ratio is None and parsed.get("ceo_worker_pay_ratio") is not None:
-                pay_ratio = parsed.get("ceo_worker_pay_ratio")
+                pay_ratio = parsed["ceo_worker_pay_ratio"]
             if lti_esg is None and parsed.get("lti_esg_pct") is not None:
-                lti_esg = parsed.get("lti_esg_pct")
+                lti_esg = parsed["lti_esg_pct"]
 
         return {
             "ceo_worker_pay_ratio": pay_ratio,
@@ -346,8 +388,11 @@ class GovernanceAgent:
         if not match:
             return None
         try:
-            return float(match.group(1))
-        except ValueError:
+            raw = match.group(1) if match.lastindex and match.lastindex >= 1 else match.group(0)
+            # Strip trailing non-numeric chars before float conversion
+            numeric = re.search(r"[\d]+\.?\d*", raw)
+            return float(numeric.group(0)) if numeric else None
+        except (ValueError, IndexError, AttributeError):
             return None
 
     def _first_number(self, text: str, pattern: str) -> Optional[float]:
@@ -355,8 +400,10 @@ class GovernanceAgent:
         if not match:
             return None
         try:
-            return float(match.group(1))
-        except ValueError:
+            raw = match.group(1) if match.lastindex and match.lastindex >= 1 else match.group(0)
+            numeric = re.search(r"[\d]+\.?\d*", raw)
+            return float(numeric.group(0)) if numeric else None
+        except (ValueError, IndexError, AttributeError):
             return None
 
     def _risk_level(self, score: float) -> str:

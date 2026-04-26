@@ -50,6 +50,9 @@ htmlcov/
 *.swo
 *~
 
+# Local AI tooling settings
+.claude/
+
 # Frontend & Node.js
 node_modules/
 dist/

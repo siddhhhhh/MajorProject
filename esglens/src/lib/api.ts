@@ -156,6 +156,12 @@ export interface CarbonData {
   data_quality: number;
   iea_nze_gap_pct?: number;
   budget_years_remaining?: number;
+  // Real reduction-rate fields from the carbon_pathway agent. When present,
+  // the frontend trajectory chart renders the actual rates instead of a
+  // hardcoded 12%/yr placeholder.
+  required_annual_rate?: number;
+  company_implied_rate?: number;
+  alignment_status?: string;
   scope2_status?: string;
   scope3_status?: string;
   target_status?: string;
@@ -244,6 +250,49 @@ export interface ESGReport {
   environmental_trend: string;
   contradiction_flag?: boolean;
   validation_notes?: string[];
+
+  // ── New fields surfaced from the v4 pipeline ─────────────────────────
+  // Honest quality warnings (calibration limitations, missing scope data, etc.).
+  quality_warnings?: string[];
+  // Per-agent model provenance, e.g. {"agent.supervisor": "groq:llama-3.3-70b-versatile"}.
+  model_versions?: Record<string, unknown>;
+  // Calibration block — includes pipeline_spearman_r (null until benchmarked)
+  // and linguistic_stub_spearman_r (the actual measured correlation).
+  calibration?: {
+    spearman_r?: number;
+    linguistic_stub_spearman_r?: number | null;
+    pipeline_spearman_r?: number | null;
+    calibration_methodology?: string;
+    optimal_threshold?: number;
+    dataset_size?: number;
+    calibration_status?: string;
+    [key: string]: unknown;
+  };
+  // KG year-over-year drift signals from prior runs.
+  kg_drift?: {
+    available?: boolean;
+    signal_count?: number;
+    signals?: Array<{
+      metric_name: string;
+      current_value: number;
+      prior_value: number;
+      prior_run_ts?: string;
+      delta_abs?: number;
+      delta_pct?: number;
+      direction: "improved" | "worsened" | "stable" | "no_history";
+      lower_is_better?: boolean;
+    }>;
+  };
+  // Fact-graph motif diagnostics: pillar coverage skew, contradiction density.
+  fact_graph_motifs?: {
+    pillar_coverage?: Record<string, number>;
+    pillar_coverage_skew?: number;
+    contradiction_density?: number;
+    graph_density?: number;
+    is_decision_ready?: boolean;
+  };
+  // Per-retriever yield tally — names silent-failure retrievers.
+  retriever_tally?: Record<string, number>;
 }
 
 export interface HistoryEntry {
