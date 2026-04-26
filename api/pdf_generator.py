@@ -168,9 +168,9 @@ def build_pdf(report: Dict[str, Any], raw: Dict[str, Any] = None) -> bytes:
     # === COVER ===
     s.append(Spacer(1,22*mm))
     s.append(Paragraph("ESG GREENWASHING", H1))
-    s.append(Paragraph("RISK ASSESSMENT", ParagraphStyle("c2",fontName="Helvetica-Bold",fontSize=26,textColor=TEAL,spaceAfter=5)))
+    s.append(Paragraph("RISK ASSESSMENT", ParagraphStyle("c2",fontName="Helvetica-Bold",fontSize=26,textColor=TEAL,spaceAfter=5,leading=32)))
     s.append(Spacer(1,5*mm))
-    s.append(Paragraph(co, ParagraphStyle("cn",fontName="Helvetica-Bold",fontSize=18,textColor=NAVY,spaceAfter=3)))
+    s.append(Paragraph(co, ParagraphStyle("cn",fontName="Helvetica-Bold",fontSize=18,textColor=NAVY,spaceAfter=3,leading=22)))
     s.append(Paragraph(f"Ticker: {tk} | Industry: {sec} | Version: 4.0", BD))
     s.append(Paragraph(f"Report ID: {rid}", MN))
     s.append(Paragraph(f"Date: {gd} | Confidence: {conf:.0f}%", BD))
@@ -221,6 +221,23 @@ def build_pdf(report: Dict[str, Any], raw: Dict[str, Any] = None) -> bytes:
         rows = [[str(i+1), e.get("source_name","")[:35], e.get("source_type",""), "Yes" if e.get("archive_verified") else "No", e.get("stance","")] for i,e in enumerate(evid[:15])]
         s.append(_tbl(["#","Source","Type","Verified","Role"], rows, [8*mm,75*mm,38*mm,18*mm,25*mm]))
 
+    pf = raw.get("pillarfactors") or {}
+    
+    # === MATERIALITY PROFILE ===
+    s += _sec("SECTION 5A: MATERIALITY PROFILE")
+    rs = _get_agent(raw, "risk_scoring")
+    mat = rs.get("pillarscores", {}).get("materiality_profile", {})
+    mw = mat.get("weights", {})
+    ind = mat.get("industry", sec)
+    s.append(Paragraph(f"This assessment uses an industry-specific materiality profile to weight Environmental, Social, and Governance pillars. For {ind}, the weighting reflects which factors most influence long-term value creation.", BD))
+    s.append(_kvtbl([
+        ["Industry profile", ind],
+        ["Environmental weight", f"{_sf(mw.get('E', 0.35))*100:.1f}%"],
+        ["Social weight", f"{_sf(mw.get('S', 0.30))*100:.1f}%"],
+        ["Governance weight", f"{_sf(mw.get('G', 0.35))*100:.1f}%"]
+    ]))
+    s.append(SP)
+
     # === SCORE DERIVATION ===
     s += _sec("SECTION 5: SCORE DERIVATION (E / S / G)")
     s.append(Paragraph(f"Overall greenwashing risk: {gw:.1f}/100 → Rating: {rating} → Band: {risk}", BD))
@@ -229,8 +246,6 @@ def build_pdf(report: Dict[str, Any], raw: Dict[str, Any] = None) -> bytes:
     s.append(Spacer(1, 4*mm))
     s.append(_bar_chart([env_p.get("score",0), soc_p.get("score",0), gov_p.get("score",0)], ["ENVIRONMENTAL", "SOCIAL", "GOVERNANCE"]))
     s.append(Spacer(1, 4*mm))
-
-    pf = raw.get("pillarfactors") or {}
     for pname, pkey, pillar in [("ENVIRONMENTAL", "environmental", env_p), ("SOCIAL", "social", soc_p), ("GOVERNANCE", "governance", gov_p)]:
         sc = pillar.get("score", 0) or 0
         level = "High" if sc >= 70 else "Moderate" if sc >= 40 else "Low"
@@ -255,6 +270,20 @@ def build_pdf(report: Dict[str, Any], raw: Dict[str, Any] = None) -> bytes:
         for a in adjs:
             s.append(Paragraph(f"  • {a.get('pillar','')}: {_sf(a.get('before',0)):.1f} → {_sf(a.get('after',0)):.1f} via WBA (weight={_sf(a.get('weight',0)):.2f})", BD))
 
+    # === SCORE COMPONENT BREAKDOWN ===
+    s += _sec("SECTION 5C: SCORE COMPONENT BREAKDOWN")
+    comp = rs.get("component_scores", {})
+    if comp:
+        rows = []
+        for k, v in comp.items():
+            name = k.replace("_", " ").title()
+            level = "High" if _sf(v) >= 70 else "Moderate" if _sf(v) >= 40 else "Low"
+            rows.append([name, f"{_sf(v):.1f}", level])
+        s.append(_tbl(["Driver", "Score (0-100)", "Reading"], rows, [80*mm, 40*mm, 40*mm]))
+    else:
+        s.append(Paragraph("No component score breakdown available.", BD))
+    s.append(SP)
+
     # === KEY RISK DRIVERS ===
     s += _sec("SECTION 6: KEY RISK DRIVERS")
     if drivers:
@@ -276,6 +305,28 @@ def build_pdf(report: Dict[str, Any], raw: Dict[str, Any] = None) -> bytes:
     if regs:
         rows = [[r.get("framework","")[:45], r.get("jurisdiction",""), r.get("status",""), f"{_sf(r.get('compliance_score',0)):.0f}/100"] for r in regs[:12]]
         s.append(_tbl(["Framework","Jurisdiction","Status","Score"], rows, [90*mm,28*mm,30*mm,22*mm]))
+
+    # === REGULATORY FRAMEWORK STATUS (FULL) ===
+    s += _sec("SECTION 7B: REGULATORY FRAMEWORK STATUS (FULL)")
+    reg_scan = _get_agent(raw, "regulatory_scanning")
+    fw_res = reg_scan.get("compliance_results", [])
+    if fw_res:
+        rows = [[r.get("regulation_name","")[:50], r.get("status","")] for r in fw_res[:10]]
+        s.append(_tbl(["Framework", "Status"], rows, [120*mm, 40*mm]))
+    else:
+        s.append(Paragraph("No regulatory framework data available.", BD))
+    s.append(SP)
+
+    # === ENFORCEMENT & FINES HISTORY ===
+    s += _sec("SECTION 7C: ENFORCEMENT & FINES HISTORY")
+    gov = _get_agent(raw, "governance_analysis")
+    fines = gov.get("signals", {}).get("regulatory_legal", {})
+    fc = fines.get("regulatory_fine_signals", 0)
+    s.append(Paragraph(f"Regulatory fine / enforcement signals detected: {fc}", BD))
+    sources = fines.get("sources", [])
+    for src in sources[:5]:
+        s.append(Paragraph(f"  • {src.get('title','')}", BD))
+    s.append(SP)
 
     # === CARBON EMISSIONS ===
     s += _sec("SECTION 8: CARBON EMISSIONS & CLIMATE DATA")
@@ -340,6 +391,15 @@ def build_pdf(report: Dict[str, Any], raw: Dict[str, Any] = None) -> bytes:
     cbrel = _sf(gw_d.get("climatebert_relevance",0))
     s.append(Paragraph(f"<b>ClimateBERT NLP:</b> Climate Relevance: {cbrel*100:.1f}% | Risk: {cbr}", BD))
 
+    # === RECENT NEWS & ACTIVE COVERAGE ===
+    s += _sec("SECTION 9B: RECENT NEWS & ACTIVE COVERAGE")
+    rt = _get_agent(raw, "realtime_monitoring")
+    arts = rt.get("articles", {}).get("_sample", [])
+    s.append(Paragraph(f"Articles surfaced: {len(arts)}", BD))
+    for a in arts[:5]:
+        s.append(Paragraph(f"  • [{a.get('source_type','Web')}] {a.get('title','')[:80]}", BD))
+    s.append(SP)
+
     # === CALIBRATION & CONFIDENCE ===
     s += _sec("SECTION 10: CALIBRATION & CONFIDENCE")
     cal = raw.get("calibration") or {}
@@ -353,6 +413,17 @@ def build_pdf(report: Dict[str, Any], raw: Dict[str, Any] = None) -> bytes:
         ["Agents Run", f"{report.get('agents_successful',0)}/{report.get('agents_total',0)}"],
         ["Duration", f"{report.get('pipeline_duration_seconds',0):.0f}s"],
     ]))
+
+    # === ADVERSARIAL AUDIT TRAIL ===
+    s += _sec("SECTION 10B: ADVERSARIAL AUDIT TRAIL")
+    adv_scores = (raw.get("scores", {})).get("adversarial_audit", {})
+    s.append(_kvtbl([
+        ["Agents executed", str(adv_scores.get("agents_seen", 30))],
+        ["Mean agent confidence", f"{_sf(adv_scores.get('mean_agent_confidence', 0.7)):.2f}"],
+        ["Confidence spread", f"{_sf(adv_scores.get('confidence_spread', 0)):.2f}"],
+        ["Coordination risk", f"{_sf(adv_scores.get('coordination_risk', 0)):.2f}"]
+    ]))
+    s.append(SP)
 
     # === LIMITATIONS ===
     s += _sec("SECTION 11: LIMITATIONS")
@@ -379,6 +450,17 @@ def build_pdf(report: Dict[str, Any], raw: Dict[str, Any] = None) -> bytes:
                 s.append(Paragraph(f"  • {pledge} — {status}", BD))
     else:
         s.append(Paragraph("No commitment timeline data available.", BD))
+
+    # === KNOWLEDGE GRAPH HISTORY ===
+    s += _sec("SECTION 11C: KNOWLEDGE GRAPH HISTORY")
+    fg = _get_agent(raw, "fact_graph_persistence")
+    nc = fg.get("node_count", 0)
+    ec = fg.get("edge_count", 0)
+    s.append(_kvtbl([
+        ["Fact Graph Node Count", str(nc)],
+        ["Fact Graph Edge Count", str(ec)],
+    ]))
+    s.append(SP)
 
     # === ESG MISMATCH ===
     s += _sec("SECTION 12: ESG MISMATCH DETECTOR")
