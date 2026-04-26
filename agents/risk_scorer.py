@@ -2957,7 +2957,7 @@ Industry:"""
         """
         try:
             # Extract ESG component scores (derived from components)
-            components = self._calculate_components(analyses)
+            components = self._calculate_components(analyses) or {}
 
             # Map component scores to E, S, G scores (invert since components are risk scores)
             # Higher component risk → Lower ESG score
@@ -2971,13 +2971,30 @@ Industry:"""
             soc_score = (sentiment + historical) / 2  # Social
             gov_score = credibility  # Governance
 
-            # Extract controversy level (from contradictions)
-            contradictions = analyses.get('contradiction_analysis', [])
-            controversy_count = sum(1 for c in contradictions if c.get('overall_verdict') == 'Contradicted')
+            # Extract controversy level (from contradictions). The contradiction
+            # analyzer can write either a list or a dict depending on path; tolerate both.
+            contradictions_raw = analyses.get('contradiction_analysis')
+            if isinstance(contradictions_raw, dict):
+                contradictions = (
+                    contradictions_raw.get('contradiction_list')
+                    or contradictions_raw.get('contradictions')
+                    or []
+                )
+            elif isinstance(contradictions_raw, list):
+                contradictions = contradictions_raw
+            else:
+                contradictions = []
+            controversy_count = sum(
+                1 for c in contradictions
+                if isinstance(c, dict) and c.get('overall_verdict') == 'Contradicted'
+            )
             highest_controversy = min(controversy_count, 5)
 
-            # Extract financial context (if available)
-            financial_ctx = analyses.get('financial_context', {})
+            # Extract financial context. `analyses.get('financial_context', {})` is
+            # NOT safe — if the key exists but the value is None (set by upstream),
+            # .get() returns None and the next .get() crashes. The `or {}` collapses
+            # both "missing" and "explicit None" to an empty dict.
+            financial_ctx = analyses.get('financial_context') or {}
             market_cap = financial_ctx.get('market_cap', 10_000_000_000)  # Default 10B
             beta = financial_ctx.get('beta', 1.0)  # Default market beta
 
