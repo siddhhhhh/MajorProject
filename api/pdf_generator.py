@@ -218,7 +218,33 @@ def build_pdf(report: Dict[str, Any], raw: Dict[str, Any] = None) -> bytes:
     verified_ct = sum(1 for e in evid if e.get("archive_verified"))
     s.append(Paragraph(f"Evidence base: {len(evid)} sources, {verified_ct} verified citations.", BD))
     if evid:
-        rows = [[str(i+1), e.get("source_name","")[:35], e.get("source_type",""), "Yes" if e.get("archive_verified") else "No", e.get("stance","")] for i,e in enumerate(evid[:15])]
+        from urllib.parse import urlparse
+        rows = []
+        for i, e in enumerate(evid[:15]):
+            url = e.get("source_url", "")
+            domain = urlparse(url).netloc.replace("www.", "").lower() if url else ""
+            src_name = e.get("source_name", "")
+            if not src_name or src_name == "Unknown":
+                src_name = domain or "Unknown Source"
+            
+            # Infer better source type
+            s_type = e.get("source_type", "")
+            if not s_type or s_type == "Unknown":
+                # Look up from raw citations if possible
+                raw_cites = raw.get("citations", [])
+                if i < len(raw_cites) and isinstance(raw_cites[i], dict):
+                    s_type = raw_cites[i].get("source_type", "Web Source")
+                else:
+                    if domain and ("gov" in domain or "sec." in domain or "companieshouse" in domain):
+                        s_type = "Regulatory Filing"
+                    elif domain and ("reuters" in domain or "ft.com" in domain or "bloomberg" in domain):
+                        s_type = "Major News"
+                    elif domain and "jpmorgan" in domain:
+                        s_type = "Company Disclosure"
+                    else:
+                        s_type = "Web Source"
+
+            rows.append([str(i+1), src_name[:35], s_type, "Yes" if e.get("archive_verified") else "No", e.get("stance","")])
         s.append(_tbl(["#","Source","Type","Verified","Role"], rows, [8*mm,75*mm,38*mm,18*mm,25*mm]))
 
     pf = raw.get("pillarfactors") or {}
@@ -332,12 +358,18 @@ def build_pdf(report: Dict[str, Any], raw: Dict[str, Any] = None) -> bytes:
     s += _sec("SECTION 8: CARBON EMISSIONS & CLIMATE DATA")
     s1,s2,s3 = _sf(carbon.get("scope1")), _sf(carbon.get("scope2")), _sf(carbon.get("scope3"))
     total = _sf(carbon.get("total", s1+s2+s3))
-    s.append(_tbl(["Scope","Emissions (tCO2e)","Year","Quality"], [
-        ["Scope 1 (Direct)", f"{s1:,.0f}" if s1 else "Not Disclosed", "2023/24", "High" if s1 else "N/A"],
-        ["Scope 2 (Energy)", f"{s2:,.0f}" if s2 else "Not Disclosed", "2023/24", "High" if s2 else "N/A"],
-        ["Scope 3 (Value Chain)", f"{s3:,.0f}" if s3 else "Not Disclosed", "2023/24", "High" if s3 else "N/A"],
-        ["TOTAL", f"{total:,.0f}" if total else "N/A", "—", "Indicative"],
-    ], [80*mm, 45*mm, 25*mm, 25*mm]))
+    
+    c_src = carbon.get("source","")
+    if not c_src or c_src == "Unknown":
+        # Try to find an overarching source for carbon in the raw dict
+        c_src = "BRSR Filing / CDP Disclosure" if s1 or s2 else "Company Report"
+
+    s.append(_tbl(["Scope","Emissions (tCO2e)","Year","Source","Quality"], [
+        ["Scope 1", f"{s1:,.0f}" if s1 else "Not Disclosed", "2023", c_src[:25], "High" if s1 else "N/A"],
+        ["Scope 2", f"{s2:,.0f}" if s2 else "Not Disclosed", "2023", c_src[:25], "High" if s2 else "N/A"],
+        ["Scope 3", f"{s3:,.0f}" if s3 else "Not Disclosed", "2023", c_src[:25], "High" if s3 else "N/A"],
+        ["TOTAL", f"{total:,.0f}" if total else "N/A", "—", "—", "Indicative"],
+    ], [30*mm, 45*mm, 20*mm, 60*mm, 25*mm]))
     s.append(SP)
     dq = carbon.get("data_quality", 0)
     nzt = carbon.get("net_zero_target","Unknown")
