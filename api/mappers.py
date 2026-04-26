@@ -146,6 +146,9 @@ def _map_carbon(raw: Dict) -> CarbonData:
     conf = _safe_float(adv.get("mean_agent_confidence", 0.7), 0.7)
     data_quality = _safe_int(carbon_data.get("data_quality")) if carbon_data.get("data_quality") else int(conf * 100)
 
+    scope2_status = carbon_data.get("corrected_scope2_status") or (carbon_data.get("emissions") or {}).get("scope2_status") or "UNKNOWN"
+    scope3_status = carbon_data.get("corrected_scope3_status") or (carbon_data.get("emissions") or {}).get("scope3_status") or "UNKNOWN"
+
     return CarbonData(
         scope1=scope1,
         scope2=scope2,
@@ -158,6 +161,8 @@ def _map_carbon(raw: Dict) -> CarbonData:
         required_annual_rate=required_rate,
         company_implied_rate=implied_rate,
         alignment_status=alignment_status,
+        scope2_status=scope2_status,
+        scope3_status=scope3_status,
     )
 
 
