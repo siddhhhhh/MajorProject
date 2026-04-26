@@ -260,41 +260,44 @@ def fetch_duckduckgo(query: str, cap: int = DUCKDUCKGO_FETCH_CAP) -> list[dict]:
 
 
 def fetch_reuters_rss(company: str, cap: int = REUTERS_RSS_FETCH_CAP) -> list[dict]:
-    """Fetches Reuters sustainability RSS entries relevant to company."""
-    rss_url = (
-        "https://www.reuters.com/arc/outboundfeeds/v1/rss/"
-        "?outputType=xml"
-        f"&size={cap}"
-        "&feedName=sustainability"
+    """Fetches Reuters sustainability coverage relevant to a company.
+
+    The original Reuters Arc outbound RSS endpoint
+    (`/arc/outboundfeeds/v1/rss/?feedName=sustainability`) returns HTTP 404
+    as of 2026 — Reuters retired the public Arc feed. Instead we query
+    Google News for Reuters-sourced articles about the company, which
+    surfaces the same editorial content with reliable availability.
+    """
+    company_q = (company or "").strip()
+    if not company_q:
+        return []
+    google_news_url = (
+        "https://news.google.com/rss/search"
+        f"?q={quote(company_q)}+ESG+OR+sustainability+OR+climate+site:reuters.com"
+        "&hl=en-US&gl=US&ceid=US:en"
     )
     try:
-        response = requests.get(rss_url, timeout=FULL_TEXT_TIMEOUT_SECS, headers={"User-Agent": "Mozilla/5.0"})
-        if response.status_code != 200:
-            return []
-        root = ET.fromstring(response.content)
-        company_lower = (company or "").lower()
+        import feedparser
+        feed = feedparser.parse(google_news_url)
         results = []
-        for item in root.findall(".//item"):
-            title = (item.findtext("title") or "").strip()
-            link = (item.findtext("link") or "").strip()
-            description = (item.findtext("description") or "").strip()
+        for entry in feed.entries[:cap]:
+            link = entry.get("link", "")
             if is_blocked(link):
                 continue
-            if company_lower and company_lower not in f"{title} {description}".lower():
-                continue
+            title = entry.get("title", "")
+            summary = (entry.get("summary", "") or "")[:300]
             results.append({
                 "title": title,
-                "snippet": description[:300],
+                "snippet": summary,
                 "url": link,
                 "source": "Reuters Sustainability",
-                "date": (item.findtext("pubDate") or "").strip(),
-                "data_source_api": "Reuters RSS",
+                "date": entry.get("published", ""),
+                "data_source_api": "Reuters (via Google News)",
+                "reliability_tier": "Tier-1 Financial Media",
             })
-            if len(results) >= cap:
-                break
-        return results
+        return results[:cap]
     except Exception as exc:
-        logger.warning("Reuters RSS fetch failed: %s", exc)
+        logger.warning("Reuters fetch (via Google News) failed: %s", exc)
         return []
 
 
@@ -328,6 +331,130 @@ def fetch_google_news_rss(company: str, cap: int = 10) -> list[dict]:
         return results
     except Exception as exc:
         logger.warning("Google News RSS fallback failed: %s", exc)
+        return []
+
+
+def fetch_sec_edgar(company: str, cap: int = 8) -> list[dict]:
+    """Fetch recent SEC EDGAR filings for the company via EDGAR full-text search.
+
+    Uses the official `efts.sec.gov/LATEST/search-index` endpoint (no API key
+    required, but requires a contact-bearing User-Agent). Returns the most
+    recent filings whose forms are ESG-relevant: 10-K, 10-Q, 8-K, DEF 14A,
+    SD (Specialised Disclosure / conflict minerals), 20-F, 40-F, 6-K.
+
+    Previously SEC filings only flowed into the governance pillar via
+    `agents/governance_agent.py`, never into the main evidence pool. The
+    earlier attempt at this used `cgi-bin/browse-edgar?company=…` which
+    returns a *list of matching companies*, NOT their filings — that's why
+    it always returned 0 even though SEC was reachable.
+    """
+    company_q = (company or "").strip()
+    if not company_q:
+        return []
+
+    headers = {
+        "User-Agent": "ESGLens Greenwashing Research research@esglens.example",
+        "Accept-Encoding": "gzip, deflate",
+        "Accept": "application/json",
+    }
+    # ESG-relevant forms only. SEC's search endpoint accepts comma-separated forms.
+    esg_forms = "10-K,10-Q,8-K,DEF 14A,SD,20-F,40-F,6-K"
+    # Bias toward recent filings (last ~3 years). efts sorts by relevance score
+    # by default; restricting to a recent date range surfaces material recent
+    # disclosures rather than 2004-era 8-Ks that scored high on text match.
+    from datetime import date, timedelta
+    end_dt = date.today().isoformat()
+    start_dt = (date.today() - timedelta(days=365 * 3)).isoformat()
+    params = {
+        "q": f'"{company_q}"',
+        "forms": esg_forms,
+        "dateRange": "custom",
+        "startdt": start_dt,
+        "enddt": end_dt,
+    }
+    try:
+        response = requests.get(
+            "https://efts.sec.gov/LATEST/search-index",
+            params=params,
+            headers=headers,
+            timeout=FULL_TEXT_TIMEOUT_SECS,
+        )
+        if response.status_code != 200:
+            logger.warning("SEC EDGAR returned HTTP %s for %s", response.status_code, company_q)
+            return []
+
+        payload = response.json()
+        hits = payload.get("hits", {}).get("hits", []) or []
+        results: list[dict] = []
+        seen_filings: set[tuple[str, str, str]] = set()  # (form, date, accession) — dedup multi-file filings
+
+        for hit in hits[:cap * 4]:  # over-fetch then filter; same filing recurs per attachment
+            src = hit.get("_source", {}) or {}
+            form_type = (src.get("form") or "").strip().upper()
+            file_date = (src.get("file_date") or "").strip()
+            description = (src.get("file_description") or form_type).strip()
+            display_names = src.get("display_names") or []
+            ciks = src.get("ciks") or []
+            adsh_and_file = (hit.get("_id") or "")  # e.g., "0000019617-24-000225:jpm-20231231.htm"
+
+            if not adsh_and_file or ":" not in adsh_and_file or not ciks:
+                continue
+
+            adsh, filename = adsh_and_file.split(":", 1)
+            cik_no_zeros = str(int(ciks[0]))  # strip leading zeros for the URL path
+            adsh_no_dashes = adsh.replace("-", "")
+            filing_url = (
+                f"https://www.sec.gov/Archives/edgar/data/"
+                f"{cik_no_zeros}/{adsh_no_dashes}/{filename}"
+            )
+            if is_blocked(filing_url):
+                continue
+
+            primary_name = display_names[0] if display_names else company_q
+            title = f"{form_type} — {primary_name}"
+
+            # Confirm the filing actually belongs to the company we asked for
+            # (efts full-text search matches *any* filing that mentions the
+            # company, including ones where it's just named as a banker/lender).
+            # Normalise both sides — collapse to alphanumerics — so EDGAR
+            # display variants like "J P MORGAN CHASE & CO" still match
+            # "JPMorgan Chase".
+            def _norm(s: str) -> str:
+                return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+            company_norm = _norm(company_q)
+            display_blob_norm = _norm(" ".join(display_names))
+            if company_norm and company_norm not in display_blob_norm:
+                continue
+
+            # Dedup: efts returns one hit per attachment (e.g., a 10-K with 30
+            # exhibits returns 30 hits with the same accession number). We only
+            # want one row per filing.
+            dedup_key = (form_type, file_date, adsh)
+            if dedup_key in seen_filings:
+                continue
+            seen_filings.add(dedup_key)
+
+            results.append({
+                "source_name": "SEC EDGAR",
+                "source": "SEC EDGAR",
+                "url": filing_url,
+                "title": title,
+                "snippet": f"{form_type} filed {file_date}: {description}"[:300],
+                "date": file_date,
+                "data_source_api": "SEC EDGAR full-text search",
+                "reliability_tier": "Government/Regulatory",
+                "source_type": "Government/Regulatory",
+                "form_type": form_type,
+                "stance": "Neutral",
+            })
+            if len(results) >= cap:
+                break
+        return results
+    except ValueError as exc:
+        logger.warning("SEC EDGAR JSON parse failed for %s: %s", company_q, exc)
+        return []
+    except Exception as exc:
+        logger.warning("SEC EDGAR fetch failed for %s: %s", company_q, exc)
         return []
 
 
@@ -1154,6 +1281,11 @@ class EvidenceRetriever:
             # Google News coverage despite the source being available.
             raw += _try_sync("google_news",  fetch_google_news_rss, company, cap=10)
 
+            # SEC EDGAR — government regulatory filings (10-K, 10-Q, 8-K, DEF 14A, SD).
+            # Free atom feed, no API key needed. Previously SEC was only used by
+            # the governance pillar; now its filings join the main evidence pool.
+            raw += _try_sync("sec_edgar",    fetch_sec_edgar, company, cap=8)
+
             # Always invoke Google Scholar for ESG claims (was gated on the
             # claim containing "research/study/report/data"). Net-zero,
             # decarbonisation and similar claims are research-grade and benefit
@@ -1477,58 +1609,168 @@ class EvidenceRetriever:
 
     def _filter_relevant_evidence(self, evidence: List[Dict], company: str, claim_text: str) -> List[Dict]:
         """
-        Filter evidence to ensure relevance to company and claim
+        Filter evidence to ensure relevance to company and claim.
+
         Removes cached cross-contamination (e.g., Apple results for BP query)
+        without false-positive-rejecting items that just *contain* common
+        words like "target", "gm", or domain artefacts like "google.com" in
+        their aggregator URLs.
+
+        Match strategy:
+          - Title + snippet are scanned for the target company AND any
+            sensible auto-generated aliases ("JPMorgan Chase" → "JPMorgan",
+            "JP Morgan", "JPMorganChase", "JPM" if short enough).
+          - The URL is intentionally NOT scanned for the wrong-company check,
+            because Google News, Yahoo, and CDN URLs constantly contain
+            "google.com" / "yahoo.com" without being about Google or Yahoo.
+          - Wrong-company patterns require corporate-context anchors
+            (Inc, Corp, plc, …) to avoid matching common nouns.
         """
         filtered = []
-        company_lower = company.lower()
         claim_keywords = set(claim_text.lower().split())
-        
-        # Common company names to detect wrong results
-        company_indicators = {
-            'apple', 'tesla', 'microsoft', 'google', 'amazon', 'meta', 'facebook',
-            'shell', 'exxon', 'chevron', 'bp', 'totalenergies', 'conocophillips',
-            'coca-cola', 'pepsi', 'nestle', 'unilever', 'nike', 'adidas', 'puma',
-            'walmart', 'target', 'costco', 'ford', 'gm', 'volkswagen', 'toyota'
-        }
-        
+
+        target_patterns = self._build_target_patterns(company)
+
+        # Wrong-company patterns. Each entry is (display_name, regex). Patterns
+        # require corporate-suffix anchors so common words don't trigger.
+        wrong_company_patterns: List[tuple[str, "re.Pattern[str]"]] = [
+            ("Apple",         re.compile(r"\bapple\s+(inc|corp|corporation|computer)\b")),
+            ("Tesla",         re.compile(r"\btesla\s+(inc|motors|corp)\b")),
+            ("Microsoft",     re.compile(r"\bmicrosoft\s+(corp|corporation|inc)\b")),
+            ("Google",        re.compile(r"\bgoogle\s+(llc|inc)\b|\balphabet\s+inc\b")),
+            ("Amazon",        re.compile(r"\bamazon\s+(inc|com|web\s+services|aws)\b|\bamazon\.com\s+inc\b")),
+            ("Meta",          re.compile(r"\bmeta\s+(platforms|inc)\b|\bfacebook\s+(inc|llc)\b")),
+            ("Shell",         re.compile(r"\bshell\s+(plc|oil|usa|chemical|trading)\b|\broyal\s+dutch\s+shell\b")),
+            ("ExxonMobil",    re.compile(r"\bexxon(mobil)?\s+(corp|corporation)\b|\bexxonmobil\b")),
+            ("Chevron",       re.compile(r"\bchevron\s+(corp|corporation|usa)\b")),
+            ("BP",            re.compile(r"\bbp\s+(plc|p\.l\.c\.|oil|america|amoco)\b|\bbritish\s+petroleum\b")),
+            ("TotalEnergies", re.compile(r"\btotal\s*energies\b|\btotalenergies\b")),
+            ("ConocoPhillips",re.compile(r"\bconocophillips\b")),
+            ("Coca-Cola",     re.compile(r"\bcoca[-\s]?cola\s+(co|company)\b")),
+            ("Pepsi",         re.compile(r"\bpepsico\b|\bpepsi\s+(co|cola)\b")),
+            ("Nestle",        re.compile(r"\bnestl[eé]\s+(s\.a\.|sa|inc)\b")),
+            ("Unilever",      re.compile(r"\bunilever\s+(plc|nv|inc)\b")),
+            ("Nike",          re.compile(r"\bnike\s+(inc|corp)\b")),
+            ("Adidas",        re.compile(r"\badidas\s+(ag|group)\b")),
+            ("Puma",          re.compile(r"\bpuma\s+(se|ag)\b")),
+            ("Walmart",       re.compile(r"\bwalmart\s+(inc|stores)\b|\bwal-mart\b")),
+            ("Target Corp",   re.compile(r"\btarget\s+(corp|corporation|stores)\b")),
+            ("Costco",        re.compile(r"\bcostco\s+(wholesale|inc)\b")),
+            ("Ford",          re.compile(r"\bford\s+(motor|motors|inc)\b")),
+            ("GM",            re.compile(r"\bgeneral\s+motors\b|\bgm\s+(co|corp|company)\b")),
+            ("Volkswagen",    re.compile(r"\bvolkswagen\s+(ag|group)\b|\bvw\s+(ag|group)\b")),
+            ("Toyota",        re.compile(r"\btoyota\s+(motor|motors|corp)\b")),
+            ("JPMorgan Chase",re.compile(r"\bjpmorgan\s+chase\b|\bjp\s*morgan\s+chase\b|\bj\.p\.\s+morgan\s+chase\b")),
+            ("Wells Fargo",   re.compile(r"\bwells\s+fargo\b")),
+            ("HSBC",          re.compile(r"\bhsbc\s+(holdings|bank|plc)\b")),
+            ("Goldman Sachs", re.compile(r"\bgoldman\s+sachs\b")),
+            ("Citi",          re.compile(r"\bcitigroup\b|\bciti\s+(bank|group)\b")),
+        ]
+        # Don't reject items that name the target company, even when its name
+        # also matches one of the wrong-company patterns (e.g. analyzing BP,
+        # don't strip "BP plc" mentions).
+        wrong_company_patterns = [
+            (name, pat) for name, pat in wrong_company_patterns
+            if not any(p.search(name.lower()) for p in target_patterns)
+        ]
+
         for item in evidence:
-            # Check if company name appears in title or snippet
             title = item.get('title', '').lower()
             snippet = item.get('snippet', '').lower()
             url = item.get('url', '').lower()
+            # Content-only blob for company-identity checks (URL is too noisy
+            # — news.google.com, finance.yahoo.com, etc. would always trigger).
+            content_blob = f"{title} {snippet}"
+            # Combined including URL only used for claim-keyword relevance.
             combined_text = f"{title} {snippet} {url}"
-            
-            # Must mention the company
-            mentions_company = company_lower in combined_text
-            
-            # Or mentions key claim concepts (at least 2 keywords)
+
+            # Target match in content (alias-aware, word-boundary)
+            mentions_company = any(p.search(content_blob) for p in target_patterns)
+
+            # Claim concept relevance (loose substring across content + URL)
             claim_relevance_score = sum(
-                1 for kw in claim_keywords 
+                1 for kw in claim_keywords
                 if kw in combined_text and len(kw) > 3
             )
-            
-            # Check if it's about a DIFFERENT company
+
+            # Wrong-company only kicks in if the OTHER company is mentioned MORE
+            # times in CONTENT than the target. The url is excluded from this
+            # count so news.google.com URLs don't flag every item as Google.
             wrong_company = None
-            for other_company in company_indicators:
-                if other_company != company_lower and other_company in combined_text:
-                    # If the other company is mentioned MORE than target company
-                    other_count = combined_text.count(other_company)
-                    target_count = combined_text.count(company_lower)
-                    
-                    if other_count > target_count:
-                        wrong_company = other_company
-                        break
-            
-            # Include if:
-            # 1. Mentions target company, OR
-            # 2. Has high claim relevance (3+ keywords) AND no wrong company detected
+            target_count = sum(len(p.findall(content_blob)) for p in target_patterns)
+            for other_name, other_pat in wrong_company_patterns:
+                other_hits = other_pat.findall(content_blob)
+                if other_hits and len(other_hits) > target_count:
+                    wrong_company = other_name
+                    break
+
             if mentions_company or (claim_relevance_score >= 3 and not wrong_company):
                 filtered.append(item)
             elif wrong_company:
-                print(f"      ⏭️  Filtered: '{item.get('title', 'Unknown')[:60]}...' (mentions {wrong_company.title()}, not {company})")
-        
+                print(f"      ⏭️  Filtered: '{item.get('title', 'Unknown')[:60]}...' (mentions {wrong_company}, not {company})")
+
         return filtered
+
+    @staticmethod
+    def _build_target_patterns(company: str) -> "List[re.Pattern[str]]":
+        """Generate word-boundary regex patterns for the target company plus
+        sensible automatic aliases.
+
+        Examples:
+          "JPMorgan Chase"  → patterns for "jpmorgan chase", "jpmorgan",
+                              "jp morgan", "jpmorganchase", "jpm chase"
+          "Apple Inc."      → patterns for "apple inc", "apple"
+          "BP"              → patterns for just "bp" (too short to alias safely)
+
+        For names <= 3 chars (BP, GM, etc.) we do NOT generate single-token
+        aliases automatically — those would over-match — but the input itself
+        is still respected.
+        """
+        if not company:
+            return []
+        base = company.strip().lower()
+        aliases = {base}
+
+        # Strip common corporate suffixes for an unsuffixed alias
+        unsuffixed = re.sub(r"\s+(inc|corp|corporation|plc|p\.l\.c\.|ltd|limited|llc|sa|s\.a\.|ag|nv|n\.v\.|holdings?|group|co|company)\.?$", "", base).strip()
+        if unsuffixed and unsuffixed != base and len(unsuffixed) >= 4:
+            aliases.add(unsuffixed)
+
+        # Insert spaces around common camelCase / merged tokens. We do TWO
+        # passes:
+        #   1. lowercase→uppercase boundary: "JPMorganChase" → "JPMorgan Chase"
+        #   2. consecutive-uppercase→lowercase boundary: "JPMorgan" → "JP Morgan"
+        # Together these turn "JPMorganChase" into "JP Morgan Chase".
+        spaced = re.sub(r"([a-z])([A-Z])", r"\1 \2", company)        # JPMorganChase → JPMorgan Chase
+        spaced = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1 \2", spaced)   # JPMorgan      → JP Morgan
+        spaced = spaced.lower()
+        if spaced != base and len(spaced) >= 4:
+            aliases.add(spaced)
+            # Also add a no-spaces variant of the spaced form: "jp morgan chase" → "jpmorganchase"
+            no_space_spaced = re.sub(r"\s+", "", spaced)
+            if len(no_space_spaced) >= 4:
+                aliases.add(no_space_spaced)
+
+        # First-token alias if the original is multi-word and the first token
+        # is distinctive (≥4 chars, not a stopword). Also generate the
+        # camelCase-spaced version of the first token, so "JPMorgan Chase"
+        # → "JPMorgan" → "JP Morgan".
+        first_token_orig = company.split()[0] if " " in company else None
+        if first_token_orig:
+            ft_lower = first_token_orig.lower()
+            if len(ft_lower) >= 4 and ft_lower not in {"the", "saint"}:
+                aliases.add(ft_lower)
+            ft_spaced = re.sub(r"([a-z])([A-Z])", r"\1 \2", first_token_orig)
+            ft_spaced = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1 \2", ft_spaced).lower()
+            if ft_spaced != ft_lower and len(ft_spaced) >= 4:
+                aliases.add(ft_spaced)
+
+        # Also try the no-spaces variant (handle "JP Morgan Chase" → "jpmorganchase")
+        no_spaces = re.sub(r"\s+", "", base)
+        if no_spaces != base and len(no_spaces) >= 4:
+            aliases.add(no_spaces)
+
+        return [re.compile(rf"\b{re.escape(a)}\b") for a in aliases if a and len(a) >= 2]
 
     @staticmethod
     def _is_blocklisted(url: str, source: str = "", source_name: str = "", domain: str = "", title: str = "") -> bool:

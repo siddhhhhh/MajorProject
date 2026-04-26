@@ -205,12 +205,23 @@ def fetch_archive_today(url: str, target_year: int | None = None) -> str | None:
     return None
 
 
+# Module-level circuit breaker for Memento. The aggregator endpoint
+# (timetravel.mementoweb.org) frequently fails to resolve from constrained
+# environments; once we've seen it fail we skip subsequent calls for the rest
+# of the process to avoid burning ~15s per invocation across many URLs.
+_MEMENTO_DISABLED = False
+_MEMENTO_DISABLED_REASON: str | None = None
+
+
 def fetch_memento(url: str, target_year: int) -> str | None:
     """Query the Memento Time Travel aggregator API.
 
     The `Memento Time Travel API <https://timetravel.mementoweb.org/>`_
     aggregates results from the Internet Archive, Archive-It, UK Web
     Archive, Library of Congress, and dozens of other archives.
+
+    A process-level circuit breaker disables further calls after the first
+    DNS / connection failure to avoid repeated 15s timeouts.
 
     Parameters
     ----------
@@ -224,6 +235,13 @@ def fetch_memento(url: str, target_year: int) -> str | None:
     str | None
         URI of the closest memento, or ``None`` if nothing found.
     """
+    global _MEMENTO_DISABLED, _MEMENTO_DISABLED_REASON
+
+    if _MEMENTO_DISABLED:
+        # Skip silently after first failure — Wayback + Archive.today still cover
+        # the same use case via the cascade in `get_historical_snapshot`.
+        return None
+
     # Memento API expects datetime in YYYYMMDDhhmmss format
     datetime_str = f"{target_year}0101000000"
     api_url = (
@@ -251,7 +269,17 @@ def fetch_memento(url: str, target_year: int) -> str | None:
         logger.info("Memento: no mementos found for %s near %d", url, target_year)
         return None
     except requests.exceptions.Timeout:
-        logger.warning("Memento: request timed out for %s", url)
+        _MEMENTO_DISABLED = True
+        _MEMENTO_DISABLED_REASON = "timeout"
+        logger.warning("Memento: request timed out for %s — disabling for rest of process", url)
+        return None
+    except requests.exceptions.ConnectionError as exc:
+        _MEMENTO_DISABLED = True
+        _MEMENTO_DISABLED_REASON = f"connection_error: {exc}"
+        logger.warning(
+            "Memento: connection error for %s — disabling for rest of process (%s)",
+            url, exc,
+        )
         return None
     except requests.exceptions.RequestException as exc:
         logger.warning("Memento: request failed for %s — %s", url, exc)

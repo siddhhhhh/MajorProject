@@ -38,6 +38,10 @@ htmlcov/
 *_IMPLEMENTATION*.md
 *_GUIDE*.md
 *_COMPLETE*.md
+!PROJECT_GUIDE.md
+
+# Local speech draft
+speech.md
 
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints/
