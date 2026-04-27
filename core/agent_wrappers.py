@@ -759,7 +759,9 @@ def carbon_extraction_node(state: ESGState) -> ESGState:
             print(f"   Scope 1 (Direct): {scope1.get('value', 'N/A')} tCO2e")
             print(f"   Scope 2 (Energy): {scope2.get('value', 'N/A')} tCO2e")
             print(f"   Scope 3 (Value Chain): {scope3.get('total', scope3.get('value', 'N/A'))} tCO2e")
-            print(f"   Total: {emissions.get('total', {}).get('all_scopes', 'N/A')} tCO2e")
+            total_obj = emissions.get('total') or {}
+            total_val = total_obj.get('all_scopes', 'N/A') if isinstance(total_obj, dict) else str(total_obj)
+            print(f"   Total: {total_val} tCO2e")
             print(f"   Carbon Intensity: {result.get('intensity_metrics', {}).get('total_emissions_tco2e', 'N/A')}")
             print(f"   Net Zero Target: {result.get('net_zero_target', 'N/A')}")
             print(f"   Data Quality: {result.get('data_quality', 'N/A')}")

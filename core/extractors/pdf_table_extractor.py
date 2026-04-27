@@ -24,6 +24,8 @@ from typing import Any
 
 import camelot
 import fitz  # PyMuPDF
+import tempfile
+import os
 
 logger = logging.getLogger(__name__)
 logging.getLogger("pypdf").setLevel(logging.ERROR)
@@ -117,6 +119,25 @@ def _table_has_carbon_data(table: Any) -> bool:
         logger.exception("Error inspecting table for carbon keywords")
         return False
 
+def _sanitize_pdf_for_extraction(pdf_path: str) -> str:
+    """Removes malformed widget annotations that break Ghostscript and PyPDF."""
+    try:
+        doc = fitz.open(pdf_path)
+        for page in doc:
+            for annot in page.annots():
+                page.delete_annot(annot)
+        
+        fd, temp_path = tempfile.mkstemp(suffix=".pdf", prefix="sanitized_")
+        os.close(fd)
+        
+        # garbage=3 and clean=True rewrites the cross-reference tables fixing pointers
+        doc.save(temp_path, garbage=3, clean=True)
+        doc.close()
+        return temp_path
+    except Exception as e:
+        logger.warning("PDF sanitization failed, proceeding with original: %s", e)
+        return pdf_path
+
 
 # ===================================================================
 # Public API
@@ -147,15 +168,17 @@ def extract_carbon_tables(pdf_path: str) -> list[dict]:
         - ``dataframe`` : pandas.DataFrame — the table data
         - ``raw_text``  : str — flattened cell text for downstream regex
     """
-    pdf_path_str = str(Path(pdf_path).resolve())
-    carbon_pages = _find_carbon_pages(pdf_path_str)
+    original_pdf_path_str = str(Path(pdf_path).resolve())
+    carbon_pages = _find_carbon_pages(original_pdf_path_str)
 
     if not carbon_pages:
         logger.warning(
             "No carbon-relevant pages found in %s — returning empty.",
-            pdf_path_str,
+            original_pdf_path_str,
         )
         return []
+        
+    pdf_path_str = _sanitize_pdf_for_extraction(original_pdf_path_str)
 
     pages_str = ",".join(str(p) for p in carbon_pages)
     results: list[dict] = []
@@ -254,8 +277,15 @@ def extract_carbon_tables(pdf_path: str) -> list[dict]:
                 )
 
     logger.info(
-        "Total carbon tables extracted from %s: %d", pdf_path_str, len(results),
+        "Total carbon tables extracted from %s: %d", original_pdf_path_str, len(results),
     )
+    
+    if pdf_path_str != original_pdf_path_str:
+        try:
+            os.remove(pdf_path_str)
+        except Exception:
+            pass
+            
     return results
 
 
