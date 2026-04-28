@@ -17,40 +17,58 @@ def apply_final_validation(report: ESGReport, raw: Dict[str, Any]) -> ESGReport:
     # ========================================
     # SECTION 1: CARBON DATA VALIDATION
     # ========================================
-    
+    if not hasattr(report, 'validation_notes') or report.validation_notes is None:
+        report.validation_notes = []
+
     # --- Scope 2 ---
-    has_market = "market-based" in all_evidence_text
-    has_location = "location-based" in all_evidence_text
-    has_purchased = "purchased electricity" in all_evidence_text
+    has_market = "market-based" in all_evidence_text or "market" in all_evidence_text
+    has_location = "location-based" in all_evidence_text or "location" in all_evidence_text
     
-    if has_market or has_location or has_purchased:
-        if has_market and has_location:
-            report.carbon.scope2_status = "FULL"
-        else:
-            report.carbon.scope2_status = "PARTIAL"
+    if (has_market and not has_location) or (has_location and not has_market) or report.carbon.scope2_status == "PARTIAL":
+        report.carbon.scope2_status = "PARTIAL"
+        report.validation_notes.append("ERROR: Scope 2 improperly aggregated")
+        modified = True
+    elif has_market and has_location:
+        report.carbon.scope2_status = "FULL"
         modified = True
     elif report.carbon.scope2 > 0:
-        # NEVER allow Scope 2 = NULL if any evidence exists anywhere (represented by > 0 in parsed data)
-        report.carbon.scope2_status = "DISCLOSED"
+        report.carbon.scope2_status = "PARTIAL"
+        report.validation_notes.append("ERROR: Scope 2 improperly aggregated")
+        modified = True
+    elif report.carbon.scope2 == 0.0:
+        report.validation_notes.append("WARNING: Scope 2 May exist elsewhere in report")
         modified = True
 
     # --- Scope 3 ---
     has_financed = "financed emissions" in all_evidence_text
-    has_sector_data = any(x in all_evidence_text for x in ["oil", "gas", "power", "aviation", "auto"])
+    has_sector_data = any(x in all_evidence_text for x in ["oil", "gas", "power", "aviation", "auto", "selected categories"])
     is_explicitly_total = "total scope 3" in all_evidence_text or "aggregated across value chain" in all_evidence_text
     
-    if has_financed or has_sector_data:
+    if has_financed or has_sector_data or report.carbon.scope3_status == "PARTIAL":
         report.carbon.scope3_status = "PARTIAL"
+        report.validation_notes.append("ERROR: Scope 3 is partial, not total")
         modified = True
         
-    if is_explicitly_total:
+    if is_explicitly_total and report.carbon.scope3_status != "PARTIAL":
         report.carbon.scope3_status = "FULL"
         modified = True
         
-    # Sanity Check
+    # Sanity Check (CRITICAL)
     s12 = report.carbon.scope1 + report.carbon.scope2
     if s12 > 0 and report.carbon.scope3 > (100 * s12) and not is_explicitly_total:
         report.carbon.scope3_status = "PARTIAL"
+        report.validation_notes.append("WARNING: Disproportionate Scope 3 likely partial")
+        modified = True
+
+    # Invalid Total Emissions Calculation
+    if report.carbon.scope3_status == "PARTIAL":
+        report.carbon.total = 0.0
+        report.validation_notes.append("ERROR: Invalid total due to incomplete Scope 3")
+        modified = True
+
+    # Missing Scope Check
+    if report.carbon.scope1 == 0.0:
+        report.validation_notes.append("WARNING: Scope 1 May exist elsewhere in report")
         modified = True
 
     # ========================================

@@ -614,6 +614,10 @@ class ReportParserService:
         return all_chunks
     
     def _extract_text_from_pdf(self, local_path: str) -> str:
+        import os
+        from core.extractors.pdf_table_extractor import _sanitize_pdf_for_extraction
+        original_local_path = local_path
+        local_path = _sanitize_pdf_for_extraction(local_path)
         """
         Extract text from PDF file
         Tries pdfplumber first, then PyPDF2 as fallback
@@ -656,6 +660,12 @@ class ReportParserService:
                 table_text = self._extract_tables_with_camelot(local_path)
                 if table_text:
                     combined_text += table_text
+                    
+                if local_path != original_local_path:
+                    try:
+                        import os; os.remove(local_path)
+                    except Exception:
+                        pass
                 return combined_text
                 
             except Exception as e:
@@ -700,13 +710,31 @@ class ReportParserService:
                 table_text = self._extract_tables_with_camelot(local_path)
                 if table_text:
                     combined_text += table_text
+                    
+                if local_path != original_local_path:
+                    try:
+                        import os; os.remove(local_path)
+                    except Exception:
+                        pass
                 return combined_text
                 
             except Exception as e:
                 print(f"         ❌ pypdf extraction also failed: {e}")
+                
+                if local_path != original_local_path:
+                    try:
+                        import os; os.remove(local_path)
+                    except Exception:
+                        pass
                 return ""
         
         print(f"         ❌ No PDF library available")
+        
+        if local_path != original_local_path:
+            try:
+                import os; os.remove(local_path)
+            except Exception:
+                pass
         return ""
         
     def _extract_tables_with_camelot(self, local_path: str) -> str:
@@ -1290,6 +1318,10 @@ class ReportParserService:
             return self._extract_tables_with_pymupdf(local_path, page_number)
 
         import os
+        from core.extractors.pdf_table_extractor import _sanitize_pdf_for_extraction
+        
+        original_local_path = local_path
+        local_path = _sanitize_pdf_for_extraction(local_path)
 
         pages = str(page_number) if page_number else "all"
         markdown_tables: List[str] = []
@@ -1323,11 +1355,17 @@ class ReportParserService:
                 os.environ.pop("TMP", None)
             else:
                 os.environ["TMP"] = previous_tmp
+                
+            if local_path != original_local_path:
+                try:
+                    os.remove(local_path)
+                except Exception:
+                    pass
 
         if markdown_tables:
             return "\n".join(markdown_tables)
 
-        return self._extract_tables_with_pymupdf(local_path, page_number)
+        return self._extract_tables_with_pymupdf(original_local_path, page_number)
 
     def _extract_tables_with_pymupdf(self, local_path: str, page_number: Optional[int] = None) -> str:
         """Fallback table extraction when Camelot cannot complete on Windows temp files."""

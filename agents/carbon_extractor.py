@@ -1062,6 +1062,8 @@ class CarbonExtractor:
             or "Not declared in available evidence"
         )
 
+        result = self._audit_emissions_data(result)
+
         print(f"\n✅ Carbon extraction complete:")
         print(f"   Scope 1: {result['emissions']['scope1'].get('value', 'N/A')} tCO2e")
         print(f"   Scope 2: {result['emissions']['scope2'].get('value', 'N/A')} tCO2e")
@@ -1084,6 +1086,73 @@ class CarbonExtractor:
                 return f"Net zero by {year_match.group(0)} (from claim)"
         return None
 
+        return result
+
+    def _audit_emissions_data(self, result: dict) -> dict:
+        """Audits carbon emissions data for common interpretation errors based on GHG Protocol rules."""
+        emissions = result.get("emissions", {})
+        scope1 = emissions.get("scope1", {})
+        scope2 = emissions.get("scope2", {})
+        scope3 = emissions.get("scope3", {})
+        
+        flags = []
+        notes = []
+        
+        s1_val = float(scope1.get("value") or 0)
+        s2_val = float(scope2.get("value") or 0)
+        s3_val = float(scope3.get("total") or scope3.get("value") or 0)
+        
+        # 1. Scope 2 Misclassification
+        scope2_status = "FULL"
+        s2_method = str(scope2.get("methodology", "")).lower()
+        if not s2_method or ("market" in s2_method and "location" not in s2_method) or ("location" in s2_method and "market" not in s2_method):
+            if s2_val > 0 or scope2.get("value") is not None:
+                flags.append("Scope 2 improperly aggregated")
+                notes.append("Scope 2 only reports one methodology (market or location), lacking the dual-reporting required by GHG Protocol.")
+                scope2_status = "PARTIAL"
+            elif scope2.get("value") is None:
+                flags.append("May exist elsewhere in report")
+                scope2_status = "ERROR"
+
+        # 2. Scope 3 Misinterpretation
+        scope3_status = "FULL"
+        s3_cats = scope3.get("categories", {})
+        if s3_val > 0:
+            if isinstance(s3_cats, dict) and len(s3_cats) > 0 and len(s3_cats) < 5:
+                if "15" in str(list(s3_cats.keys())):
+                    flags.append("Scope 3 is partial, not total")
+                    notes.append("Scope 3 relies heavily on financed emissions or selected categories.")
+                    scope3_status = "PARTIAL"
+        elif scope3.get("total") is None and scope3.get("value") is None:
+            flags.append("May exist elsewhere in report")
+            scope3_status = "ERROR"
+            
+        # 4. Missing Scope Check
+        if scope1.get("value") is None:
+            flags.append("May exist elsewhere in report")
+            
+        # 5. Sanity Check
+        if s3_val > 0 and (s1_val + s2_val) > 0:
+            if s3_val > (s1_val + s2_val) * 100:
+                flags.append("Disproportionate Scope 3 likely partial")
+                notes.append("Scope 3 is >100x larger than Scope 1+2; likely represents partial financed/use-phase emissions.")
+                scope3_status = "PARTIAL"
+                
+        # 3. Invalid Total Emissions Calculation
+        if scope3_status == "PARTIAL":
+            flags.append("Invalid total due to incomplete Scope 3")
+            emissions["total"] = None  # MUST NOT be calculated
+            
+        result["corrected_scope2_status"] = scope2_status
+        result["corrected_scope3_status"] = scope3_status
+        result["audit_error_flags"] = list(set(flags))
+        result["audit_notes"] = " ".join(set(notes))
+        
+        emissions["scope2_status"] = scope2_status
+        emissions["scope3_status"] = scope3_status
+        
+        return result
+
     def _extract_from_report_files(self, report_files: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Run the Camelot table extractor over downloaded PDF reports when available."""
         result = {
@@ -1098,7 +1167,6 @@ class CarbonExtractor:
         }
         if not report_files:
             return result
-
         try:
             from core.extractors.pdf_table_extractor import extract_emissions_values
         except Exception:

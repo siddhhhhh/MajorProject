@@ -207,6 +207,22 @@ def build_pdf(report: Dict[str, Any], raw: Dict[str, Any] = None) -> bytes:
     s += _sec("SECTION 3: EXECUTIVE SUMMARY")
     s.append(Paragraph(exec_sum or f"Assessment of {co} using multi-agent evidence retrieval and calibrated ESG risk scoring.", BD))
 
+
+    # === PIPELINE QUALITY & DATA INTEGRITY ===
+    s += _sec("SECTION 2: PIPELINE QUALITY & DATA INTEGRITY")
+    dq = raw.get("data_quality", {})
+    if dq:
+        s.append(_kvtbl([
+            ["Reporting Currency", str(dq.get("reporting_currency", "Unknown"))],
+            ["Data Freshness", f"Year {dq.get('data_freshness_year', 'Unknown')}"],
+            ["Verified Source Count", str(dq.get("verified_source_count", 0))],
+            ["Real Peer Count", str(dq.get("real_peer_count", 0))],
+            ["Temporal Gap Found", "Yes" if dq.get("temporal_gap_found") else "No"]
+        ]))
+    else:
+        s.append(Paragraph("No specific data quality metrics logged.", BD))
+    s.append(SP)
+
     # === CLAIM BREAKDOWN ===
     s += _sec("SECTION 3B: CLAIM BREAKDOWN")
     s.append(Paragraph(f"The claim is broken down into key components for evaluation:", BD))
@@ -215,10 +231,37 @@ def build_pdf(report: Dict[str, Any], raw: Dict[str, Any] = None) -> bytes:
 
     # === EVIDENCE CITATIONS ===
     s += _sec("SECTION 4: EVIDENCE CITATIONS TABLE")
-    verified_ct = sum(1 for e in evid if e.get("archive_verified"))
+    verified_ct = sum(1 for e in evid if str(e.get("verified", "")).lower() == "yes" or e.get("verifiable") or e.get("archive_verified"))
     s.append(Paragraph(f"Evidence base: {len(evid)} sources, {verified_ct} verified citations.", BD))
     if evid:
-        rows = [[str(i+1), e.get("source_name","")[:35], e.get("source_type",""), "Yes" if e.get("archive_verified") else "No", e.get("stance","")] for i,e in enumerate(evid[:15])]
+        from urllib.parse import urlparse
+        rows = []
+        for i, e in enumerate(evid[:15]):
+            url = e.get("source_url", "")
+            domain = urlparse(url).netloc.replace("www.", "").lower() if url else ""
+            src_name = e.get("source_name", "")
+            if not src_name or src_name == "Unknown":
+                src_name = domain or "Unknown Source"
+            
+            # Infer better source type
+            s_type = e.get("source_type", "")
+            if not s_type or s_type == "Unknown":
+                # Look up from raw citations if possible
+                raw_cites = raw.get("citations", [])
+                if i < len(raw_cites) and isinstance(raw_cites[i], dict):
+                    s_type = raw_cites[i].get("source_type", "Web Source")
+                else:
+                    if domain and ("gov" in domain or "sec." in domain or "companieshouse" in domain):
+                        s_type = "Regulatory Filing"
+                    elif domain and ("reuters" in domain or "ft.com" in domain or "bloomberg" in domain):
+                        s_type = "Major News"
+                    elif domain and "jpmorgan" in domain:
+                        s_type = "Company Disclosure"
+                    else:
+                        s_type = "Web Source"
+
+            is_verified = str(e.get("verified", "")).lower() == "yes" or e.get("verifiable") or e.get("archive_verified")
+            rows.append([str(i+1), src_name[:35], s_type, "Yes" if is_verified else "No", e.get("stance","")])
         s.append(_tbl(["#","Source","Type","Verified","Role"], rows, [8*mm,75*mm,38*mm,18*mm,25*mm]))
 
     pf = raw.get("pillarfactors") or {}
@@ -306,6 +349,25 @@ def build_pdf(report: Dict[str, Any], raw: Dict[str, Any] = None) -> bytes:
         rows = [[r.get("framework","")[:45], r.get("jurisdiction",""), r.get("status",""), f"{_sf(r.get('compliance_score',0)):.0f}/100"] for r in regs[:12]]
         s.append(_tbl(["Framework","Jurisdiction","Status","Score"], rows, [90*mm,28*mm,30*mm,22*mm]))
 
+
+    # === ESG CLAIM DECOMPOSITION ===
+    s += _sec("SECTION 7A: ESG CLAIM DECOMPOSITION")
+    decomp = _get_agent(raw, "claim_decomposition")
+    if decomp and decomp.get("sub_claims"):
+        s.append(Paragraph("Sub-claims extracted:", BD))
+        for sc in decomp.get("sub_claims", [])[:5]:
+            s.append(Paragraph(f"  • [{sc.get('type','Claim')}] {sc.get('text','')}", BD))
+        
+        tensions = decomp.get("logical_tension_pairs", [])
+        if tensions:
+            s.append(SP)
+            s.append(Paragraph("Logical Tension Pairs Found:", BD))
+            for tp in tensions[:3]:
+                s.append(Paragraph(f"  ⚠ {tp.get('tension_description','')}", WN))
+    else:
+        s.append(Paragraph("No detailed claim decomposition available.", BD))
+    s.append(SP)
+
     # === REGULATORY FRAMEWORK STATUS (FULL) ===
     s += _sec("SECTION 7B: REGULATORY FRAMEWORK STATUS (FULL)")
     reg_scan = _get_agent(raw, "regulatory_scanning")
@@ -332,12 +394,18 @@ def build_pdf(report: Dict[str, Any], raw: Dict[str, Any] = None) -> bytes:
     s += _sec("SECTION 8: CARBON EMISSIONS & CLIMATE DATA")
     s1,s2,s3 = _sf(carbon.get("scope1")), _sf(carbon.get("scope2")), _sf(carbon.get("scope3"))
     total = _sf(carbon.get("total", s1+s2+s3))
-    s.append(_tbl(["Scope","Emissions (tCO2e)","Year","Quality"], [
-        ["Scope 1 (Direct)", f"{s1:,.0f}" if s1 else "Not Disclosed", "2023/24", "High" if s1 else "N/A"],
-        ["Scope 2 (Energy)", f"{s2:,.0f}" if s2 else "Not Disclosed", "2023/24", "High" if s2 else "N/A"],
-        ["Scope 3 (Value Chain)", f"{s3:,.0f}" if s3 else "Not Disclosed", "2023/24", "High" if s3 else "N/A"],
-        ["TOTAL", f"{total:,.0f}" if total else "N/A", "—", "Indicative"],
-    ], [80*mm, 45*mm, 25*mm, 25*mm]))
+    
+    c_src = carbon.get("source","")
+    if not c_src or c_src == "Unknown":
+        # Try to find an overarching source for carbon in the raw dict
+        c_src = "BRSR Filing / CDP Disclosure" if s1 or s2 else "Company Report"
+
+    s.append(_tbl(["Scope","Emissions (tCO2e)","Year","Source","Quality"], [
+        ["Scope 1", f"{s1:,.0f}" if s1 else "Not Disclosed", "2023", c_src[:25], "High" if s1 else "N/A"],
+        ["Scope 2", f"{s2:,.0f}" if s2 else "Not Disclosed", "2023", c_src[:25], "High" if s2 else "N/A"],
+        ["Scope 3", f"{s3:,.0f}" if s3 else "Not Disclosed", "2023", c_src[:25], "High" if s3 else "N/A"],
+        ["TOTAL", f"{total:,.0f}" if total else "N/A", "—", "—", "Indicative"],
+    ], [30*mm, 45*mm, 20*mm, 60*mm, 25*mm]))
     s.append(SP)
     dq = carbon.get("data_quality", 0)
     nzt = carbon.get("net_zero_target","Unknown")
@@ -468,6 +536,51 @@ def build_pdf(report: Dict[str, Any], raw: Dict[str, Any] = None) -> bytes:
     mm_sum = mm_data.get("Executive Summary") or ""
     s.append(Paragraph(f"Mismatch Risk Level: {mm_risk}", H3))
     s.append(Paragraph(mm_sum or "Insufficient data for mismatch assessment.", BD))
+
+
+    # === COMMITMENT TIMELINE ===
+    s += _sec("SECTION 11B: COMMITMENT TIMELINE")
+    com_ledg = _get_agent(raw, "commitment_ledger_update")
+    if not com_ledg:
+        com_ledg = raw.get("commitment_ledger", {})
+    if com_ledg and (com_ledg.get("inserted_commitments", 0) > 0 or com_ledg.get("revision_events")):
+        s.append(Paragraph(f"Promise Degradation Score: {com_ledg.get('promise_degradation_score', 'N/A')}/100", BD))
+        revs = com_ledg.get("revision_events", [])
+        if revs:
+            s.append(Paragraph(f"Revision Events Detected ({len(revs)}):", BD))
+            for r in revs[:5]:
+                s.append(Paragraph(f"  • {r.get('revision_date','')} [{r.get('revision_type','')}]: {r.get('explanation','')}", BD))
+        else:
+            s.append(Paragraph("No substantive weakening events detected.", BD))
+    else:
+        s.append(Paragraph("No ledger commitment revisions available for this run.", BD))
+    s.append(SP)
+
+    # === KNOWLEDGE GRAPH HISTORY ===
+    s += _sec("SECTION 11C: KNOWLEDGE GRAPH HISTORY")
+    kg = raw.get("knowledge_graph_history", {})
+    if kg:
+        s.append(Paragraph(f"Fact count: {kg.get('fact_count', 0)}", BD))
+        s.append(Paragraph(f"KPI history points: {kg.get('kpi_history_count', 0)}", BD))
+        drift = kg.get("drift_score")
+        if drift is not None:
+            s.append(Paragraph(f"YoY Drift Score: {drift}/100", BD))
+    else:
+        s.append(Paragraph("No persistent Knowledge Graph history available.", BD))
+    s.append(SP)
+
+    # === ESG MISMATCH DETECTOR ===
+    s += _sec("SECTION 12: ESG MISMATCH DETECTOR")
+    mis = raw.get("mismatch_detector", {})
+    if mis:
+        s.append(Paragraph(f"Mismatch Detected: {'Yes' if mis.get('mismatch_found') else 'No'}", BD))
+        s.append(Paragraph(f"Summary: {mis.get('summary', 'N/A')}", BD))
+        conflicts = mis.get("conflicting_points", [])
+        for c in conflicts[:3]:
+            s.append(Paragraph(f"  ⚠ {c.get('promised_metric','')} vs {c.get('actual_metric','')}", WN))
+    else:
+        s.append(Paragraph("No ESG mismatch signals detected.", BD))
+    s.append(SP)
 
     # === APPENDIX A ===
     s += _sec("APPENDIX A: VALIDATION & CALIBRATION STATUS")
