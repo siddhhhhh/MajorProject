@@ -354,9 +354,40 @@ class CompanyReportFetcher:
 
         return pdf_links
 
+    def _score_link_year(self, link: Dict) -> int:
+        """Extract the most recent plausible year from a PDF link.
+
+        Looks at title and URL together; returns 0 when no year is found so
+        unannotated links land at the end of a newest-first sort.
+        """
+        current_year = datetime.now().year
+        valid_min = 2010
+        valid_max = current_year + 1
+
+        haystack = f"{link.get('title', '')} {link.get('url', '')}"
+        best = 0
+        # 4-digit explicit years
+        for match in re.finditer(r"(20\d{2})", haystack):
+            year = int(match.group(1))
+            if valid_min <= year <= valid_max and year > best:
+                best = year
+        # FY shorthand (FY24, FY-24)
+        for match in re.finditer(r"\bfy\s*[-_]?(\d{2})\b", haystack, re.IGNORECASE):
+            year = 2000 + int(match.group(1))
+            if valid_min <= year <= valid_max and year > best:
+                best = year
+        return best
+
     def _categorize_pdfs(self, pdf_links: List[Dict], report_types: List[str]) -> Dict[str, List[Dict]]:
-        """Categorize PDFs by report type"""
-        categorized = {rt: [] for rt in report_types}
+        """Categorize PDFs by report type, newest first.
+
+        IR pages typically list reports in DOM order (oldest first), which
+        means the `max_reports` slice in `fetch_company_reports` was cutting
+        off the most recent year. We score every link by its embedded year
+        and sort each category descending so the newest report is always
+        served first (RC-3).
+        """
+        categorized: Dict[str, List[Dict]] = {rt: [] for rt in report_types}
 
         for link in pdf_links:
             title_lower = link.get("title", "").lower()
@@ -369,6 +400,9 @@ class CompanyReportFetcher:
                         if re.search(pattern, combined, re.IGNORECASE):
                             categorized[report_type].append(link)
                             break
+
+        for report_type, links in categorized.items():
+            links.sort(key=self._score_link_year, reverse=True)
 
         return categorized
 
@@ -470,9 +504,168 @@ class CompanyReportFetcher:
 
         return result
 
+    def _detect_reporting_year(self, text: str) -> Optional[int]:
+        """Identify the reporting year for the document.
+
+        Looks for explicit "fiscal year YYYY" / "year ended YYYY" / "FYYYYY" /
+        "Annual Report YYYY" phrases in the first ~20k characters; if none
+        match, returns the most frequent valid year (2015..current+1) seen
+        anywhere in the text. Returns None if nothing usable is found.
+        """
+        if not text:
+            return None
+
+        current_year = datetime.now().year
+        valid_min = 2015
+        valid_max = current_year + 1
+
+        prefix = text[:20000]
+
+        explicit_patterns = [
+            r"fiscal\s+year\s+(20\d{2})",
+            r"financial\s+year\s+(20\d{2})",
+            r"year\s+ended\s+(?:march\s+\d+,?\s*|december\s+\d+,?\s*|\d+\s+\w+\s+)?(20\d{2})",
+            r"for\s+the\s+year\s+ended\s+(?:[^\n]{0,40}?)(20\d{2})",
+            r"\bfy\s*[-\s]?(20\d{2})\b",
+            r"\bfy\s*[-\s]?(\d{2})\b",
+            r"annual\s+report\s+(20\d{2})",
+            r"sustainability\s+report\s+(20\d{2})",
+            r"integrated\s+report\s+(20\d{2})",
+            r"esg\s+report\s+(20\d{2})",
+            r"reporting\s+year[:\s]+(20\d{2})",
+            r"reporting\s+period[:\s]+(?:[^\n]{0,30}?)(20\d{2})",
+        ]
+
+        for pattern in explicit_patterns:
+            for match in re.finditer(pattern, prefix, re.IGNORECASE):
+                raw = match.group(1)
+                # FY shorthand like "FY24" → 2024
+                if len(raw) == 2:
+                    candidate = 2000 + int(raw)
+                else:
+                    candidate = int(raw)
+                if valid_min <= candidate <= valid_max:
+                    return candidate
+
+        # Fallback: pick the most frequently mentioned valid year in the full text
+        year_counts: Dict[int, int] = {}
+        for match in re.finditer(r"\b(20\d{2})\b", text):
+            candidate = int(match.group(1))
+            if valid_min <= candidate <= valid_max:
+                year_counts[candidate] = year_counts.get(candidate, 0) + 1
+
+        if not year_counts:
+            return None
+
+        # Tie-break by most recent year so a 2024 report doesn't get tagged 2023
+        return max(year_counts.items(), key=lambda kv: (kv[1], kv[0]))[0]
+
+    def _extract_yearly_emissions(self, text: str) -> Dict[int, Dict[str, float]]:
+        """Pull year-tagged emission figures from the document.
+
+        Returns {year: {"scope1": v, "scope2": v, "scope3": v, "total": v}}
+        for every (year, scope) pair found. Handles common patterns like
+        "FY2024: 245,000 tCO2e" appearing in the same line as the scope label,
+        or year-headed table rows ("2024 ... 245,000").
+        """
+        if not text:
+            return {}
+
+        current_year = datetime.now().year
+        valid_min = 2015
+        valid_max = current_year + 1
+
+        history: Dict[int, Dict[str, float]] = {}
+
+        scope_specs = [
+            ("scope1", r"scope\s*1"),
+            ("scope2", r"scope\s*2"),
+            ("scope3", r"scope\s*3"),
+            ("total", r"total\s+(?:ghg\s+|carbon\s+)?emissions?"),
+        ]
+
+        # Pattern A: "FY2024 scope 1: 245,000 tCO2e" or "2024 scope 1 245,000"
+        for scope_key, scope_re in scope_specs:
+            pat_a = re.compile(
+                rf"(?:fy\s*[-\s]?|year\s+ended\s+\D{{0,30}})?(20\d{{2}})\D{{0,40}}?{scope_re}\D{{0,15}}?(\d[\d,\.]*)\s*(million|mn|m|billion|bn|b)?",
+                re.IGNORECASE,
+            )
+            for match in pat_a.finditer(text):
+                year = int(match.group(1))
+                if not (valid_min <= year <= valid_max):
+                    continue
+                value = self._parse_emission_number(match.group(2), match.group(3))
+                if value is None:
+                    continue
+                history.setdefault(year, {})[scope_key] = value
+
+            # Pattern B: scope first, then year — "scope 1 emissions FY2024 245,000"
+            pat_b = re.compile(
+                rf"{scope_re}\D{{0,40}}?(?:fy\s*[-\s]?|year\s+ended\s+\D{{0,30}})?(20\d{{2}})\D{{0,15}}?(\d[\d,\.]*)\s*(million|mn|m|billion|bn|b)?",
+                re.IGNORECASE,
+            )
+            for match in pat_b.finditer(text):
+                year = int(match.group(1))
+                if not (valid_min <= year <= valid_max):
+                    continue
+                value = self._parse_emission_number(match.group(2), match.group(3))
+                if value is None:
+                    continue
+                history.setdefault(year, {}).setdefault(scope_key, value)
+
+        return history
+
+    @staticmethod
+    def _parse_emission_number(raw_value: str, multiplier: Optional[str]) -> Optional[float]:
+        """Convert a captured number + multiplier token into a float in tonnes."""
+        try:
+            value = float(raw_value.replace(",", "").strip())
+        except (TypeError, ValueError):
+            return None
+
+        if multiplier:
+            mult_lower = multiplier.lower().strip()
+            if mult_lower in ("million", "mn", "m"):
+                value *= 1_000_000
+            elif mult_lower in ("billion", "bn", "b"):
+                value *= 1_000_000_000
+        return value
+
     def _extract_esg_metrics(self, text: str) -> Dict:
         """Extract ESG metrics from report text"""
         metrics = {}
+
+        # Year detection — runs first so every other consumer can attribute the
+        # extracted figures to the right reporting period (RC-4).
+        reporting_year = self._detect_reporting_year(text)
+        if reporting_year:
+            metrics["reporting_year"] = reporting_year
+
+        # Multi-year emission history — captures every (year, scope) pair so
+        # downstream pathway analysis can use real CAGR instead of estimating
+        # from a single snapshot (RC-6).
+        yearly_emissions = self._extract_yearly_emissions(text)
+        if yearly_emissions:
+            metrics["yearly_emissions"] = {
+                str(year): values for year, values in sorted(yearly_emissions.items())
+            }
+            most_recent_year = max(yearly_emissions.keys())
+            most_recent_values = yearly_emissions[most_recent_year]
+            # Promote the most recent year's values as the primary scope figures
+            # — only when the year is ≥ any reporting_year already detected, so
+            # we don't downgrade a header-detected year with a stray table row.
+            if reporting_year is None or most_recent_year >= reporting_year:
+                if "scope1" in most_recent_values:
+                    metrics["scope_1_emissions"] = most_recent_values["scope1"]
+                if "scope2" in most_recent_values:
+                    metrics["scope_2_emissions"] = most_recent_values["scope2"]
+                if "scope3" in most_recent_values:
+                    metrics["scope_3_emissions"] = most_recent_values["scope3"]
+                if "total" in most_recent_values:
+                    metrics["total_emissions"] = most_recent_values["total"]
+                # Promote the year too if not already set, since the table is
+                # often a more reliable signal than the prose header.
+                metrics["reporting_year"] = most_recent_year
 
         # Carbon emissions patterns
         carbon_patterns = [
@@ -574,12 +767,27 @@ class CompanyReportFetcher:
         reports = []
 
         try:
-            # Use DuckDuckGo as Google requires API key
-            queries = [
-                f"{company_name} annual report 2024 PDF filetype:pdf",
-                f"{company_name} sustainability report PDF filetype:pdf",
-                f"{company_name} BRSR report PDF filetype:pdf"
-            ]
+            # Use DuckDuckGo as Google requires API key.
+            # Queries are generated dynamically from the current year so the
+            # net always covers the latest publication cycle without code
+            # changes (RC-2). We try the current year and the prior year
+            # because companies publish their FY{N} report during year N+1.
+            current_year = datetime.now().year
+            target_years = [current_year, current_year - 1]
+
+            queries: List[str] = []
+            for year in target_years:
+                queries.extend([
+                    f"{company_name} annual report {year} PDF filetype:pdf",
+                    f"{company_name} sustainability report {year} PDF filetype:pdf",
+                    f"{company_name} ESG report {year} PDF filetype:pdf",
+                    f"{company_name} climate report {year} PDF filetype:pdf",
+                    f"{company_name} integrated report {year} PDF filetype:pdf",
+                    f"{company_name} BRSR {year} PDF filetype:pdf",
+                ])
+            # Untimed catch-all so we still surface evergreen pages.
+            queries.append(f"{company_name} sustainability report PDF filetype:pdf")
+            queries.append(f"{company_name} BRSR report PDF filetype:pdf")
 
             for query in queries:
                 url = "https://lite.duckduckgo.com/lite/"

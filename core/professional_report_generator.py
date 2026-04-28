@@ -2017,11 +2017,24 @@ class ProfessionalReportGenerator:
                 "any target that omits one or more scopes should be treated as indicative only."
             )
         )
-        _sbti_stmt = (
-            "SBTi validation is absent or unconfirmed, increasing uncertainty around the scientific credibility of reported targets."
-            if not _sbti_validated
-            else "Targets are SBTi-validated, providing independent confirmation of scientific alignment."
-        )
+        # Only assert independent SBTi validation when the SBTi registry
+        # itself was hit (sbti_status reads as a portal-style label).
+        # Otherwise we know only that the disclosure flagged SBTi, not that
+        # the SBTi portal confirmed it.
+        _sbti_status_label = str(carbon.get("sbti_status") or "").strip().lower()
+        _sbti_registry_confirmed = _sbti_status_label in {
+            "targets set / validated",
+            "validated",
+            "approved",
+        }
+        if not _sbti_validated:
+            _sbti_stmt = (
+                "SBTi validation is absent or unconfirmed, increasing uncertainty around the scientific credibility of reported targets."
+            )
+        elif _sbti_registry_confirmed:
+            _sbti_stmt = "Targets are SBTi-validated per the SBTi portal, providing independent confirmation of scientific alignment."
+        else:
+            _sbti_stmt = "Disclosure flags SBTi alignment but the claim has not been independently confirmed against the SBTi portal in this run."
         carbon_summary = f"{_scope3_stmt} {_disc_stmt} {_sbti_stmt}"
         section5.append(self._wrap_paragraph(carbon_summary, width=80))
         section5.append("")
@@ -2161,11 +2174,18 @@ class ProfessionalReportGenerator:
         if not _nz_target or _nz_target.lower() in ("none", "none declared", "not available"):
             _nz_target = "Claim identified externally but not validated in extracted disclosures"
         section5.append(f"  Net-Zero Target:      {_nz_target}")
+        # Prefer the SBTi registry status string when available, since it
+        # reflects actual SBTi-portal state ("Targets set / validated",
+        # "Committed", "Not active"). The boolean from LLM extraction only
+        # tells us the disclosure mentioned SBTi — so map True to a
+        # narrower "Reported as set" label rather than over-asserting that
+        # near-term targets were independently approved.
+        sbti_status_str = carbon.get("sbti_status")
         sbti_raw = carbon.get("science_based_target")
-        if sbti_raw is None:
-            sbti_raw = carbon.get("sbti_status")
-        if sbti_raw is True or str(sbti_raw).lower() in ("true", "yes", "1"):
-            sbti_display = "Validated (near-term targets approved)"
+        if isinstance(sbti_status_str, str) and len(sbti_status_str.strip()) > 3:
+            sbti_display = sbti_status_str.strip()
+        elif sbti_raw is True or str(sbti_raw).lower() in ("true", "yes", "1"):
+            sbti_display = "Reported as set (SBTi flag in disclosure; portal status unverified)"
         elif sbti_raw is False or str(sbti_raw).lower() in ("false", "no", "0"):
             sbti_display = "Not submitted"
         elif isinstance(sbti_raw, str) and len(sbti_raw) > 3:
@@ -3044,35 +3064,88 @@ class ProfessionalReportGenerator:
                         "material": bool(fr.get("material_misstatement_risk")),
                         "violation": str(fr.get("specific_violation") or "").strip(),
                         "source_count": 0,
+                        "real_data": bool(fr.get("real_data")),
+                        "evidence_url": str(fr.get("evidence_url") or "").strip(),
+                        "source_name": str(fr.get("source_name") or "").strip(),
+                        "fetched_at": str(fr.get("fetched_at") or "").strip(),
                     }
                     _order.append(key)
                 _grouped[key]["source_count"] += 1
                 # Promote material flag if any underlying row marks it
                 if fr.get("material_misstatement_risk"):
                     _grouped[key]["material"] = True
+                # Promote real_data marker / evidence URL when present
+                if fr.get("real_data"):
+                    _grouped[key]["real_data"] = True
+                if not _grouped[key]["evidence_url"] and fr.get("evidence_url"):
+                    _grouped[key]["evidence_url"] = str(fr.get("evidence_url"))
+                if not _grouped[key]["source_name"] and fr.get("source_name"):
+                    _grouped[key]["source_name"] = str(fr.get("source_name"))
+                if not _grouped[key]["fetched_at"] and fr.get("fetched_at"):
+                    _grouped[key]["fetched_at"] = str(fr.get("fetched_at"))
                 # Keep the longest available violation text
                 _v = str(fr.get("specific_violation") or "").strip()
                 if len(_v) > len(_grouped[key]["violation"]):
                     _grouped[key]["violation"] = _v
-            # Sort: GAP / ACTIVE_ENFORCEMENT first, then UNCERTAIN, then COMPLIANT.
-            _status_rank = {"GAP": 0, "ACTIVE_ENFORCEMENT": 0, "UNCERTAIN": 1, "COMPLIANT": 2}
-            _order.sort(key=lambda k: (_status_rank.get(k[2], 3), k[0], k[1]))
+            # Sort: GAP / ACTIVE_ENFORCEMENT first, then UNCERTAIN, then
+            # COMPLIANT, then NOT_EVALUATED (least informative — pushed
+            # to the bottom but still rendered for transparency).
+            _status_rank = {
+                "GAP": 0,
+                "ACTIVE_ENFORCEMENT": 0,
+                "UNCERTAIN": 1,
+                "COMPLIANT": 2,
+                "NOT_EVALUATED": 3,
+                "NOT EVALUATED": 3,
+            }
+            _status_label = {
+                "ACTIVE_ENFORCEMENT": "ACTIVE_ENF",
+                "NOT_EVALUATED": "NOT_TESTED",
+                "NOT EVALUATED": "NOT_TESTED",
+            }
+            _order.sort(key=lambda k: (_status_rank.get(k[2], 4), k[0], k[1]))
             for key in _order:
                 row = _grouped[key]
                 juris = row["jurisdiction"][:10]
                 fwk = row["framework"]
                 if len(fwk) > 42:
                     fwk = fwk[:39] + "..."
-                status = row["status"][:11]
+                status_raw = row["status"]
+                status = _status_label.get(status_raw, status_raw)[:11]
+                # Mark rows backed by a real public-registry fetch with a "*"
+                # so readers can distinguish authoritative checks from
+                # supplementary keyword/DDG signals.
+                if row.get("real_data"):
+                    status = (status[:10] + "*") if not status.endswith("*") else status
                 material = "Yes" if row["material"] else "No"
                 src_n = row["source_count"]
                 src_label = f"{src_n}" if src_n > 1 else "1"
                 compliance_lines.append(f"  {juris:<10} {fwk:<42} {status:<11} {material:<8} {src_label:<8}")
-                if row["violation"] and row["status"] != "COMPLIANT":
+                # Violation / explanation
+                if row["violation"] and row["status"] not in {"COMPLIANT", "NOT_EVALUATED", "NOT EVALUATED"}:
                     compliance_lines.append(f"      └─ {row['violation'][:120]}")
+                elif row.get("real_data") and row["violation"]:
+                    # COMPLIANT real-data rows still benefit from the evidence
+                    # line (e.g. "Filed 10-K on 2026-02-13").
+                    compliance_lines.append(f"      └─ {row['violation'][:120]}")
+                # Source citation when real-data
+                if row.get("real_data") and (row.get("source_name") or row.get("evidence_url")):
+                    src_name = row.get("source_name") or "Public registry"
+                    fetched = row.get("fetched_at") or ""
+                    src_url = row.get("evidence_url") or ""
+                    line = f"         Source: {src_name}"
+                    if fetched:
+                        line += f"  ({fetched})"
+                    if src_url:
+                        line += f"  {src_url[:90]}"
+                    compliance_lines.append(line)
             compliance_lines.append("  " + "-" * 84)
             compliance_lines.append(
                 f"  Sources column = number of underlying URL-level evidence rows merged into the framework status."
+            )
+            compliance_lines.append(
+                "  Status with '*' = verified against a public registry (SEC EDGAR, SBTi portal, "
+                "FSB-TCFD, CDP A-list, UN Global Compact). Other rows are keyword / web-search heuristics."
             )
         else:
             compliance_lines.append("  Framework-level status not available for this run.")

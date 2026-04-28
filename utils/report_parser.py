@@ -411,57 +411,130 @@ class ReportParserService:
     def _extract_year_from_text(self, text: str) -> Optional[int]:
         """
         [FIX 5] Extract year from report heading/title text
-        Looks for common patterns like "Annual Report 2023" or "Fiscal Year ended 2023"
+        Looks for common patterns like "Annual Report 2023" or "Fiscal Year ended 2023".
+
+        Earlier versions returned the first regex hit, which could be a
+        baseline year ("2017 baseline") sitting on page 1 next to the
+        actual reporting year. We now collect every plausible year and
+        return the one most likely to be the *report year*: the largest
+        valid year ≤ current+1, with an explicit "report"/"FY"/"fiscal
+        year"/"year ended" prefix outranking a bare 4-digit hit.
         """
         import re
-        
+
         # Search in heading/title area first
         search_text = text[:4000]
-        
+        current_year = datetime.now().year
+        valid_min, valid_max = 1990, current_year + 1
+
+        labelled: list[int] = []
+        bare: list[int] = []
+
         for pattern in self.YEAR_REGEX_PATTERNS:
-            match = re.search(pattern, search_text, re.IGNORECASE)
-            if match:
+            for match in re.finditer(pattern, search_text, re.IGNORECASE):
                 try:
                     year = int(re.search(r"\d{4}", match.group(1)).group())
-                    if 1900 <= year <= 2099:
-                        return year
                 except (ValueError, IndexError, AttributeError):
                     continue
-        
+                if not (valid_min <= year <= valid_max):
+                    continue
+                token = match.group(0).lower()
+                if any(kw in token for kw in ("fy", "fiscal", "year ended", "report")):
+                    labelled.append(year)
+                else:
+                    bare.append(year)
+
+        # Prefer the most recent labelled year; otherwise the most recent
+        # bare year. This way "2021 Environmental Social & Governance
+        # Report" wins over a stray "2030" target year mention.
+        if labelled:
+            return max(labelled)
+        if bare:
+            return max(bare)
         return None
-    
+
+    # Class-level guard so the override prints once per file, not per chunk
+    _year_override_logged: set[str] = set()
+
     def _detect_year_for_chunk(self, chunk_text: str, provided_year: Optional[int], filename: str = "", report_title: str = "") -> int:
         """
-        [FIX 5] Detect year for a chunk using multiple strategies
-        Priority:
-        1. Provided year parameter (from caller)
-        2. Year from filename
-        3. Year from chunk text/headings
-        4. Current year if all else fails
-        """
-        # Priority 1: Use provided year if available
-        if provided_year and provided_year > 1900 and provided_year < 2100:
-            return provided_year
-        
-        # Priority 2: Extract from filename
-        if filename:
-            filename_year = self._extract_year_from_filename(filename)
-            if filename_year:
-                return filename_year
-        
-        # Priority 3: Extract from report title/heading
-        if report_title:
-            title_year = self._extract_year_from_text(report_title)
-            if title_year:
-                return title_year
+        Detect the year a chunk's data belongs to.
 
-        # Priority 4: Extract from chunk text
-        text_year = self._extract_year_from_text(chunk_text)
-        if text_year:
-            return text_year
-        
-        # Priority 5: Return current year as last resort
-        return datetime.now().year
+        Filenames are unreliable — the discovery layer guesses from URL
+        patterns and sometimes mislabels (e.g., a 2021 ESG report saved as
+        ``..._2030_climate.pdf``). We therefore cross-check filename /
+        caller-supplied / title / chunk-body years and override the
+        filename-derived year when the document content disagrees.
+
+        Override is one-directional and conservative:
+          - Only fires when ``content_year`` is in the past or current year
+            (target years like 2027/2030/2050 mentioned in claim text are
+            NOT report years).
+          - Only fires when ``filename_year`` is at least 3 years AHEAD of
+            ``content_year`` (the "mislabeled-as-newer" case — e.g. a 2021
+            report saved as ``..._2030_climate.pdf``). When filename is
+            older than content (the normal case where a recent chunk talks
+            about future targets), filename wins.
+
+        Resolution order when no override fires:
+          1. ``provided_year`` from the caller (typically the document-level
+             year established earlier).
+          2. Year extracted from filename.
+          3. Year extracted from report title or chunk body.
+          4. ``datetime.now().year - 1`` as a last resort.
+        """
+        current_year = datetime.now().year
+        valid_min, valid_max = 1990, current_year + 1
+
+        def _valid(y):
+            return isinstance(y, int) and valid_min <= y <= valid_max
+
+        # Candidates
+        title_year = self._extract_year_from_text(report_title) if report_title else None
+        body_year = self._extract_year_from_text(chunk_text) if chunk_text else None
+        filename_year = self._extract_year_from_filename(filename) if filename else None
+        caller_year = provided_year if _valid(provided_year) else None
+        content_year = title_year if _valid(title_year) else body_year if _valid(body_year) else None
+
+        # One-directional override: fix filenames that claim a year in the
+        # future relative to the document's actual content. This catches
+        # ``_2030_climate.pdf`` whose body is the 2021 ESG Report.
+        #
+        # Override fires ONLY at document-level resolution (when chunk_text
+        # is the full document, not an individual chunk). Per-chunk calls
+        # naturally see incidental year mentions (baseline year "2017",
+        # historical "since 2014", target "by 2050") that are not the
+        # report's reporting year. Heuristic: a chunk this large is almost
+        # certainly the full document text from the parser's first pass.
+        DOC_LEVEL_MIN_CHARS = 5000
+        is_doc_level = chunk_text and len(chunk_text) >= DOC_LEVEL_MIN_CHARS
+
+        if (
+            is_doc_level
+            and _valid(content_year)
+            and content_year <= current_year
+        ):
+            for label, candidate in (("filename", filename_year), ("caller", caller_year)):
+                if (
+                    _valid(candidate)
+                    and candidate > content_year + 2
+                ):
+                    log_key = f"{filename}|{label}|{candidate}|{content_year}"
+                    if log_key not in self._year_override_logged:
+                        self._year_override_logged.add(log_key)
+                        print(
+                            f"      [Fix] {label} year {candidate} ahead of content-derived "
+                            f"{content_year} for {filename or '(no filename)'}; using content year"
+                        )
+                    return content_year
+
+        if _valid(caller_year):
+            return caller_year
+        if _valid(filename_year):
+            return filename_year
+        if _valid(content_year):
+            return content_year
+        return current_year - 1
     
     def parse_reports(self, company_name: str, 
                      downloaded_reports: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

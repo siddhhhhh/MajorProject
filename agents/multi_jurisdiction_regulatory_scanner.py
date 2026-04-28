@@ -107,16 +107,47 @@ class MultiJurisdictionRegulatoryScanner:
                 continue
             framework = str(row.get("regulation_name") or "Framework")
             gaps = row.get("gap_details", []) if isinstance(row.get("gap_details"), list) else []
-            status = "compliant" if not gaps else "gap"
+            base_status = str(row.get("status") or "").upper()
+
+            # Carry the base scanner's status through; only collapse to
+            # "compliant"/"gap" labels at the end. A framework whose
+            # claim_validation_rules never triggered must NOT be reported
+            # as compliant (see regulatory_scanner._check_regulation_compliance).
+            if base_status in {"NOT_EVALUATED", "NOT EVALUATED"}:
+                status = "not_evaluated"
+                violation = "Claim did not trigger this framework's validation rules; not tested."
+                remediation = "-"
+                penalty = 0
+                material_risk = False
+            elif gaps:
+                status = "gap"
+                violation = gaps[0]
+                remediation = "Provide framework-specific metric disclosures"
+                penalty = min(30, 8 + len(gaps) * 4)
+                material_risk = True
+            elif base_status == "UNCERTAIN":
+                status = "uncertain"
+                violation = "Framework triggered but evidence was insufficient to confirm compliance."
+                remediation = "Add direct disclosure references for this framework."
+                penalty = 5
+                material_risk = False
+            else:
+                # Genuine compliant — at least one requirement was met
+                status = "compliant"
+                violation = ""
+                remediation = "-"
+                penalty = 0
+                material_risk = False
+
             rows.append({
                 "jurisdiction": self._infer_framework_jurisdiction(framework, jurisdictions),
                 "framework": framework,
                 "status": status,
-                "specific_violation": gaps[0] if gaps else "",
-                "penalty_score": 0 if not gaps else min(30, 8 + len(gaps) * 4),
-                "material_misstatement_risk": bool(gaps),
+                "specific_violation": violation,
+                "penalty_score": penalty,
+                "material_misstatement_risk": material_risk,
                 "evidence_url": None,
-                "remediation_required": "Provide framework-specific metric disclosures" if gaps else "-",
+                "remediation_required": remediation,
             })
 
         claim_lower = (claim_text or "").lower()
@@ -309,17 +340,42 @@ class MultiJurisdictionRegulatoryScanner:
             "Add jurisdiction-specific public evidence or assurance references",
         )
 
+    # Frameworks that are explicitly cross-border by their charter — these
+    # are governed by global standard-setting bodies, not any single
+    # jurisdiction. Stamping them with an arbitrary regional label
+    # (e.g. "UK GHG Protocol") is misleading because the framework
+    # has no UK-specific authority.
+    GLOBAL_FRAMEWORKS = {
+        "ghg protocol corporate standard",
+        "ghg protocol",
+        "gri sustainability reporting standards",
+        "gri standards",
+        "cdp (carbon disclosure project)",
+        "cdp",
+        "science based targets initiative",
+        "sbti",
+        "ipcc consistency check",
+        "active enforcement / litigation",
+    }
+
     def _infer_framework_jurisdiction(self, framework: str, jurisdictions: List[str]) -> str:
-        low = framework.lower()
+        low = (framework or "").lower().strip()
+        if low in self.GLOBAL_FRAMEWORKS:
+            return "Global"
         if "eu" in low or "csrd" in low or "sfdr" in low:
             return "EU"
-        if "fca" in low or "uk" in low or "tcfd" in low:
+        if "fca" in low or "tcfd" in low or low.startswith("uk "):
             return "UK"
-        if "sec" in low or "ftc" in low:
+        if "sec" in low or "ftc" in low or low.startswith("us "):
             return "US"
         if "dutch" in low or "afm" in low or "netherlands" in low:
             return "Netherlands"
-        return jurisdictions[0] if jurisdictions else "Global"
+        if "basel" in low:
+            return "Basel"
+        # Unknown framework: do NOT fall through to ``jurisdictions[0]`` —
+        # that arbitrarily stamps Global frameworks with a regional label
+        # (e.g. "UK GHG Protocol Corporate Standard"). Default to Global.
+        return "Global"
 
     def _litigation_hits(self, company: str, evidence: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         hits = []

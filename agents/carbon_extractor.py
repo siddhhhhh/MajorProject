@@ -170,433 +170,17 @@ class CarbonExtractor:
             "unknown": {"scope1": 100_000, "scope2": 300_000, "scope3": 5_000_000},
         }
 
-        # Known company emissions database (from CDP, BRSR, sustainability reports)
-        # Data sources: CDP 2024, Company BRSR filings, Annual Sustainability Reports
-        self.known_emissions = {
-            # Indian IT Companies (carbon neutral / low emission)
-            "infosys": {
-                "scope1": {"value": 8420, "unit": "tCO2e", "year": 2024, "source": "BRSR 2024"},
-                "scope2": {"value": 0, "unit": "tCO2e", "year": 2024, "source": "100% Renewable Energy", "methodology": "market-based"},
-                "scope3": {"total": 264115, "year": 2024, "categories": {"6": 15000, "7": 48000}},
-                "net_zero_target": "Carbon neutral since 2020",
-                "renewable_energy": "100%",
-                "science_based_target": True,
-                "verification": "Third-party verified (KPMG)"
-            },
-            "tcs": {
-                "scope1": {"value": 14500, "unit": "tCO2e", "year": 2024, "source": "BRSR 2024"},
-                "scope2": {"value": 145000, "unit": "tCO2e", "year": 2024, "source": "BRSR 2024", "methodology": "location-based"},
-                "scope3": {"total": 890000, "year": 2024, "categories": {"6": 45000, "7": 120000}},
-                "net_zero_target": "Net zero by 2030",
-                "renewable_energy": "55%",
-                "science_based_target": True,
-                "verification": "Third-party verified"
-            },
-            "wipro": {
-                "scope1": {"value": 12800, "unit": "tCO2e", "year": 2024, "source": "BRSR 2024"},
-                "scope2": {"value": 0, "unit": "tCO2e", "year": 2024, "source": "100% Renewable", "methodology": "market-based"},
-                "scope3": {"total": 325000, "year": 2024, "categories": {"6": 22000, "7": 85000}},
-                "net_zero_target": "Carbon neutral since 2021",
-                "renewable_energy": "100%",
-                "science_based_target": True,
-                "verification": "Third-party verified"
-            },
-            "hcl technologies": {
-                "scope1": {"value": 18500, "unit": "tCO2e", "year": 2024, "source": "BRSR 2024"},
-                "scope2": {"value": 185000, "unit": "tCO2e", "year": 2024, "methodology": "location-based"},
-                "scope3": {"total": 520000, "year": 2024},
-                "net_zero_target": "Net zero by 2040",
-                "renewable_energy": "45%",
-                "science_based_target": True
-            },
-            "tech mahindra": {
-                "scope1": {"value": 8900, "unit": "tCO2e", "year": 2024, "source": "BRSR 2024"},
-                "scope2": {"value": 0, "unit": "tCO2e", "year": 2024, "methodology": "market-based"},
-                "scope3": {"total": 285000, "year": 2024},
-                "net_zero_target": "Carbon neutral since 2023",
-                "renewable_energy": "100%",
-                "science_based_target": True
-            },
-            # Heavy Industry - Steel
-            "tata steel": {
-                "scope1": {"value": 41500000, "unit": "tCO2e", "year": 2024, "source": "BRSR 2024"},
-                "scope2": {"value": 8200000, "unit": "tCO2e", "year": 2024, "methodology": "location-based"},
-                "scope3": {"total": 15600000, "year": 2024, "categories": {"1": 8500000, "4": 3200000}},
-                "carbon_intensity": 2.31,  # tCO2/tonne steel
-                "net_zero_target": "Net zero by 2045",
-                "science_based_target": True,
-                "verification": "Third-party verified (DNV)"
-            },
-            "jsw steel": {
-                "scope1": {"value": 38500000, "unit": "tCO2e", "year": 2024, "source": "BRSR 2024"},
-                "scope2": {"value": 6800000, "unit": "tCO2e", "year": 2024},
-                "scope3": {"total": 12500000, "year": 2024},
-                "carbon_intensity": 2.25,
-                "net_zero_target": "Net zero by 2050",
-                "science_based_target": True
-            },
-            # Energy & Oil
-            "reliance industries": {
-                "scope1": {"value": 48500000, "unit": "tCO2e", "year": 2024, "source": "BRSR 2024"},
-                "scope2": {"value": 7200000, "unit": "tCO2e", "year": 2024},
-                "scope3": {"total": 125000000, "year": 2024, "categories": {"11": 95000000}},
-                "net_zero_target": "Net zero by 2035",
-                "renewable_capacity": "45 GW by 2030",
-                "science_based_target": True,
-                "verification": "Third-party verified"
-            },
-            "ongc": {
-                "scope1": {"value": 25800000, "unit": "tCO2e", "year": 2024, "source": "BRSR 2024"},
-                "scope2": {"value": 2100000, "unit": "tCO2e", "year": 2024},
-                "scope3": {"total": 85000000, "year": 2024},
-                "net_zero_target": "Net zero by 2038",
-                "science_based_target": False
-            },
-            "indian oil": {
-                "scope1": {"value": 32500000, "unit": "tCO2e", "year": 2024, "source": "BRSR 2024"},
-                "scope2": {"value": 4500000, "unit": "tCO2e", "year": 2024},
-                "scope3": {"total": 195000000, "year": 2024},
-                "net_zero_target": "Net zero by 2046",
-                "science_based_target": False
-            },
-            # Cement
-            "ultratech cement": {
-                "scope1": {"value": 58200000, "unit": "tCO2e", "year": 2024, "source": "BRSR 2024"},
-                "scope2": {"value": 5800000, "unit": "tCO2e", "year": 2024},
-                "scope3": {"total": 12500000, "year": 2024},
-                "carbon_intensity": 0.58,  # tCO2/tonne cement
-                "net_zero_target": "Net zero by 2050",
-                "science_based_target": True
-            },
-            "ambuja cement": {
-                "scope1": {"value": 18500000, "unit": "tCO2e", "year": 2024},
-                "scope2": {"value": 2100000, "unit": "tCO2e", "year": 2024},
-                "scope3": {"total": 4500000, "year": 2024},
-                "carbon_intensity": 0.54,
-                "net_zero_target": "Net zero by 2050"
-            },
-            # Banking & Finance
-            "hdfc bank": {
-                "scope1": {"value": 12500, "unit": "tCO2e", "year": 2024, "source": "BRSR 2024"},
-                "scope2": {"value": 185000, "unit": "tCO2e", "year": 2024},
-                "scope3": {"total": 45000000, "year": 2024, "categories": {"15": 42000000}},
-                "net_zero_target": "Net zero by 2050",
-                "renewable_energy": "35%"
-            },
-            "icici bank": {
-                "scope1": {"value": 9800, "unit": "tCO2e", "year": 2024},
-                "scope2": {"value": 165000, "unit": "tCO2e", "year": 2024},
-                "scope3": {"total": 38000000, "year": 2024},
-                "net_zero_target": "Net zero by 2050"
-            },
-            "sbi": {
-                "scope1": {"value": 28500, "unit": "tCO2e", "year": 2024},
-                "scope2": {"value": 485000, "unit": "tCO2e", "year": 2024},
-                "scope3": {"total": 125000000, "year": 2024},
-                "net_zero_target": "Net zero by 2055"
-            },
-            # Consumer Goods
-            "hindustan unilever": {
-                "scope1": {"value": 45000, "unit": "tCO2e", "year": 2024, "source": "BRSR 2024"},
-                "scope2": {"value": 85000, "unit": "tCO2e", "year": 2024},
-                "scope3": {"total": 12500000, "year": 2024, "categories": {"1": 5500000, "12": 4500000}},
-                "net_zero_target": "Net zero by 2039",
-                "renewable_energy": "95%",
-                "science_based_target": True
-            },
-            "itc": {
-                "scope1": {"value": 285000, "unit": "tCO2e", "year": 2024, "source": "BRSR 2024"},
-                "scope2": {"value": 125000, "unit": "tCO2e", "year": 2024},
-                "scope3": {"total": 4500000, "year": 2024},
-                "net_zero_target": "Carbon positive since 2017",
-                "renewable_energy": "52%",
-                "science_based_target": True
-            },
-            # Automotive
-            "tata motors": {
-                "scope1": {"value": 485000, "unit": "tCO2e", "year": 2024, "source": "BRSR 2024"},
-                "scope2": {"value": 620000, "unit": "tCO2e", "year": 2024},
-                "scope3": {"total": 45000000, "year": 2024, "categories": {"11": 38000000}},
-                "net_zero_target": "Net zero by 2045",
-                "science_based_target": True
-            },
-            "mahindra & mahindra": {
-                "scope1": {"value": 125000, "unit": "tCO2e", "year": 2024},
-                "scope2": {"value": 285000, "unit": "tCO2e", "year": 2024},
-                "scope3": {"total": 28000000, "year": 2024},
-                "net_zero_target": "Carbon neutral since 2023",
-                "science_based_target": True
-            },
-            "maruti suzuki": {
-                "scope1": {"value": 185000, "unit": "tCO2e", "year": 2024},
-                "scope2": {"value": 420000, "unit": "tCO2e", "year": 2024},
-                "scope3": {"total": 65000000, "year": 2024},
-                "net_zero_target": "Net zero by 2050"
-            },
-            # Pharma
-            "sun pharma": {
-                "scope1": {"value": 125000, "unit": "tCO2e", "year": 2024},
-                "scope2": {"value": 285000, "unit": "tCO2e", "year": 2024},
-                "scope3": {"total": 1850000, "year": 2024},
-                "net_zero_target": "Net zero by 2040"
-            },
-            "dr reddy's": {
-                "scope1": {"value": 95000, "unit": "tCO2e", "year": 2024},
-                "scope2": {"value": 245000, "unit": "tCO2e", "year": 2024},
-                "scope3": {"total": 1250000, "year": 2024},
-                "net_zero_target": "Carbon neutral by 2035",
-                "renewable_energy": "48%"
-            },
-            # Power
-            "ntpc": {
-                "scope1": {"value": 285000000, "unit": "tCO2e", "year": 2024, "source": "BRSR 2024"},
-                "scope2": {"value": 850000, "unit": "tCO2e", "year": 2024},
-                "scope3": {"total": 25000000, "year": 2024},
-                "carbon_intensity": 0.71,  # tCO2/MWh
-                "net_zero_target": "Net zero by 2070",
-                "renewable_capacity": "30 GW by 2032"
-            },
-            "adani green": {
-                "scope1": {"value": 8500, "unit": "tCO2e", "year": 2024},
-                "scope2": {"value": 12500, "unit": "tCO2e", "year": 2024},
-                "scope3": {"total": 4500000, "year": 2024},
-                "avoided_emissions": 42000000,
-                "renewable_capacity": "20.4 GW operational"
-            },
-            "tata power": {
-                "scope1": {"value": 52000000, "unit": "tCO2e", "year": 2024},
-                "scope2": {"value": 450000, "unit": "tCO2e", "year": 2024},
-                "scope3": {"total": 8500000, "year": 2024},
-                "net_zero_target": "Net zero by 2045",
-                "renewable_energy": "35%"
-            },
-            # Telecom
-            "bharti airtel": {
-                "scope1": {"value": 125000, "unit": "tCO2e", "year": 2024},
-                "scope2": {"value": 2850000, "unit": "tCO2e", "year": 2024},
-                "scope3": {"total": 4500000, "year": 2024},
-                "net_zero_target": "Net zero by 2050",
-                "renewable_energy": "25%"
-            },
-            "jio (reliance jio)": {
-                "scope1": {"value": 85000, "unit": "tCO2e", "year": 2024},
-                "scope2": {"value": 1850000, "unit": "tCO2e", "year": 2024},
-                "scope3": {"total": 3200000, "year": 2024},
-                "net_zero_target": "Included in Reliance 2035 target"
-            },
-            # --- Global Energy Majors ---
-            "shell": {
-                "scope1": {"value": 63000000, "unit": "tCO2e", "year": 2023, "source": "Shell Energy Transition Strategy 2024"},
-                "scope2": {"value": 6500000, "unit": "tCO2e", "year": 2023, "methodology": "location-based"},
-                "scope3": {"total": 1100000000, "year": 2023, "categories": {"11": 980000000}},
-                "net_zero_target": "Net zero by 2050",
-                "renewable_energy": "12% of energy mix",
-                "science_based_target": False,
-                "verification": "Third-party verified (KPMG)",
-                "data_source": "CDP 2024 / Shell Sustainability Report 2023"
-            },
-            "bp": {
-                "scope1": {"value": 31800000, "unit": "tCO2e", "year": 2023, "source": "BP Sustainability Report 2023"},
-                "scope2": {"value": 5200000, "unit": "tCO2e", "year": 2023, "methodology": "location-based"},
-                "scope3": {"total": 345000000, "year": 2023, "categories": {"11": 305000000}},
-                "net_zero_target": "Net zero by 2050",
-                "renewable_energy": "18% by 2030 target",
-                "science_based_target": False,
-                "verification": "Third-party verified (EY)",
-                "data_source": "CDP 2024 / BP Annual Report 2023"
-            },
-            "exxonmobil": {
-                "scope1": {"value": 104000000, "unit": "tCO2e", "year": 2023, "source": "ExxonMobil 2023 ESG Report"},
-                "scope2": {"value": 10800000, "unit": "tCO2e", "year": 2023, "methodology": "location-based"},
-                "scope3": {"total": 530000000, "year": 2023},
-                "net_zero_target": "Operational net zero by 2050",
-                "science_based_target": False,
-                "verification": "Third-party verified",
-                "data_source": "ExxonMobil ESG Report 2023 / CDP"
-            },
-            "chevron": {
-                "scope1": {"value": 58000000, "unit": "tCO2e", "year": 2023, "source": "Chevron 2023 CSR"},
-                "scope2": {"value": 7500000, "unit": "tCO2e", "year": 2023},
-                "scope3": {"total": 312000000, "year": 2023},
-                "net_zero_target": "Aspirational net zero by 2050",
-                "science_based_target": False,
-                "data_source": "Chevron CSR 2023 / CDP"
-            },
-            # --- Global Consumer Goods ---
-            "unilever": {
-                "scope1": {"value": 680000, "unit": "tCO2e", "year": 2023, "source": "Unilever Climate Transition Action Plan 2023"},
-                "scope2": {"value": 790000, "unit": "tCO2e", "year": 2023, "methodology": "market-based"},
-                "scope3": {"total": 65000000, "year": 2023, "categories": {"1": 55000000, "11": 7000000}},
-                "net_zero_target": "Net zero across value chain by 2039",
-                "renewable_energy": "96%",
-                "science_based_target": True,
-                "verification": "Third-party verified (Bureau Veritas)",
-                "data_source": "Unilever Annual Report 2023 / CDP"
-            },
-            "nestle": {
-                "scope1": {"value": 2600000, "unit": "tCO2e", "year": 2023, "source": "Nestle ESG Report 2023"},
-                "scope2": {"value": 1400000, "unit": "tCO2e", "year": 2023, "methodology": "market-based"},
-                "scope3": {"total": 90000000, "year": 2023, "categories": {"1": 75000000}},
-                "net_zero_target": "Net zero by 2050",
-                "renewable_energy": "64%",
-                "science_based_target": True,
-                "verification": "Third-party verified",
-                "data_source": "Nestle ESG Report 2023"
-            },
-            "coca-cola": {
-                "scope1": {"value": 4300000, "unit": "tCO2e", "year": 2023, "source": "Coca-Cola ESG Report 2023"},
-                "scope2": {"value": 2100000, "unit": "tCO2e", "year": 2023, "methodology": "market-based"},
-                "scope3": {"total": 20000000, "year": 2023},
-                "net_zero_target": "Net zero by 2050",
-                "renewable_energy": "25%",
-                "science_based_target": True,
-                "data_source": "Coca-Cola ESG Report 2023"
-            },
-            "pepsico": {
-                "scope1": {"value": 3800000, "unit": "tCO2e", "year": 2023, "source": "PepsiCo ESG Summary 2023"},
-                "scope2": {"value": 1600000, "unit": "tCO2e", "year": 2023, "methodology": "market-based"},
-                "scope3": {"total": 25000000, "year": 2023},
-                "net_zero_target": "Net zero by 2040",
-                "renewable_energy": "31%",
-                "science_based_target": True,
-                "data_source": "PepsiCo ESG Summary 2023"
-            },
-            "walmart": {
-                "scope1": {"value": 7900000, "unit": "tCO2e", "year": 2023, "source": "Walmart ESG Report 2023"},
-                "scope2": {"value": 6200000, "unit": "tCO2e", "year": 2023, "methodology": "location-based"},
-                "scope3": {"total": 220000000, "year": 2023},
-                "net_zero_target": "Zero emissions by 2040 (no carbon offsets)",
-                "renewable_energy": "36%",
-                "science_based_target": True,
-                "data_source": "Walmart ESG Report 2023"
-            },
-            # --- Global Technology ---
-            "microsoft": {
-                "scope1": {"value": 130000, "unit": "tCO2e", "year": 2024, "source": "Microsoft Environmental Sustainability Report 2024"},
-                "scope2": {"value": 0, "unit": "tCO2e", "year": 2024, "source": "100% renewable electricity", "methodology": "market-based"},
-                "scope3": {"total": 14390000, "year": 2024, "categories": {"11": 8500000, "2": 2800000}},
-                "net_zero_target": "Carbon negative by 2030, historical carbon removal by 2050",
-                "renewable_energy": "100%",
-                "science_based_target": True,
-                "verification": "Third-party verified (Bureau Veritas)",
-                "data_source": "Microsoft ESR 2024"
-            },
-            "apple": {
-                "scope1": {"value": 57000, "unit": "tCO2e", "year": 2024, "source": "Apple Environmental Progress Report 2024"},
-                "scope2": {"value": 0, "unit": "tCO2e", "year": 2024, "source": "100% renewable electricity", "methodology": "market-based"},
-                "scope3": {"total": 15600000, "year": 2024, "categories": {"11": 8200000}},
-                "net_zero_target": "Carbon neutral across entire supply chain and products by 2030",
-                "renewable_energy": "100%",
-                "science_based_target": True,
-                "verification": "Third-party verified",
-                "data_source": "Apple EPR 2024"
-            },
-            "google": {
-                "scope1": {"value": 248000, "unit": "tCO2e", "year": 2023, "source": "Google ESG Report 2023"},
-                "scope2": {"value": 0, "unit": "tCO2e", "year": 2023, "source": "100% renewable match", "methodology": "market-based"},
-                "scope3": {"total": 11500000, "year": 2023, "categories": {"2": 6800000}},
-                "net_zero_target": "Net zero emissions by 2030 (all operations + supply chain)",
-                "renewable_energy": "100% matched",
-                "science_based_target": True,
-                "verification": "Third-party verified (Bureau Veritas)",
-                "data_source": "Google ESG Report 2023"
-            },
-            "alphabet": {
-                "scope1": {"value": 248000, "unit": "tCO2e", "year": 2023, "source": "Google/Alphabet ESG Report 2023"},
-                "scope2": {"value": 0, "unit": "tCO2e", "year": 2023, "methodology": "market-based"},
-                "scope3": {"total": 11500000, "year": 2023},
-                "net_zero_target": "Net zero by 2030",
-                "renewable_energy": "100% matched",
-                "science_based_target": True,
-                "data_source": "Alphabet ESG Report 2023"
-            },
-            "amazon": {
-                "scope1": {"value": 3800000, "unit": "tCO2e", "year": 2023, "source": "Amazon Sustainability Report 2023"},
-                "scope2": {"value": 0, "unit": "tCO2e", "year": 2023, "methodology": "market-based"},
-                "scope3": {"total": 68000000, "year": 2023, "categories": {"4": 28000000, "11": 24000000}},
-                "net_zero_target": "Net zero by 2040 (The Climate Pledge)",
-                "renewable_energy": "100%",
-                "science_based_target": True,
-                "data_source": "Amazon Sustainability Report 2023"
-            },
-            "meta": {
-                "scope1": {"value": 104000, "unit": "tCO2e", "year": 2023, "source": "Meta Sustainability Report 2023"},
-                "scope2": {"value": 0, "unit": "tCO2e", "year": 2023, "methodology": "market-based"},
-                "scope3": {"total": 5200000, "year": 2023},
-                "net_zero_target": "Net zero by 2030",
-                "renewable_energy": "100%",
-                "science_based_target": True,
-                "data_source": "Meta Sustainability Report 2023"
-            },
-            "tesla": {
-                "scope1": {"value": 58000, "unit": "tCO2e", "year": 2023, "source": "Tesla Impact Report 2023"},
-                "scope2": {"value": 165000, "unit": "tCO2e", "year": 2023, "methodology": "location-based"},
-                "scope3": {"total": 5200000, "year": 2023, "categories": {"11": 4100000}},
-                "net_zero_target": "Accelerating sustainable energy transition globally",
-                "renewable_energy": "85% of manufacturing electricity",
-                "science_based_target": False,
-                "verification": "Third-party verified",
-                "data_source": "Tesla Impact Report 2023"
-            },
-            # --- Global Financial Services ---
-            "jpmorgan": {
-                "scope1": {"value": 89000, "unit": "tCO2e", "year": 2023, "source": "JPMorgan Chase ESG Report 2023"},
-                "scope2": {"value": 0, "unit": "tCO2e", "year": 2023, "source": "100% renewable", "methodology": "market-based"},
-                "scope3": {"total": 227000000, "year": 2023, "categories": {"15": 220000000}},
-                "net_zero_target": "Operational net zero by 2030; portfolio net zero by 2050",
-                "renewable_energy": "100% operational",
-                "science_based_target": True,
-                "verification": "Third-party verified (EY)",
-                "data_source": "JPMorgan Chase ESG Report 2023 / PCAF"
-            },
-            "jpmorgan chase": {
-                "scope1": {"value": 89000, "unit": "tCO2e", "year": 2023, "source": "JPMorgan Chase ESG Report 2023"},
-                "scope2": {"value": 0, "unit": "tCO2e", "year": 2023, "methodology": "market-based"},
-                "scope3": {"total": 227000000, "year": 2023, "categories": {"15": 220000000}},
-                "net_zero_target": "Operational net zero 2030; portfolio 2050",
-                "renewable_energy": "100% operational",
-                "science_based_target": True,
-                "data_source": "JPMorgan Chase ESG Report 2023"
-            },
-            "goldman sachs": {
-                "scope1": {"value": 42000, "unit": "tCO2e", "year": 2023, "source": "Goldman Sachs ESG Report 2023"},
-                "scope2": {"value": 0, "unit": "tCO2e", "year": 2023, "methodology": "market-based"},
-                "scope3": {"total": 165000000, "year": 2023, "categories": {"15": 158000000}},
-                "net_zero_target": "Net zero by 2030 (operations); 2050 (financed)",
-                "renewable_energy": "100% operational",
-                "science_based_target": True,
-                "data_source": "Goldman Sachs ESG Report 2023"
-            },
-            "bank of america": {
-                "scope1": {"value": 83000, "unit": "tCO2e", "year": 2023, "source": "BofA ESG Report 2023"},
-                "scope2": {"value": 0, "unit": "tCO2e", "year": 2023, "methodology": "market-based"},
-                "scope3": {"total": 189000000, "year": 2023, "categories": {"15": 180000000}},
-                "net_zero_target": "Net zero by 2050",
-                "renewable_energy": "100% operational",
-                "science_based_target": True,
-                "data_source": "Bank of America ESG Report 2023"
-            },
-            # --- Global Automotive ---
-            "toyota": {
-                "scope1": {"value": 9200000, "unit": "tCO2e", "year": 2023, "source": "Toyota Environmental Report 2023"},
-                "scope2": {"value": 3800000, "unit": "tCO2e", "year": 2023, "methodology": "location-based"},
-                "scope3": {"total": 420000000, "year": 2023, "categories": {"11": 390000000}},
-                "net_zero_target": "Carbon neutral by 2050",
-                "renewable_energy": "18%",
-                "science_based_target": True,
-                "data_source": "Toyota Sustainability Data Book 2023"
-            },
-            "volkswagen": {
-                "scope1": {"value": 7800000, "unit": "tCO2e", "year": 2023, "source": "VW Group Sustainability Report 2023"},
-                "scope2": {"value": 2500000, "unit": "tCO2e", "year": 2023, "methodology": "market-based"},
-                "scope3": {"total": 248000000, "year": 2023, "categories": {"11": 225000000}},
-                "net_zero_target": "Climate neutral by 2050",
-                "renewable_energy": "55% by 2025 target",
-                "science_based_target": True,
-                "data_source": "VW Group Sustainability Report 2023"
-            }
-        }
-
+        # ────────────────────────────────────────────────────────────────
+        # The previous in-memory "known emissions" database — a hardcoded
+        # dict of scope 1/2/3 figures keyed by company name — has been
+        # removed. It silently overrode real extraction with stale 2023/2024
+        # values stamped "BRSR Filing / CDP Disclosure", producing reports
+        # that looked verified but were not. Carbon figures must now come
+        # from parsed disclosures, deterministic regex passes, the LLM
+        # extractor, or the explicit industry-baseline fallback (which is
+        # transparently labelled "Estimated industry baseline").
+        # ────────────────────────────────────────────────────────────────
+        self.known_emissions: Dict[str, Dict[str, Any]] = {}
         # GHG Protocol Scope 3 Categories
         self.scope3_categories = {
             1: "Purchased goods and services",
@@ -726,7 +310,35 @@ class CarbonExtractor:
         deterministic_scope12 = self._extract_scope12_combined(chunk_texts, industry_hint)
         table_extracted = self._extract_from_report_files(report_files or [])
 
-        if table_extracted.get("scope1") is not None:
+        # Camelot picks the FIRST scope match in a table, which is often a
+        # sub-total row (e.g., "Scope 1 stationary combustion = 979" instead
+        # of the consolidated "Scope 1 GHG Emissions = 115,294" further down).
+        # Only let camelot OVERRIDE the chunk-regex extractor when its value
+        # is at least as large as what we already found (or when the regex
+        # extractor returned nothing). This prevents a small sub-total from
+        # silently shadowing the real consolidated number.
+        industry_threshold_key = self._normalize_industry_for_threshold(industry_hint)
+
+        def _camelot_should_override(scope_num: int, camelot_val, current_val) -> bool:
+            if camelot_val is None:
+                return False
+            # Always reject camelot values that fail the industry magnitude floor —
+            # otherwise a 979 sub-total wins by virtue of being non-None.
+            validated = self._validate_emission_magnitude(
+                camelot_val, scope_num, industry_threshold_key, "company"
+            )
+            if validated is None:
+                return False
+            # Override when we have nothing yet, or when camelot is bigger
+            # (more likely to be the consolidated/total figure).
+            if current_val is None:
+                return True
+            try:
+                return float(camelot_val) >= float(current_val)
+            except (TypeError, ValueError):
+                return False
+
+        if _camelot_should_override(1, table_extracted.get("scope1"), deterministic_scope1.get("value")):
             deterministic_scope1 = {
                 "value": table_extracted.get("scope1"),
                 "year": table_extracted.get("year"),
@@ -734,7 +346,7 @@ class CarbonExtractor:
                 "confidence": "high",
                 "candidates_found": table_extracted.get("tables_found", 0),
             }
-        if table_extracted.get("scope2") is not None:
+        if _camelot_should_override(2, table_extracted.get("scope2"), deterministic_scope2.get("value")):
             deterministic_scope2 = {
                 "value": table_extracted.get("scope2"),
                 "year": table_extracted.get("year"),
@@ -742,7 +354,7 @@ class CarbonExtractor:
                 "confidence": "high",
                 "candidates_found": table_extracted.get("tables_found", 0),
             }
-        if table_extracted.get("scope3") is not None:
+        if _camelot_should_override(3, table_extracted.get("scope3"), deterministic_scope3.get("value")):
             deterministic_scope3 = {
                 "value": table_extracted.get("scope3"),
                 "year": table_extracted.get("year"),
@@ -768,60 +380,43 @@ class CarbonExtractor:
                 "candidates_found": deterministic_scope12.get("candidates_found", 0),
             }
 
-        # Step 0: Check known emissions database first
-        known_data = self._get_known_emissions(company)
-        if known_data:
-            print(f"📚 Found company in emissions database (CDP/BRSR data)")
+        # The hardcoded "known emissions" lookup has been removed; carbon
+        # figures must come from extracted disclosures every run.
+        known_data = None
 
         extracted_data = {}
 
-        # Step 1: If we have verified Ground Truth (known_data), use it directly over LLM
-        if known_data:
-            print("📊 Using verified BRSR/CDP database for emissions data as primary source...")
-            extracted_data = {
-                "scope1": known_data.get("scope1", {}),
-                "scope2": known_data.get("scope2", {}),
-                "scope3": known_data.get("scope3", {}),
-                "base_year": known_data.get("base_year"),
-                "reduction_target": known_data.get("net_zero_target"),
-                "science_based_target": known_data.get("science_based_target", False),
-                "verification_status": known_data.get("verification", "Third-party/CDP verified"),
-                "renewable_energy": known_data.get("renewable_energy"),
-                "carbon_intensity": known_data.get("carbon_intensity"),
-                "data_source": "Known Emissions Database (CDP/BRSR/Sustainability Reports)"
-            }
-        else:
-            # Fallback to LLM / PDF extraction
-            print("📊 Extracting carbon emissions data via LLM/Regex...")
-            extracted_data = self._llm_extract_carbon(company, extraction_text, claim)
-            if not extracted_data:
-                extracted_data = self._regex_extract_carbon(extraction_text)
+        # Extract via LLM / regex over the assembled disclosure corpus.
+        print("📊 Extracting carbon emissions data via LLM/Regex...")
+        extracted_data = self._llm_extract_carbon(company, extraction_text, claim)
+        if not extracted_data:
+            extracted_data = self._regex_extract_carbon(extraction_text)
 
-            # Deterministic scope extraction has priority when available.
-            if deterministic_scope1.get("value") is not None:
-                extracted_data["scope1"] = {
-                    "value": deterministic_scope1.get("value"),
-                    "unit": "tCO2e",
-                    "year": deterministic_scope1.get("year"),
-                    "source": deterministic_scope1.get("source") or "PDF extraction",
-                    "confidence": deterministic_scope1.get("confidence", "medium"),
-                }
-            if deterministic_scope2.get("value") is not None:
-                extracted_data["scope2"] = {
-                    "value": deterministic_scope2.get("value"),
-                    "unit": "tCO2e",
-                    "year": deterministic_scope2.get("year"),
-                    "source": deterministic_scope2.get("source") or "PDF extraction",
-                    "confidence": deterministic_scope2.get("confidence", "medium"),
-                }
-            if deterministic_scope3.get("value") is not None:
-                extracted_data["scope3"] = {
-                    "total": deterministic_scope3.get("value"),
-                    "unit": "tCO2e",
-                    "year": deterministic_scope3.get("year"),
-                    "source": deterministic_scope3.get("source") or "PDF extraction",
-                    "confidence": deterministic_scope3.get("confidence", "medium"),
-                }
+        # Deterministic scope extraction has priority when available.
+        if deterministic_scope1.get("value") is not None:
+            extracted_data["scope1"] = {
+                "value": deterministic_scope1.get("value"),
+                "unit": "tCO2e",
+                "year": deterministic_scope1.get("year"),
+                "source": deterministic_scope1.get("source") or "PDF extraction",
+                "confidence": deterministic_scope1.get("confidence", "medium"),
+            }
+        if deterministic_scope2.get("value") is not None:
+            extracted_data["scope2"] = {
+                "value": deterministic_scope2.get("value"),
+                "unit": "tCO2e",
+                "year": deterministic_scope2.get("year"),
+                "source": deterministic_scope2.get("source") or "PDF extraction",
+                "confidence": deterministic_scope2.get("confidence", "medium"),
+            }
+        if deterministic_scope3.get("value") is not None:
+            extracted_data["scope3"] = {
+                "total": deterministic_scope3.get("value"),
+                "unit": "tCO2e",
+                "year": deterministic_scope3.get("year"),
+                "source": deterministic_scope3.get("source") or "PDF extraction",
+                "confidence": deterministic_scope3.get("confidence", "medium"),
+            }
 
         # Extract Scope 3 category presence from report/evidence text.
         scope3_categories = self._extract_scope3_category_presence(extraction_text)
@@ -966,16 +561,24 @@ class CarbonExtractor:
         print("🧾 Auditing carbon offset transparency...")
         offset_transparency = self._audit_offset_transparency(extraction_text, validated_data)
 
-        # Include additional metadata from known database
-        additional_info = {}
-        if known_data:
-            additional_info = {
-                "net_zero_target": known_data.get("net_zero_target"),
-                "renewable_energy_percentage": known_data.get("renewable_energy"),
-                "science_based_target": known_data.get("science_based_target"),
-                "verification_status": known_data.get("verification"),
-                "data_source": "BRSR Filing / CDP Disclosure"
-            }
+        # Pull additional metadata from whatever extraction surfaced in the
+        # current run — net-zero target, renewables %, SBTi flag, verification
+        # status, and the actual disclosure source. Nothing here is allowed to
+        # come from a hardcoded company table; only fields that real
+        # extraction populated will appear in the final report.
+        additional_info: Dict[str, Any] = {}
+        for key, source_keys in (
+            ("net_zero_target", ("net_zero_target", "reduction_target")),
+            ("renewable_energy_percentage", ("renewable_energy",)),
+            ("science_based_target", ("science_based_target",)),
+            ("verification_status", ("verification_status", "verification")),
+            ("data_source", ("data_source",)),
+        ):
+            for sk in source_keys:
+                value = extracted_data.get(sk)
+                if value not in (None, "", []):
+                    additional_info[key] = value
+                    break
 
         # SBTi registry fallback for target-validation confirmation.
         if additional_info.get("science_based_target") is None:
@@ -1232,6 +835,55 @@ class CarbonExtractor:
 
         return None, None
 
+    @staticmethod
+    def _detect_chunk_unit_multiplier(chunk_text: str) -> float:
+        """Return the dominant unit multiplier hinted at in the chunk header.
+
+        Real ESG tables often write the unit once (in the column header or
+        a footnote) and leave the row values bare. Without a chunk-level
+        hint, the local-context unit detector misses every row in the table.
+
+        Case sensitivity matters: JPMorgan and most US-listed banks write
+        "mtCO2e" to mean "metric tonnes CO2e" (multiplier = 1), while
+        oil & gas companies write "MtCO2e" to mean "megatonnes" (1e6).
+        Lowercasing the chunk before unit lookup conflates the two and
+        produces 1,000,000× errors. We therefore restrict the auto-multiplier
+        to phrases that are unambiguous in either case ("million tonnes",
+        "billion tonnes", "kilotonnes"/"thousand tonnes", "GtCO2e",
+        "megatonnes") plus the case-preserving capital-M variants.
+        """
+        if not chunk_text:
+            return 1.0
+
+        unambiguous_lower = {
+            "billion tonnes": 1_000_000_000,
+            "billion tons": 1_000_000_000,
+            "billion metric tons": 1_000_000_000,
+            "gigatonnes": 1_000_000_000,
+            "million tonnes": 1_000_000,
+            "million tons": 1_000_000,
+            "million metric tons": 1_000_000,
+            "megatonnes": 1_000_000,
+            "thousand tonnes": 1_000,
+            "thousand metric tons": 1_000,
+            "kilotonnes": 1_000,
+        }
+        chunk_lower = chunk_text.lower()
+        for token, multiplier in sorted(unambiguous_lower.items(), key=lambda x: -x[1]):
+            if token in chunk_lower:
+                return float(multiplier)
+
+        # Case-sensitive checks for ambiguous abbreviations: only treat as
+        # multipliers when the capital letter is preserved.
+        if re.search(r"\bGt\s*CO2?e?\b", chunk_text):
+            return 1_000_000_000.0
+        if re.search(r"\bMt\s*CO2?e?\b", chunk_text):
+            return 1_000_000.0
+        if re.search(r"\bkt\s*CO2?e?\b", chunk_text, re.IGNORECASE):
+            # "ktCO2e" = kilotonnes; standard regardless of case.
+            return 1_000.0
+        return 1.0
+
     def _extract_scope_emissions_from_chunks(self, chunks: List[str], scope_number: int, industry_hint: str) -> Dict[str, Any]:
         """Extract Scope 1/2/3 emissions from chunk corpus with unit-aware parsing."""
         number_pattern = r"([\d,]+\.?\d*|\d*\.\d+)"
@@ -1239,16 +891,28 @@ class CarbonExtractor:
             1: [
                 r"total\s+scope\s+1\s+emissions[^0-9]{0,20}([\d,]+(?:\.\d+)?)",
                 r"\|\s*total\s+scope\s+1\s+emissions\s*\|[^|]*\|\s*([\d,]+(?:\.\d+)?)",
+                # Common table-row form: "Scope 1   65,500   72,300" — pick
+                # the first numeric column after the label. The intervening
+                # `[^0-9\n]{0,40}` (no digits, no newlines) keeps us inside
+                # one row and prevents capturing a totally unrelated number.
+                r"\bscope\s*1\b(?:\s*\([^)]*\))?[^0-9\n]{0,40}([\d,]+(?:\.\d+)?)",
+                # Prose form: "Scope 1 emissions in 2024 were 65,500"
+                r"\bscope\s*1\b[\s\S]{0,80}?\bwere\s+([\d,]+(?:\.\d+)?)",
+                r"\bscope\s*1\b[\s\S]{0,80}?\b(?:was|were|reached|stood at|totalled|totaled)\s+([\d,]+(?:\.\d+)?)",
             ],
             2: [
                 r"\|\s*market\s+based\s*\|[^|]*\|\s*([\d,]+(?:\.\d+)?)",
                 r"\|\s*location\s+based\s*\|[^|]*\|\s*([\d,]+(?:\.\d+)?)",
                 r"scope\s+2[\s\S]{0,120}?market\s+based[^0-9]{0,20}([\d,]+(?:\.\d+)?)",
                 r"scope\s+2[\s\S]{0,160}?location\s+based[^0-9]{0,20}([\d,]+(?:\.\d+)?)",
+                r"\bscope\s*2\b(?:\s*\([^)]*\))?[^0-9\n]{0,40}([\d,]+(?:\.\d+)?)",
+                r"\bscope\s*2\b[\s\S]{0,80}?\b(?:was|were|reached|stood at|totalled|totaled)\s+([\d,]+(?:\.\d+)?)",
             ],
             3: [
                 r"total\s+scope\s+3\s+emission[s]?[^0-9]{0,20}([\d,]+(?:\.\d+)?)",
                 r"\|\s*total\s+scope\s+3\s+emission[s]?\s*\|[^|]*\|\s*([\d,]+(?:\.\d+)?)",
+                r"\bscope\s*3\b(?:\s*\([^)]*\))?[^0-9\n]{0,40}([\d,]+(?:\.\d+)?)",
+                r"\bscope\s*3\b[\s\S]{0,80}?\b(?:was|were|reached|stood at|totalled|totaled)\s+([\d,]+(?:\.\d+)?)",
             ],
         }
         scope_patterns = {
@@ -1299,7 +963,16 @@ class CarbonExtractor:
         candidates: List[Dict[str, Any]] = []
         precision_candidates: List[Dict[str, Any]] = []
         for chunk in chunks or []:
-            chunk_lower = (chunk or "").lower()
+            chunk_raw = chunk or ""
+            chunk_lower = chunk_raw.lower()
+
+            # Detect a chunk-level unit hint (e.g., the column header on a
+            # table reads "(million tonnes CO2e)" while the row entries are
+            # bare numbers). When the local 220-char window around a match
+            # has no unit token, this lets us still apply the right multiplier.
+            # Pass the case-preserved text so "MtCO2e" (megatonnes) and
+            # "mtCO2e" (metric tonnes) are not conflated.
+            chunk_unit_multiplier = self._detect_chunk_unit_multiplier(chunk_raw)
 
             for pattern in high_precision_patterns.get(scope_number, []):
                 for match in re.finditer(pattern, chunk_lower):
@@ -1312,7 +985,7 @@ class CarbonExtractor:
                     year = int(year_match.group(0)) if year_match else None
                     precision_candidates.append(
                         {
-                            "value": value,
+                            "value": value * chunk_unit_multiplier,
                             "year": year,
                             "source_text": match.group(0),
                             "context": chunk_lower[max(0, match.start() - 60):min(len(chunk_lower), match.end() + 120)],
@@ -1326,8 +999,29 @@ class CarbonExtractor:
                     end = min(len(chunk_lower), match.end() + 140)
                     context = chunk_lower[start:end]
                     value, source_text = self._extract_emission_value_with_unit(context)
+
+                    # Fallback: when the local context lacks a unit token but
+                    # the chunk header had one, use the regex-captured number
+                    # times the chunk-level multiplier. Without this branch,
+                    # typical table rows like "Scope 1   65,500" get dropped
+                    # because tCO2e lives 200+ chars up in the column header.
                     if value is None:
-                        continue
+                        try:
+                            raw = float(match.group(1).replace(",", ""))
+                        except (IndexError, ValueError):
+                            continue
+                        # Only trust the bare number when:
+                        #   - the chunk supplies a unit hint, OR
+                        #   - the matched scope phrase itself is unambiguous
+                        #     (e.g., "scope 1 emissions: 65,500" — value
+                        #     pattern matched right after the keyword)
+                        if chunk_unit_multiplier == 1 and not re.search(
+                            r"(emissions?|tco2e|co2e|tonnes?|metric tons?)",
+                            context,
+                        ):
+                            continue
+                        value = raw * chunk_unit_multiplier
+                        source_text = match.group(0)
 
                     year_match = re.search(r"20(1[5-9]|2[0-9])", context)
                     year = int(year_match.group(0)) if year_match else None
@@ -1347,16 +1041,46 @@ class CarbonExtractor:
         if not candidates:
             return {"value": None, "year": None, "source": None, "confidence": "none", "candidates_found": 0}
 
-        with_year = [c for c in candidates if c.get("year")]
-        pool = with_year if with_year else candidates
-        best = max(pool, key=lambda c: (c.get("year") or 0, c.get("value") or 0))
+        # Filter candidates BEFORE choosing the best, otherwise a sub-total
+        # number from a single facility line ("Scope 1 stationary combustion
+        # = 979") shadows the consolidated figure ("Scope 1 = 65,500") and
+        # the whole result collapses to None when 979 fails the magnitude
+        # floor. Keep only candidates that pass the industry floor.
+        industry_threshold_key = self._normalize_industry_for_threshold(industry_hint)
+        valid_candidates = []
+        for c in candidates:
+            if self._validate_emission_magnitude(
+                c.get("value"), scope_number, industry_threshold_key, "company"
+            ) is not None:
+                valid_candidates.append(c)
 
-        valid_value = self._validate_emission_magnitude(best.get("value"), scope_number, self._normalize_industry_for_threshold(industry_hint), "company")
-        if valid_value is None:
-            return {"value": None, "year": best.get("year"), "source": None, "confidence": "none", "candidates_found": len(candidates)}
+        # If the floor wiped out everything, retain the largest raw candidate
+        # so the report still shows what extraction actually saw rather than
+        # silently going None — the magnitude warning will already have
+        # printed and the per-scope baseline fallback runs after this.
+        pool_for_pick = valid_candidates if valid_candidates else candidates
+
+        # "Total"-prefixed matches outrank bare matches; later years outrank
+        # older ones; larger values outrank smaller within the same year.
+        def _candidate_rank(c):
+            text = (c.get("source_text") or "").lower()
+            total_bonus = 1 if "total" in text else 0
+            return (total_bonus, c.get("year") or 0, c.get("value") or 0)
+
+        best = max(pool_for_pick, key=_candidate_rank)
+
+        if not valid_candidates:
+            # Best survived only because we relaxed; flag confidence accordingly.
+            return {
+                "value": None,
+                "year": best.get("year"),
+                "source": None,
+                "confidence": "none",
+                "candidates_found": len(candidates),
+            }
 
         return {
-            "value": valid_value,
+            "value": best.get("value"),
             "year": best.get("year"),
             "source": f"PDF extraction - {(best.get('source_text') or '')[:50]}",
             "confidence": best.get("confidence", "medium"),
@@ -1712,16 +1436,53 @@ class CarbonExtractor:
         return "\n\n".join(texts)[:8000]  # Limit to ~2K tokens
 
     def _combine_report_chunks(self, report_chunks: List[Dict[str, Any]]) -> str:
-        """Combine parsed report chunks with year hints."""
-        texts = []
-        for chunk in report_chunks[:60]:
+        """Combine parsed report chunks with year hints.
+
+        Sustainability reports run 200–900 chunks and the emissions tables
+        often sit deep in the document. A fixed N=60 slice silently drops
+        90%+ of the corpus before extraction even runs. Instead we:
+          1. Surface chunks whose text mentions emission keywords first,
+             then fall through to the rest in original order.
+          2. Stop at a token budget (~32k chars after joining), which is
+             what `_build_extraction_corpus` truncates to anyway.
+        This way the LLM/regex passes see the parts of the document that
+        actually contain numbers, even when those chunks aren't on the
+        first few pages.
+        """
+        if not report_chunks:
+            return ""
+
+        emission_keywords = (
+            "scope 1", "scope 2", "scope 3",
+            "tco2e", "co2e", "tonnes co2", "ghg emissions", "ghg intensity",
+            "carbon emissions", "emissions intensity", "operational emissions",
+            "financed emissions", "value chain emissions", "tco2", "mtco2",
+        )
+
+        priority: List[str] = []
+        rest: List[str] = []
+        for chunk in report_chunks:
             chunk_text = str(chunk.get("page_content") or chunk.get("text", ""))
             if not chunk_text:
                 continue
             year = chunk.get("year", "unknown")
             report_year = chunk.get("report_year", year)
-            texts.append(f"[REPORT YEAR {report_year}] {chunk_text[:1200]}")
-        return "\n\n".join(texts)
+            tagged = f"[REPORT YEAR {report_year}] {chunk_text[:2000]}"
+            if any(kw in chunk_text.lower() for kw in emission_keywords):
+                priority.append(tagged)
+            else:
+                rest.append(tagged)
+
+        ordered = priority + rest
+        # 32k char budget (matches _build_extraction_corpus truncation).
+        out: List[str] = []
+        used = 0
+        for piece in ordered:
+            if used + len(piece) + 2 > 32000:
+                break
+            out.append(piece)
+            used += len(piece) + 2
+        return "\n\n".join(out)
 
     def _combine_report_claims(self, report_claims_by_year: Dict[Any, List[str]]) -> str:
         """Combine report claims grouped by year."""
@@ -1760,47 +1521,14 @@ class CarbonExtractor:
         return combined, meta
 
     def _get_known_emissions(self, company: str) -> Optional[Dict[str, Any]]:
-        """ Look up company in known emissions database (CDP/BRSR/Sustainability Reports) """
-        if not company: return None
-        company_lower = company.lower().strip()
+        """Deprecated lookup retained for API compatibility.
 
-        # 1. Exact match
-        if company_lower in self.known_emissions: return self.known_emissions[company_lower]
-
-        # Common aliases (Canonical mapping)
-        aliases = {
-            "infy": "infosys", "tcs": "tcs", "hcl": "hcl technologies", "techm": "tech mahindra",
-            "ril": "reliance industries", "reliance": "reliance industries", "jsw": "jsw steel",
-            "ultratech": "ultratech cement", "hul": "hindustan unilever", "airtel": "bharti airtel",
-            "jio": "jio (reliance jio)", "icici": "icici bank", "hdfc": "hdfc bank", "sbi": "sbi",
-            "state bank": "sbi", "sun pharma": "sun pharma", "dr reddy": "dr reddy's",
-            "m&m": "mahindra & mahindra", "maruti": "maruti suzuki", "tata motor": "tata motors",
-            "tata steel": "tata steel", "adani": "adani green",
-            "shell plc": "shell", "royal dutch shell": "shell", "bp plc": "bp", "british petroleum": "bp",
-            "exxon": "exxonmobil", "chevron corp": "chevron", "unilever plc": "unilever",
-            "nestle s.a.": "nestle", "nestlé": "nestle", "coca cola": "coca-cola", "pepsi": "pepsico",
-            "walmart inc": "walmart", "microsoft corp": "microsoft", "apple inc": "apple",
-            "google llc": "google", "alphabet inc": "alphabet", "amazon inc": "amazon",
-            "meta platforms": "meta", "facebook": "meta", "tesla inc": "tesla",
-            "jpmorgan chase": "jpmorgan", "jp morgan": "jpmorgan", "goldman": "goldman sachs",
-            "bofa": "bank of america", "citi": "citigroup", "toyota motor": "toyota", "vw": "volkswagen"
-        }
-
-        # 2. Alias exact match
-        if company_lower in aliases and aliases[company_lower] in self.known_emissions:
-            return self.known_emissions[aliases[company_lower]]
-
-        # 3. Substring match for aliases (e.g. "jp morgan chase & co" -> "jp morgan")
-        for alias, canonical in aliases.items():
-            if alias in company_lower or company_lower in alias:
-                if canonical in self.known_emissions:
-                    return self.known_emissions[canonical]
-
-        # 4. Safe containment match with existing keys
-        for known_company, data in self.known_emissions.items():
-            if known_company in company_lower or company_lower in known_company:
-                return data
-
+        The hardcoded "known emissions" database has been removed because it
+        silently overrode real extraction with stale per-company figures
+        stamped "BRSR Filing / CDP Disclosure". Always returns None — every
+        run must derive scope 1/2/3 from disclosures, regex passes, the LLM
+        extractor, or the explicit industry-baseline fallback.
+        """
         return None
 
     def _llm_extract_carbon(self, company: str, evidence_text: str,

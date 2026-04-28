@@ -1780,7 +1780,3 @@ python -m features.esg_mismatch_detector.pipeline "BP"
 *End of guide. For day-to-day operational tweaks, edit this file alongside the change. For marketing/architecture overview, see `README.md`. For older product flow narrative (slightly stale on frontend), see `PROJECT_DOCUMENTATION.md`. For change-log of recent fixes, see `IMPROVEMENTS_SUMMARY.md`.*
 
 
-❯ so the proble here I think is in the carbon extraction of scope 1,2 and 3. I think it is hardocded somewhere in the project, find it, remove all the
-  hardcoded value sof scope 1,2 and 3 carbon emissions from everywhere and it should be properly extracted from the sources that should be properly
-  fetched. go through pipleline make sure rightts sourvces are fetched and collected for the carbon emission of scope 1,2 and 3 and it properly displayed
-  in the txt report with proper year information, source and other columns proeprly logivally answered

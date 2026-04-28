@@ -394,16 +394,39 @@ def build_pdf(report: Dict[str, Any], raw: Dict[str, Any] = None) -> bytes:
     s += _sec("SECTION 8: CARBON EMISSIONS & CLIMATE DATA")
     s1,s2,s3 = _sf(carbon.get("scope1")), _sf(carbon.get("scope2")), _sf(carbon.get("scope3"))
     total = _sf(carbon.get("total", s1+s2+s3))
-    
-    c_src = carbon.get("source","")
-    if not c_src or c_src == "Unknown":
-        # Try to find an overarching source for carbon in the raw dict
-        c_src = "BRSR Filing / CDP Disclosure" if s1 or s2 else "Company Report"
+
+    # Per-scope year and source come from the raw extractor output, not from
+    # the report schema (which only carries aggregate floats). This is what
+    # lets the PDF reflect what was actually extracted instead of stamping
+    # 2023 / "BRSR Filing / CDP Disclosure" on every row.
+    raw_emissions = ((raw.get("carbon_extraction") or {}).get("emissions")) or {}
+    if isinstance(raw_emissions.get("data"), dict):
+        raw_emissions = raw_emissions["data"]
+    carbon_default_source = (
+        carbon.get("source")
+        or (raw.get("carbon_extraction") or {}).get("data_source")
+        or ""
+    )
+
+    def _scope_row(label: str, scope_key: str, value: float):
+        meta = raw_emissions.get(scope_key) if isinstance(raw_emissions.get(scope_key), dict) else {}
+        year = meta.get("year") or meta.get("reporting_year") or "—"
+        src = meta.get("source") or meta.get("data_source") or carbon_default_source or "—"
+        quality = meta.get("confidence") or meta.get("data_confidence")
+        if not quality:
+            quality = "Estimated" if meta.get("estimated_from_baseline") else ("Reported" if value else "N/A")
+        return [
+            label,
+            f"{value:,.0f}" if value else "Not Disclosed",
+            str(year),
+            str(src)[:35],
+            str(quality).title()[:12],
+        ]
 
     s.append(_tbl(["Scope","Emissions (tCO2e)","Year","Source","Quality"], [
-        ["Scope 1", f"{s1:,.0f}" if s1 else "Not Disclosed", "2023", c_src[:25], "High" if s1 else "N/A"],
-        ["Scope 2", f"{s2:,.0f}" if s2 else "Not Disclosed", "2023", c_src[:25], "High" if s2 else "N/A"],
-        ["Scope 3", f"{s3:,.0f}" if s3 else "Not Disclosed", "2023", c_src[:25], "High" if s3 else "N/A"],
+        _scope_row("Scope 1", "scope1", s1),
+        _scope_row("Scope 2", "scope2", s2),
+        _scope_row("Scope 3", "scope3", s3),
         ["TOTAL", f"{total:,.0f}" if total else "N/A", "—", "—", "Indicative"],
     ], [30*mm, 45*mm, 20*mm, 60*mm, 25*mm]))
     s.append(SP)

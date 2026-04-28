@@ -151,7 +151,13 @@ def calculate_compliance_score(compliance_results: list[dict]) -> dict:
 
         status_raw = str(row.get("status") or row.get("compliance_status") or "").upper()
         has_gap = bool(gap_details) or status_raw in {"GAP", "GAP FOUND", "NON-COMPLIANT", "PARTIALLY COMPLIANT"}
-        is_compliant = not has_gap and status_raw in {"", "COMPLIANT", "NOT APPLICABLE"}
+        # NOT_EVALUATED frameworks were never tested against the claim — they
+        # must not be counted as compliant. Empty status with no gaps is also
+        # treated as not-evaluated rather than auto-compliant.
+        is_not_evaluated = status_raw in {"NOT_EVALUATED", "NOT EVALUATED"} or (
+            not has_gap and status_raw in {"", "NOT APPLICABLE"}
+        )
+        is_compliant = not has_gap and not is_not_evaluated and status_raw == "COMPLIANT"
 
         if is_compliant:
             compliant += 1
@@ -159,15 +165,33 @@ def calculate_compliance_score(compliance_results: list[dict]) -> dict:
             regulations_with_gaps += 1
             concrete_gap_count += max(1, len(gap_details))
 
+        if has_gap:
+            display_status = "GAP FOUND"
+        elif is_not_evaluated:
+            display_status = "NOT EVALUATED"
+        else:
+            display_status = "COMPLIANT"
         per_regulation_status.append({
             "regulation": row.get("regulation_name") or row.get("regulation") or f"Regulation {idx + 1}",
-            "status": "GAP FOUND" if has_gap else "COMPLIANT",
+            "status": display_status,
             "gap_count": len(gap_details),
             "gap_details": gap_details,
             "gaps": gap_details,
         })
 
-    base_score = (compliant / total) * 100
+    # Compute the base score against the number of frameworks the scanner
+    # actually evaluated, not the full applicable list. Otherwise frameworks
+    # that the claim never triggered (NOT_EVALUATED) drag the score down as
+    # if they were gaps.
+    evaluated_count = sum(
+        1
+        for row in per_regulation_status
+        if row["status"] not in {"NOT EVALUATED", "NOT_EVALUATED"}
+    )
+    if evaluated_count == 0:
+        base_score = 0
+    else:
+        base_score = (compliant / evaluated_count) * 100
     penalty = concrete_gap_count * 8
     final_score = max(0, round(base_score - penalty))
 
@@ -849,17 +873,30 @@ class RegulatoryHorizonScanner:
             critical_gap = True
 
         has_gap = len(gap_details) > 0
-        # Distinguish confirmed violations from mere evidence absences.
-        # UNCERTAIN = gaps exist only from unverified requirements, no critical gap,
-        #             and no confirmed violation — i.e., the evidence is simply missing.
+        # Status taxonomy:
+        #   GAP            – confirmed gap or critical-gap framework
+        #   UNCERTAIN      – framework was triggered but evidence is missing
+        #   COMPLIANT      – at least one requirement was triggered AND met,
+        #                     and no gaps remain
+        #   NOT_EVALUATED  – the claim never triggered any of this framework's
+        #                     claim_validation_rules (i.e., the framework
+        #                     wasn't actually tested). Previously this case
+        #                     silently defaulted to COMPLIANT, producing
+        #                     misleading "company X is compliant with GHG
+        #                     Protocol" rows when the scanner never even
+        #                     evaluated the framework against the claim.
         if has_gap and critical_gap:
             status = "GAP"
         elif has_gap and len(requirements_met) == 0 and not critical_gap:
             status = "UNCERTAIN"
         elif has_gap:
             status = "GAP"
-        else:
+        elif total_rules == 0:
+            status = "NOT_EVALUATED"
+        elif len(requirements_met) > 0:
             status = "COMPLIANT"
+        else:
+            status = "UNCERTAIN"
         
         return {
             "regulation_id": reg_id,
@@ -1219,3 +1256,107 @@ regulatory_scanner = RegulatoryHorizonScanner()
 def get_regulatory_scanner() -> RegulatoryHorizonScanner:
     """Get global regulatory scanner instance"""
     return regulatory_scanner
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Real-data compliance evaluation (added Apr 2026)
+# ──────────────────────────────────────────────────────────────────────────
+
+
+def evaluate_real_compliance(
+    company: str,
+    country: str = "",
+    industry: str = "",
+    report_chunks: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Run live fetchers against public regulatory registries.
+
+    Returns rows shaped like the multi-jurisdiction scanner expects:
+        {
+            "jurisdiction": "...",
+            "framework": "...",
+            "status": "compliant" | "gap" | "uncertain" | "not_applicable",
+            "specific_violation": "...",
+            "evidence_url": "...",
+            "source_name": "...",
+            "fetched_at": "...",
+            "penalty_score": int,
+            "material_misstatement_risk": bool,
+            "real_data": True,  # marker so the report renderer can show "verified"
+        }
+
+    Each row corresponds to one ACTUAL public registry / API check. This
+    is the authoritative compliance signal — the keyword-rule and DDG-search
+    rows are kept as supplementary, but real-data rows take precedence in
+    scoring.
+
+    ``report_chunks`` is forwarded to fetchers that verify against the
+    company's own disclosures (currently only the GHG Protocol fetcher).
+    """
+    try:
+        from utils.regulatory_fetchers import fetch_all_real_compliance
+    except Exception as exc:
+        return {"rows": [], "error": f"regulatory_fetchers import failed: {exc}"}
+
+    rows: List[Dict[str, Any]] = []
+    raw_results = fetch_all_real_compliance(
+        company=company, country=country, industry=industry, report_chunks=report_chunks
+    )
+
+    # Map verified-flag → multi-jurisdiction status string
+    jurisdiction_for_framework = {
+        "SEC Climate Disclosure Rule": "US",
+        "TCFD-aligned Climate Disclosure": "Global",
+        "CDP (Carbon Disclosure Project)": "Global",
+        "UN Global Compact": "Global",
+        "Science Based Targets initiative": "Global",
+        "GHG Protocol Corporate Standard": "Global",
+        "GRI Sustainability Reporting Standards": "Global",
+        "FTC Green Guides": "US",
+    }
+
+    for raw in raw_results:
+        framework = raw.get("framework", "")
+        verified = raw.get("verified")
+        applicable = raw.get("applicable", True)
+
+        if not applicable:
+            status = "not_applicable"
+            penalty = 0
+            material = False
+        elif verified is True:
+            status = "compliant"
+            penalty = 0
+            material = False
+        elif verified is False:
+            status = "gap"
+            penalty = 12
+            material = True
+        else:
+            status = "uncertain"
+            penalty = 4
+            material = False
+
+        rows.append({
+            "jurisdiction": jurisdiction_for_framework.get(framework, "Global"),
+            "framework": framework,
+            "status": status,
+            "specific_violation": raw.get("evidence", ""),
+            "evidence_url": raw.get("url", ""),
+            "source_name": raw.get("source_name", ""),
+            "fetched_at": raw.get("fetched_at", ""),
+            "penalty_score": penalty,
+            "material_misstatement_risk": material,
+            "real_data": True,
+            "applicable": applicable,
+        })
+
+    summary = {
+        "rows": rows,
+        "evaluated_count": sum(1 for r in rows if r["status"] in {"compliant", "gap"}),
+        "compliant_count": sum(1 for r in rows if r["status"] == "compliant"),
+        "gap_count": sum(1 for r in rows if r["status"] == "gap"),
+        "uncertain_count": sum(1 for r in rows if r["status"] == "uncertain"),
+        "not_applicable_count": sum(1 for r in rows if r["status"] == "not_applicable"),
+    }
+    return summary

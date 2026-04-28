@@ -576,17 +576,57 @@ class ReportDownloaderService:
         except Exception:
             return False
     
+    # Stub PDFs slip through when a server returns a small redirect/404 page
+    # with the .pdf extension and a %PDF prefix. Anything below these floors
+    # cannot contain a real ESG/climate disclosure (a real one runs ≥10 pages
+    # and ≥50 KB of compressed text). We treat such files as failed downloads
+    # so they don't poison the chunk cache or carbon extraction.
+    MIN_PDF_BYTES = 50 * 1024
+    MIN_PDF_PAGES = 5
+
     def _verify_pdf(self, filepath: Path) -> bool:
         """
-        Verify file is a valid PDF
-        Checks magic bytes (%PDF) and basic PDF structure
+        Verify file is a valid, substantive PDF.
+
+        Three layers of check:
+          1. %PDF magic bytes
+          2. File size ≥ MIN_PDF_BYTES (filters stub redirect pages)
+          3. Page count ≥ MIN_PDF_PAGES when a parser is available
+             (filters cover-only stubs that happen to compress to >50 KB)
         """
         try:
+            size = filepath.stat().st_size
+            if size < self.MIN_PDF_BYTES:
+                print(
+                    f"         ⚠️ PDF rejected: size {size} bytes < {self.MIN_PDF_BYTES} (likely stub/redirect page)"
+                )
+                return False
+
             with open(filepath, 'rb') as f:
-                # PDF files start with %PDF
-                header = f.read(5)
-                return header.startswith(b'%PDF')
-            
+                if not f.read(5).startswith(b'%PDF'):
+                    return False
+
+            # Page-count check — best effort; if neither parser is available
+            # we accept based on size + magic bytes alone.
+            try:
+                from pypdf import PdfReader  # type: ignore
+                reader = PdfReader(str(filepath))
+                page_count = len(reader.pages)
+            except Exception:
+                try:
+                    import pdfplumber  # type: ignore
+                    with pdfplumber.open(str(filepath)) as pdf:
+                        page_count = len(pdf.pages)
+                except Exception:
+                    return True  # parsers unavailable; rely on size+magic
+
+            if page_count < self.MIN_PDF_PAGES:
+                print(
+                    f"         ⚠️ PDF rejected: only {page_count} page(s) < {self.MIN_PDF_PAGES} (likely cover-only stub)"
+                )
+                return False
+            return True
+
         except Exception as e:
             print(f"         ⚠️ PDF verification error: {e}")
             return False

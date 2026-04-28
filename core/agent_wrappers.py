@@ -27,7 +27,7 @@ except ImportError as e:
 from core.state_schema import ESGState
 from core.enums import AgentStatus
 from core.evidence_cache import evidence_cache
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from core.esg_data_apis import fill_missing_pillars
 from core.fact_graph_builder import build_esg_fact_graph
 from core.adversarial_audit import build_adversarial_audit
@@ -831,6 +831,49 @@ def carbon_pathway_analysis_node(state: ESGState) -> ESGState:
         if "decline" in txt or "phase down" in txt:
             production_plan = "decline"
 
+    # Resolve the base year dynamically (RC-1):
+    #   1. Newest year tagged on parsed report chunks (report_parser node)
+    #   2. reporting_year captured by carbon extraction / PDF metric extractor
+    #   3. Fall back to "current year - 1" so a calendar rollover doesn't
+    #      anchor every CAGR calculation to a frozen 2023 baseline.
+    def _resolve_base_year() -> int:
+        # 1. Most recent year on parsed report chunks
+        for output in state.get("agent_outputs", []) or []:
+            if not isinstance(output, dict) or output.get("agent") != "report_parser":
+                continue
+            chunks = ((output.get("output") or {}).get("chunks") or [])
+            years = []
+            for chunk in chunks:
+                if not isinstance(chunk, dict):
+                    continue
+                year = chunk.get("year")
+                try:
+                    year_int = int(year)
+                except (TypeError, ValueError):
+                    continue
+                if 2015 <= year_int <= datetime.now().year + 1:
+                    years.append(year_int)
+            if years:
+                return max(years)
+
+        # 2. reporting_year on the carbon dict (set by carbon extractor or
+        #    by company_report_fetcher._extract_esg_metrics — RC-4).
+        candidate = carbon.get("reporting_year")
+        if candidate is None:
+            company_reports = state.get("company_reports") or {}
+            candidate = (company_reports.get("extracted_data") or {}).get("reporting_year")
+        try:
+            candidate_int = int(candidate)
+            if 2015 <= candidate_int <= datetime.now().year + 1:
+                return candidate_int
+        except (TypeError, ValueError):
+            pass
+
+        # 3. Dynamic fallback: previous calendar year.
+        return datetime.now().year - 1
+
+    base_year = _resolve_base_year()
+
     if not CARBON_PATHWAY_MODELLER_AVAILABLE:
         result = {
             "alignment_status": "misaligned",
@@ -848,7 +891,7 @@ def carbon_pathway_analysis_node(state: ESGState) -> ESGState:
                 scope1=scope1_val,
                 scope2=scope2_val,
                 scope3=scope3_val,
-                base_year=int(carbon.get("reporting_year") or 2023),
+                base_year=base_year,
                 target_year=target_year,
                 target_reduction_pct=30.0,
                 production_plan=production_plan,
@@ -1012,7 +1055,11 @@ def regulatory_scanning_node(state: ESGState) -> ESGState:
             country = "DE"
         elif any(c in company_lower for c in ["bp", "shell", "hsbc", "unilever", "barclays", "london"]):
             country = "UK"
-        elif any(c in company_lower for c in ["tesla", "exxon", "chevron", "walmart", "microsoft", "apple", "amazon", "google"]):
+        elif any(c in company_lower for c in [
+            "tesla", "exxon", "chevron", "walmart", "microsoft", "apple", "amazon", "google",
+            "jpmorgan", "jp morgan", "goldman", "morgan stanley", "citi", "wells fargo",
+            "bank of america", "bofa", "blackrock", "berkshire", "meta", "netflix",
+        ]):
             country = "US"
         else:
             country = ""
@@ -1039,6 +1086,42 @@ def regulatory_scanning_node(state: ESGState) -> ESGState:
             carbon_data=carbon_state,
         )
 
+        # Real-data compliance pass — hits SEC EDGAR, TCFD adopter list,
+        # CDP A-list, UN Global Compact, SBTi registry, GRI database, FTC
+        # enforcement DB, plus an in-disclosure GHG Protocol check that
+        # uses the parsed report chunks. These are the authoritative
+        # signals; the keyword/DDG passes below are kept as supplementary
+        # context. See utils/regulatory_fetchers.py.
+        try:
+            from agents.regulatory_scanner import evaluate_real_compliance
+
+            # Reuse the parsed chunks from report_parser_node so the GHG
+            # Protocol in-disclosure fetcher doesn't need to re-parse PDFs.
+            _parser_outputs = [o for o in state.get("agent_outputs", []) if o.get("agent") == "report_parser"]
+            _parsed_chunks = (
+                _parser_outputs[-1].get("output", {}).get("chunks", [])
+                if _parser_outputs else []
+            )
+
+            real_summary = evaluate_real_compliance(
+                company=company,
+                country=country,
+                industry=industry,
+                report_chunks=_parsed_chunks,
+            )
+            real_rows = real_summary.get("rows", []) if isinstance(real_summary, dict) else []
+            print(
+                f"   📋 Real-data fetch: {len(real_rows)} rows  ("
+                f"{real_summary.get('compliant_count', 0)} pass, "
+                f"{real_summary.get('gap_count', 0)} fail, "
+                f"{real_summary.get('uncertain_count', 0)} uncertain, "
+                f"{real_summary.get('not_applicable_count', 0)} N/A)"
+            )
+        except Exception as exc:
+            print(f"   ⚠️ Real-data compliance fetch failed: {exc}")
+            real_rows = []
+            real_summary = {}
+
         if MULTI_JURISDICTION_SCANNER_AVAILABLE:
             try:
                 mj = MultiJurisdictionRegulatoryScanner()
@@ -1057,21 +1140,153 @@ def regulatory_scanning_node(state: ESGState) -> ESGState:
                 )
                 result = dict(base_result) if isinstance(base_result, dict) else {}
                 result["multi_jurisdiction"] = multi
-                unified_frameworks = multi.get("jurisdiction_results", []) if isinstance(multi, dict) else []
+                # Real-data rows are authoritative. When a real-data fetcher
+                # returned a result for a framework, drop any heuristic /
+                # keyword-rule row covering the same framework — otherwise
+                # the report contradicts itself (e.g., SBTi COMPLIANT* from
+                # the real registry + SBTi GAP from the keyword scanner).
+                heuristic_rows = (
+                    multi.get("jurisdiction_results", []) if isinstance(multi, dict) else []
+                )
+
+                def _norm_fwk(fwk: str) -> str:
+                    """Normalize framework name for cross-source matching.
+
+                    Strips wording variants (rule/rules, disclosure, climate,
+                    parenthetical expansions) so "SEC Climate Disclosure Rule"
+                    and "SEC Climate Disclosure Rules" collapse to the same
+                    key — the real-data row should shadow whichever variant
+                    the heuristic scanner used.
+                    """
+                    import re as _re
+                    s = (fwk or "").lower()
+                    s = _re.sub(r"\([^)]*\)", " ", s)  # strip "(Carbon Disclosure Project)"
+                    s = _re.sub(r"\b(rule|rules|standard|standards|act|acts)\b", " ", s)
+                    s = _re.sub(r"\b(disclosure|disclosures|aligned|climate|reporting|requirement|requirements)\b", " ", s)
+                    s = "".join(ch for ch in s if ch.isalnum())
+                    return s
+
+                # Shadow ALL heuristic rows for any framework that a real-data
+                # fetcher *attempted*, even when the real fetch returned
+                # UNCERTAIN. A UNCERTAIN* row at least documents which public
+                # registry was queried and when — strictly more informative
+                # than a heuristic NOT_TESTED row covering the same framework.
+                real_framework_keys = {
+                    _norm_fwk(r.get("framework", ""))
+                    for r in real_rows
+                    if isinstance(r, dict) and r.get("status") in {"compliant", "gap", "uncertain"}
+                }
+                shadowed = 0
+                filtered_heuristic = []
+                for hr in heuristic_rows:
+                    if not isinstance(hr, dict):
+                        continue
+                    if _norm_fwk(hr.get("framework", "")) in real_framework_keys:
+                        shadowed += 1
+                        continue
+                    filtered_heuristic.append(hr)
+                if shadowed:
+                    print(
+                        f"   🛡️  Real-data rows shadowed {shadowed} heuristic row(s) for the same framework"
+                    )
+
+                unified_frameworks = list(real_rows) + filtered_heuristic
+
+                # Map multi-jurisdiction statuses → coarse buckets the
+                # report renderer understands. "not_evaluated" / "uncertain"
+                # are NOT gaps (they mean we didn't have evidence either way)
+                # and must not be lumped into the gap count.
+                _GAP_STATES = {"gap", "active_enforcement"}
+                _COMPLIANT_STATES = {"compliant"}
+
                 gap_count = sum(
                     1 for row in unified_frameworks
-                    if isinstance(row, dict) and str(row.get("status", "")).lower() != "compliant"
+                    if isinstance(row, dict) and str(row.get("status", "")).lower() in _GAP_STATES
                 )
-                unified_score = float(multi.get("total_compliance_score", 0.0))
-                assert not (gap_count == 0 and unified_score < 40), (
-                    f"Compliance score {unified_score} inconsistent with 0 gaps"
+
+                # Capability-based score (replaces the previous penalty-only
+                # formula). Real-data rows from evaluate_real_compliance are
+                # the authoritative signal; the multi-jurisdiction DDG rows
+                # are supplementary. Each framework carries a credibility
+                # weight (Tier 1 gov registry = 1.0, Tier 2 voluntary list =
+                # 0.8, Tier 3 in-disclosure inference = 0.7) so a SEC EDGAR
+                # PASS counts more than a UN Global Compact PASS.
+                #
+                #   capability = (Σ weight(pass) / Σ weight(pass+fail)) * 100
+                #   final      = max(0, capability − enforcement_penalty)
+                #
+                # When no real-data rows are evaluated we fall back to the
+                # old penalty-driven score so we never crash on a brand-new
+                # company with no SEC ticker etc.
+                from utils.regulatory_fetchers import get_framework_weight
+
+                _pass_rows = [
+                    r for r in real_rows
+                    if isinstance(r, dict) and r.get("status") == "compliant"
+                ]
+                _fail_rows = [
+                    r for r in real_rows
+                    if isinstance(r, dict) and r.get("status") == "gap"
+                ]
+                _real_pass = len(_pass_rows)
+                _real_fail = len(_fail_rows)
+                _evaluated = _real_pass + _real_fail
+
+                _weighted_pass = sum(get_framework_weight(r.get("framework", "")) for r in _pass_rows)
+                _weighted_fail = sum(get_framework_weight(r.get("framework", "")) for r in _fail_rows)
+                _weighted_total = _weighted_pass + _weighted_fail
+
+                _enforcement_penalty = sum(
+                    25 for row in unified_frameworks
+                    if isinstance(row, dict) and str(row.get("status", "")).lower() == "active_enforcement"
                 )
+                if _weighted_total > 0:
+                    _capability_score = (_weighted_pass / _weighted_total) * 100.0
+                    unified_score = max(0.0, _capability_score - _enforcement_penalty)
+                    print(
+                        f"   📊 Capability score (weighted): pass={_weighted_pass:.1f}, "
+                        f"fail={_weighted_fail:.1f}, total={_weighted_total:.1f}  =>  "
+                        f"{_capability_score:.0f} − {_enforcement_penalty} enforcement = "
+                        f"{unified_score:.0f}/100"
+                    )
+                    if _pass_rows:
+                        _passes = ", ".join(
+                            f"{r.get('framework', '?')[:24]} (w={get_framework_weight(r.get('framework', '')):.1f})"
+                            for r in _pass_rows
+                        )
+                        print(f"      passes: {_passes}")
+                    if _fail_rows:
+                        _fails = ", ".join(
+                            f"{r.get('framework', '?')[:24]} (w={get_framework_weight(r.get('framework', '')):.1f})"
+                            for r in _fail_rows
+                        )
+                        print(f"      fails:  {_fails}")
+                else:
+                    unified_score = float(multi.get("total_compliance_score", 0.0))
+                    print(
+                        f"   📊 Falling back to penalty-only score "
+                        f"({unified_score:.0f}/100) — no real-data rows evaluated"
+                    )
+
+                # Risk level derived from the (now meaningful) score
+                if unified_score >= 75:
+                    derived_risk = "LOW"
+                elif unified_score >= 50:
+                    derived_risk = "MEDIUM"
+                elif unified_score >= 25:
+                    derived_risk = "HIGH"
+                else:
+                    derived_risk = "CRITICAL"
+
                 result["compliance_result"] = {
                     "score": round(unified_score, 1),
-                    "risk_level": str(multi.get("regulatory_risk_level", result.get("risk_level", "Unknown"))).upper(),
+                    "risk_level": derived_risk,
                     "frameworks": unified_frameworks,
                     "gap_count": gap_count,
                     "jurisdiction": multi.get("highest_risk_jurisdiction", jurisdiction),
+                    "real_data_evaluated": _evaluated,
+                    "real_data_passed": _real_pass,
+                    "real_data_failed": _real_fail,
                 }
                 result["compliance_score"] = {
                     "score": result["compliance_result"]["score"],
@@ -1081,20 +1296,44 @@ def regulatory_scanning_node(state: ESGState) -> ESGState:
                     "jurisdiction": result["compliance_result"]["jurisdiction"],
                 }
                 result["risk_level"] = result["compliance_result"]["risk_level"]
-                
-                # Enforce canonical regulatory scoring (no dual path inconsistency)
+
+                # Build canonical compliance_results that the report renderer
+                # consumes for Section 7's gap table. Preserve real status
+                # distinctions — collapsing not_evaluated/uncertain to GAP
+                # produced misleading "Gap Found: not tested" rows.
                 canonical_results = []
+                compliant_count = 0
+                not_evaluated_count = 0
                 for mj_row in unified_frameworks:
-                    if not isinstance(mj_row, dict): continue
+                    if not isinstance(mj_row, dict):
+                        continue
+                    mj_status = str(mj_row.get("status", "")).lower()
+                    if mj_status in _GAP_STATES:
+                        canonical_status = "GAP"
+                        gap_details = [mj_row.get("specific_violation")] if mj_row.get("specific_violation") else []
+                    elif mj_status in _COMPLIANT_STATES:
+                        canonical_status = "COMPLIANT"
+                        gap_details = []
+                        compliant_count += 1
+                    elif mj_status in {"not_evaluated", "not evaluated"}:
+                        canonical_status = "NOT_EVALUATED"
+                        gap_details = []
+                        not_evaluated_count += 1
+                    else:  # uncertain or unknown
+                        canonical_status = "UNCERTAIN"
+                        gap_details = []
                     canonical_results.append({
                         "regulation_name": f"{mj_row.get('jurisdiction', 'Global')} | {mj_row.get('framework', 'Framework')}",
-                        "gap_details": [mj_row.get("specific_violation")] if mj_row.get("specific_violation") else [],
-                        "status": "GAP" if str(mj_row.get("status", "")).lower() != "compliant" else "COMPLIANT"
+                        "gap_details": gap_details,
+                        "status": canonical_status,
                     })
                 result["compliance_results"] = canonical_results
                 result["gaps"] = gap_count
                 result["total_regulations"] = len(unified_frameworks)
-                result["compliant_regulations"] = len(unified_frameworks) - gap_count
+                # Only count truly-compliant frameworks; not_evaluated/uncertain
+                # are explicitly NOT compliant.
+                result["compliant_regulations"] = compliant_count
+                result["not_evaluated_regulations"] = not_evaluated_count
             except Exception as e:
                 print(f"⚠️ Multi-jurisdiction aggregation failed: {e}")
                 result = base_result
@@ -2240,6 +2479,50 @@ def risk_scoring_node(state: ESGState) -> ESGState:
 
         _emissions = _carbon_metrics.get("emissions") if isinstance(_carbon_metrics.get("emissions"), dict) else {}
         _scope3 = _emissions.get("scope3") if isinstance(_emissions.get("scope3"), dict) else {}
+
+        # Resolve the year these synthetic snippets belong to (RC-5).
+        # Without an explicit year, the scoring engine and report generator
+        # treat a 2021 figure identically to a 2024 one. Prefer the carbon
+        # extractor's reporting_year, then the PDF metric extractor's value,
+        # then the parsed-report chunks' newest year, finally previous year.
+        def _resolve_carbon_year() -> Optional[int]:
+            current_year = datetime.now().year
+            valid_min, valid_max = 2015, current_year + 1
+
+            for value in (
+                _carbon_metrics.get("reporting_year"),
+                state.get("reporting_year"),
+                ((state.get("company_reports") or {}).get("extracted_data") or {}).get("reporting_year"),
+            ):
+                try:
+                    year_int = int(value)
+                except (TypeError, ValueError):
+                    continue
+                if valid_min <= year_int <= valid_max:
+                    return year_int
+
+            for output in state.get("agent_outputs", []) or []:
+                if not isinstance(output, dict) or output.get("agent") != "report_parser":
+                    continue
+                chunks = ((output.get("output") or {}).get("chunks") or [])
+                years = []
+                for chunk in chunks:
+                    if not isinstance(chunk, dict):
+                        continue
+                    try:
+                        ci = int(chunk.get("year"))
+                    except (TypeError, ValueError):
+                        continue
+                    if valid_min <= ci <= valid_max:
+                        years.append(ci)
+                if years:
+                    return max(years)
+
+            return current_year - 1
+
+        _carbon_year = _resolve_carbon_year()
+        _year_tag = f"[{_carbon_year}] " if _carbon_year else ""
+
         _ghg_intensity = _first_metric(
             _carbon_metrics.get("ghg_intensity"),
             _carbon_metrics.get("carbon_intensity"),
@@ -2250,11 +2533,12 @@ def risk_scoring_node(state: ESGState) -> ESGState:
             _ghg_display = _ghg_num * 1000.0 if abs(_ghg_num) < 1 else _ghg_num
             _synthetic_evidence.append({
                 "title": "Company carbon disclosure metric",
-                "snippet": f"GHG emissions intensity {_fmt_metric(_ghg_display)} tCO2e scope 1 scope 2 carbon",
+                "snippet": f"{_year_tag}GHG emissions intensity {_fmt_metric(_ghg_display)} tCO2e scope 1 scope 2 carbon",
                 "url": "",
                 "sourcename": "Sustainability Report",
                 "reliabilitytier": 2,
                 "isprimarydocument": True,
+                "year": _carbon_year,
             })
 
         _renewable_pct = _first_metric(
@@ -2264,11 +2548,12 @@ def risk_scoring_node(state: ESGState) -> ESGState:
         if _renewable_pct is not None:
             _synthetic_evidence.append({
                 "title": "Company carbon disclosure metric",
-                "snippet": f"{_fmt_metric(_renewable_pct, decimals=1)}% renewable energy clean energy solar wind",
+                "snippet": f"{_year_tag}{_fmt_metric(_renewable_pct, decimals=1)}% renewable energy clean energy solar wind",
                 "url": "",
                 "sourcename": "Sustainability Report",
                 "reliabilitytier": 2,
                 "isprimarydocument": True,
+                "year": _carbon_year,
             })
 
         _water_intensity = _first_metric(
@@ -2278,11 +2563,12 @@ def risk_scoring_node(state: ESGState) -> ESGState:
         if _water_intensity is not None:
             _synthetic_evidence.append({
                 "title": "Company carbon disclosure metric",
-                "snippet": f"water {_fmt_metric(_water_intensity)} L water stress consumption effluent withdrawal",
+                "snippet": f"{_year_tag}water {_fmt_metric(_water_intensity)} L water stress consumption effluent withdrawal",
                 "url": "",
                 "sourcename": "Sustainability Report",
                 "reliabilitytier": 2,
                 "isprimarydocument": True,
+                "year": _carbon_year,
             })
 
         _scope3_categories = _first_metric(
@@ -2301,11 +2587,12 @@ def risk_scoring_node(state: ESGState) -> ESGState:
         if _scope3_count is not None:
             _synthetic_evidence.append({
                 "title": "Company carbon disclosure metric",
-                "snippet": f"scope 3 upstream downstream value chain {_fmt_metric(_scope3_count)} categories scope 3 emissions",
+                "snippet": f"{_year_tag}scope 3 upstream downstream value chain {_fmt_metric(_scope3_count)} categories scope 3 emissions",
                 "url": "",
                 "sourcename": "Sustainability Report",
                 "reliabilitytier": 2,
                 "isprimarydocument": True,
+                "year": _carbon_year,
             })
 
         if str(state.get("industry", "") or "").strip().lower() == "banking":
