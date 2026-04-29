@@ -1269,7 +1269,13 @@ class ReportParserService:
                                          source: str,
                                          filename: str = "",
                                          report_title: str = "") -> Tuple[str, List[Dict[str, Any]]]:
-        """Page-aware narrative extraction plus targeted Camelot table ingestion."""
+        """Page-aware narrative extraction plus targeted Camelot table ingestion.
+
+        Safeguards:
+          - Per-page progress logging so pipeline never appears stuck
+          - 30-second timeout per Camelot call to prevent indefinite hangs
+          - Max 15 pages for table extraction to bound total runtime
+        """
         page_records = self._extract_pdf_pages(local_path)
         if not page_records:
             return "", []
@@ -1277,7 +1283,15 @@ class ReportParserService:
         combined_pages: List[str] = []
         all_chunks: List[Dict[str, Any]] = []
 
-        for page_record in page_records:
+        # --- Safeguard: cap Camelot extractions ---
+        MAX_TABLE_PAGES = 15
+        CAMELOT_TIMEOUT_SECONDS = 30
+        table_pages_attempted = 0
+        esg_page_count = 0
+
+        print(f"      Dual-channel processing {len(page_records)} page records...")
+
+        for idx, page_record in enumerate(page_records):
             page_number = int(page_record.get("page_number", 0) or 0)
             raw_text = page_record.get("text", "") or ""
             if not raw_text.strip():
@@ -1290,9 +1304,21 @@ class ReportParserService:
             if not self._is_esg_relevant_page(cleaned_text, page_number):
                 continue
 
+            esg_page_count += 1
+
+            # --- Progress logging every 10 ESG pages ---
+            if esg_page_count % 10 == 0 or esg_page_count == 1:
+                print(f"      Processing ESG page {esg_page_count} (PDF page {page_number})...")
+
             table_markdown = ""
-            if self._has_table_trigger_keywords(cleaned_text):
-                table_markdown = self._extract_tables_with_camelot(local_path, page_number)
+            if (
+                self._has_table_trigger_keywords(cleaned_text)
+                and table_pages_attempted < MAX_TABLE_PAGES
+            ):
+                table_pages_attempted += 1
+                table_markdown = self._extract_tables_with_timeout(
+                    local_path, page_number, CAMELOT_TIMEOUT_SECONDS
+                )
 
             contains_table = bool(table_markdown.strip())
             page_content = cleaned_text
@@ -1322,7 +1348,63 @@ class ReportParserService:
             )
             all_chunks.extend(page_chunks)
 
+        print(f"      Dual-channel complete: {esg_page_count} ESG pages, {table_pages_attempted} table extractions, {len(all_chunks)} chunks")
         return "\n\n".join(combined_pages), all_chunks
+
+    def _extract_tables_with_timeout(self, local_path: str, page_number: int, timeout_seconds: int = 45) -> str:
+        """Run Camelot in a child process with a hard kill timeout.
+
+        Camelot invokes Ghostscript (native C) which cannot be interrupted
+        by Python thread timeouts. We launch a subprocess that Python can
+        fully kill via proc.kill() if it exceeds the time limit.
+        Falls back to PyMuPDF on timeout or failure.
+        """
+        import subprocess, sys, json as _json
+
+        # Tiny self-contained script that runs Camelot and prints result
+        script = f'''
+import sys, json
+try:
+    import camelot
+    tables = camelot.read_pdf({repr(local_path)}, pages={repr(str(page_number))}, flavor="lattice", suppress_stdout=True)
+    md_parts = []
+    for i, t in enumerate(tables):
+        try:
+            df = t.df.copy()
+            df = df.replace(r"^\\s*$", "", regex=True).dropna(how="all")
+            df = df.loc[~(df.eq("").all(axis=1))]
+            df = df.loc[:, ~(df.eq("").all(axis=0))]
+            if df.empty:
+                continue
+            header = [str(v).strip() for v in df.iloc[0].tolist()]
+            if any(header):
+                df.columns = header
+                df = df.iloc[1:].reset_index(drop=True)
+            df = df.fillna("")
+            md_parts.append(df.to_markdown(index=False))
+        except Exception:
+            pass
+    print(json.dumps({{"ok": True, "md": "\\n".join(md_parts)}}))
+except Exception as e:
+    print(json.dumps({{"ok": False, "err": str(e)}}))
+'''
+        try:
+            result = subprocess.run(
+                [sys.executable, "-c", script],
+                capture_output=True, text=True,
+                timeout=timeout_seconds,
+                cwd=str(Path(local_path).parent),
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                data = _json.loads(result.stdout.strip().split('\n')[-1])
+                if data.get("ok") and data.get("md", "").strip():
+                    return data["md"]
+        except subprocess.TimeoutExpired:
+            print(f"         ⏰ Camelot timed out on page {page_number} ({timeout_seconds}s), using PyMuPDF fallback")
+        except Exception as e:
+            print(f"         ⚠️ Camelot subprocess error on page {page_number}: {e}")
+
+        return self._extract_tables_with_pymupdf(local_path, page_number)
 
     def _extract_pdf_pages(self, local_path: str) -> List[Dict[str, Any]]:
         """Extract page-wise text from the PDF with pdfplumber first and pypdf fallback."""

@@ -293,7 +293,7 @@ def extract_promises_from_external_sources(company_name: str) -> List[Dict]:
     """Fallback commitment extraction when ESG report parsing returns no commitments."""
     try:
         fetcher = RealTimeDataFetcher()
-        query = f"{company_name} sustainability targets ESG report commitments net zero emissions reduction renewable energy"
+        query = f"{company_name} sustainability targets ESG report commitments net zero emissions reduction"
         results = fetcher.search_all_sources(query, max_results=12)
 
         corpus_parts = []

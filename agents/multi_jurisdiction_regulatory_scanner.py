@@ -230,7 +230,10 @@ class MultiJurisdictionRegulatoryScanner:
             snippet = str(item.get("snippet") or "")
             url = str(item.get("url") or "")
             text = f"{title} {snippet} {combined_text}".lower()
-            status, penalty, violation, remediation = self._score_jurisdiction_result(jurisdiction, text, claim_text, sbti_status)
+            status, penalty, violation, remediation = self._score_jurisdiction_result(
+                jurisdiction, text, claim_text, sbti_status,
+                result_title=title, result_snippet=snippet,
+            )
             rows.append({
                 "jurisdiction": jurisdiction,
                 "framework": item.get("framework") or f"{jurisdiction} Official Evidence Scan",
@@ -296,8 +299,42 @@ class MultiJurisdictionRegulatoryScanner:
             "Global": "Global Framework Evidence Scan",
         }.get(jurisdiction, f"{jurisdiction} Evidence Scan")
 
-    def _score_jurisdiction_result(self, jurisdiction: str, text: str, claim_text: str, sbti_status: str) -> tuple[str, int, str, str]:
-        if any(k in text for k in ["lawsuit", "ruling", "judgment", "judgement", "court", "enforcement", "fine", "investigation"]):
+    def _score_jurisdiction_result(self, jurisdiction: str, text: str, claim_text: str, sbti_status: str, result_title: str = "", result_snippet: str = "") -> tuple[str, int, str, str]:
+        """Score a jurisdiction search result. Only flag active_enforcement when
+        the result's own title/snippet contains enforcement language — NOT
+        when generic combined_text (which includes the claim itself) does."""
+
+        # Use only the specific search result content for enforcement detection,
+        # not the merged text that includes claim/evidence from other sources.
+        result_specific = f"{result_title} {result_snippet}".lower()
+
+        # Generic informational pages that should never trigger enforcement
+        _GENERIC_PAGE_MARKERS = [
+            "clean energy",  # EU clean energy strategy pages
+            "accelerateeu", "energy union",
+            "officers", "company-information",  # Companies House officer listings
+            "tech index", "dla piper",  # Law firm thought leadership
+            "transitional provisions",  # Routine regulatory filings
+        ]
+        if any(marker in result_specific for marker in _GENERIC_PAGE_MARKERS):
+            return (
+                "uncertain",
+                3,
+                "Generic informational page — not company-specific enforcement",
+                "No action required",
+            )
+
+        # Enforcement keywords must appear in the actual result, not in the merged text
+        enforcement_keywords = ["lawsuit", "ruling", "judgment", "judgement", "enforcement action", "fine ", "fined", "investigation", "prosecution"]
+        if any(k in result_specific for k in enforcement_keywords):
+            return (
+                "active_enforcement",
+                25,
+                f"{jurisdiction} legal or enforcement signal contradicts the public claim",
+                "Publish the court/regulator outcome and revise the claim boundary",
+            )
+        # Court mentions only count if they reference actual litigation, not generic court info
+        if "court" in result_specific and any(k in result_specific for k in ["climate", "greenwash", "emission", "environmental"]):
             return (
                 "active_enforcement",
                 25,

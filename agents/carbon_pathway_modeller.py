@@ -71,13 +71,19 @@ class CarbonPathwayModeller:
         scope3_feasibility = self._assess_scope3_feasibility(industry, production_plan, claim_text, target_reduction_pct)
 
         alignment_status = "aligned"
+        
+        # Calculate the rate gap in percentage points
+        cagr_gap = (implied_cagr_required - company_cagr) * 100.0
+        
         if scope3_feasibility == "PHYSICALLY_IMPOSSIBLE":
             alignment_status = "physically_impossible"
         elif budget_utilization_pct > 100:
             alignment_status = "ipcc_budget_exceeded"
-        elif iea_gap_pct > 10:
+        elif cagr_gap > 3.0 or iea_gap_pct > 10:
+            # If the company's reduction rate is more than 3 percentage points 
+            # behind the IEA required rate, they are misaligned.
             alignment_status = "benchmark_misaligned"
-        elif iea_gap_pct > 0:
+        elif cagr_gap > 0.5 or iea_gap_pct > 0:
             alignment_status = "slightly_above_benchmark"
 
         implied_cagr_required = pathway_decline
@@ -126,6 +132,13 @@ class CarbonPathwayModeller:
         }
 
     def _required_decline_for_industry(self, industry: str, pathway: str, target_year: int) -> float:
+        """Return the required *annualized* decline rate for the industry.
+
+        IEA_NZE_REFERENCE stores cumulative reduction fractions by target year
+        (e.g. 0.54 = 54% total reduction by 2030 from a ~2020 baseline).
+        We convert to an equivalent annual compound rate so downstream
+        comparisons with the company's own annual CAGR are apples-to-apples.
+        """
         ind = (industry or "").lower().replace(" ", "_")
         if ind in IEA_NZE_REFERENCE:
             ref = IEA_NZE_REFERENCE[ind]
@@ -134,14 +147,23 @@ class CarbonPathwayModeller:
 
         years = sorted(ref.keys())
         if target_year <= years[0]:
-            return ref[years[0]]
-        if target_year >= years[-1]:
-            return ref[years[-1]]
+            cumulative = ref[years[0]]
+            span = max(1, years[0] - 2020)  # IEA NZE baseline ~2020
+        elif target_year >= years[-1]:
+            cumulative = ref[years[-1]]
+            span = max(1, years[-1] - 2020)
+        else:
+            start_year, end_year = years[0], years[-1]
+            start_val, end_val = ref[start_year], ref[end_year]
+            slope = (end_val - start_val) / max(1, end_year - start_year)
+            cumulative = start_val + slope * (target_year - start_year)
+            span = max(1, target_year - 2020)
 
-        start_year, end_year = years[0], years[-1]
-        start_val, end_val = ref[start_year], ref[end_year]
-        slope = (end_val - start_val) / max(1, end_year - start_year)
-        return start_val + slope * (target_year - start_year)
+        # Convert cumulative fraction to annual compound rate
+        # If cumulative = 0.54 over 10 years: annual = 1 - (1-0.54)^(1/10) ≈ 7.5%/yr
+        remaining = max(0.01, 1.0 - cumulative)
+        annual_rate = 1.0 - remaining ** (1.0 / span)
+        return max(0.0, min(1.0, annual_rate))
 
     def _reference_reduction_for_industry(self, industry: str, target_year: int, pathway: str) -> float:
         """

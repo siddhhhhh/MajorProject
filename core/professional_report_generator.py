@@ -1263,7 +1263,7 @@ class ProfessionalReportGenerator:
             f"This assessment evaluates {v['company']}'s claim using multi-agent evidence retrieval, contradiction checks, and calibrated ESG risk scoring. "
             f"The resulting greenwashing score is {v['gw_score']:.1f}/100, indicating {v['band'].lower()} risk under the current thresholding policy. "
             f"The evidence base includes {len(v['citations'])} total sources, with {v['evidence'].get('verifiable_citations', 0)} verifiable citations. "
-            f"Overall confidence for this run is {v['report_confidence']} ({v['confidence_pct']:.1f}%)."
+            f"Overall confidence for this run is {v['confidence_pct']:.1f}% ({v['confidence_label']})."
         )
 
         decomposition = state.get("claim_decomposition") if isinstance(state.get("claim_decomposition"), dict) else {}
@@ -1461,13 +1461,12 @@ class ProfessionalReportGenerator:
 
         tri_score = triangulation.get("triangulation_score") if triangulation else None
         adv_ratio = triangulation.get("adversarial_ratio") if triangulation else None
-        supporting_count = int(self._safe_float(triangulation.get("corroborating_sources"), role_counts["Supports"])) if triangulation else role_counts["Supports"]
-        contradicting_count = int(self._safe_float(triangulation.get("contradicting_sources"), role_counts["Contradicts"])) if triangulation else role_counts["Contradicts"]
-        if supporting_count == 0 and role_counts["Supports"] > 0:
-            supporting_count = role_counts["Supports"]
-        if contradicting_count == 0 and role_counts["Contradicts"] > 0:
-            contradicting_count = role_counts["Contradicts"]
-            
+        
+        # FIX: The table header MUST match the actual citation_rows rendered below.
+        # Do not use triangulation.get("corroborating_sources") if it contradicts the actual role_counts.
+        supporting_count = role_counts["Supports"]
+        contradicting_count = role_counts["Contradicts"]
+
         # Use canonical contradiction_count to ensure Section 4 matches Section 7.
         # Trust the canonical count whenever it exceeds what the local stance/triangulation
         # accounting picked up — those upstream sources were missing HIGH-severity items
@@ -2210,7 +2209,12 @@ class ProfessionalReportGenerator:
             scope3_count = len(scope3_categories)
         else:
             scope3_count = 0
-        section5.append(f"  Scope 3 Completeness: {scope3_count}/15 categories")
+        # If a Scope 3 total was reported but no category breakdown, note it
+        scope3_total = scope3.get("total") or scope3.get("value") or scope3.get("emissions_tco2e") if isinstance(scope3, dict) else None
+        if scope3_count == 0 and scope3_total is not None:
+            section5.append(f"  Scope 3 Completeness: Disclosed as total only (no category breakdown)")
+        else:
+            section5.append(f"  Scope 3 Completeness: {scope3_count}/15 categories")
         if missing_scopes:
             for m in missing_scopes:
                 section5.append(f"\n  WARNING - {m} not disclosed. Net-zero claim cannot be quantitatively")
@@ -4892,6 +4896,15 @@ class ProfessionalReportGenerator:
             return "Company Disclosure"
         return "Web Source"
 
+    # Well-known ESG adversarial/watchdog domains whose content is almost
+    # always critical of corporate climate claims.
+    _ADVERSARIAL_DOMAINS = {
+        "clientearth.org", "influencemap.org", "ca100.influencemap.org",
+        "reclaimfinance.org", "globalwitness.org", "carbontracker.org",
+        "follow-the-money.nl", "greenpeace.org", "sierraclub.org",
+        "ran.org",  # Rainforest Action Network
+    }
+
     def _business_evidence_role(self, citation: Dict[str, Any], tri_stance: Any = None) -> str:
         stance_raw = str(tri_stance or citation.get("claim_support") or citation.get("stance") or "Neutral").lower()
         if "contradict" in stance_raw or "oppose" in stance_raw or "adversarial" in stance_raw:
@@ -4900,6 +4913,24 @@ class ProfessionalReportGenerator:
             return "Supports"
         if "mixed" in stance_raw:
             return "Mixed"
+
+        # Domain-aware override: known adversarial watchdog sources
+        url = str(citation.get("url") or "").lower()
+        title = str(citation.get("title") or "").lower()
+        snippet = str(citation.get("snippet") or citation.get("body") or "").lower()
+        combined = f"{url} {title} {snippet}"
+        for domain in self._ADVERSARIAL_DOMAINS:
+            if domain in url:
+                # Check if the content is actively critical
+                critical_markers = [
+                    "greenwash", "lawsuit", "court", "mislead", "fails",
+                    "insufficient", "lobby", "block", "anti-climate",
+                    "mismanag", "flawed", "legal action", "enforcement",
+                ]
+                if any(m in combined for m in critical_markers):
+                    return "Contradicts"
+                return "Mixed"
+
         return "Neutral"
 
     def _evidence_strength_label(

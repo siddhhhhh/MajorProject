@@ -100,10 +100,14 @@ class RealTimeMonitor:
         print("\n📰 Fetching real-time news...")
         all_articles = []
         
-        # From our enterprise fetcher
+        # For financial institutions, use specific queries to catch things like NZBA exits, fossil financing, etc.
+        # instead of generic 'ESG sustainability' which just pulls 8-K filings.
+        is_bank = any(b in company.lower() for b in ["jpm", "morgan", "chase", "bank", "hsbc", "citi", "wells"])
+        query_terms = f"{company} climate OR net zero OR fossil fuel OR NZBA" if is_bank else f"{company} ESG OR sustainability OR greenwashing OR climate"
+        
         source_dict = self.fetcher.fetch_all_sources(
             company=company,
-            query=f"ESG sustainability {company}",
+            query=query_terms,
             max_per_source=5
         )
         

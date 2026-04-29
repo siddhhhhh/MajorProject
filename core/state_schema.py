@@ -100,7 +100,12 @@ class ESGState(TypedDict):
     # Final output
     final_verdict: Dict[str, Any]
     report: str
-    esg_score_lineage: Optional[Dict[str, Any]]  # NEW: Diagnostic breakdown of GW formula variables (C, P, R, D, T)
+    esg_score_lineage: Optional[Dict[str, Any]]  # Diagnostic breakdown of GW formula variables (C, P, R, D, T)
+    riskresults: Optional[Dict[str, Any]]  # Canonical risk scorer output (pillar scores, GW score, rating)
+    
+    # Unified Dual-Objective Assessment (Problem #15 fix)
+    unified_assessment: Optional[Dict[str, Any]]  # Co-primary ESG + GW output with consistency enforcement
+    evidence_gap_analysis: Optional[Dict[str, Any]]  # Claim-evidence requirement gap tracking (Problem #4 fix)
     
     # Pipeline status
     pipeline_agent_statuses: Dict[str, AgentStatus]

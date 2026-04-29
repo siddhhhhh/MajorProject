@@ -121,6 +121,13 @@ def _to_factor_result(raw: Dict[str, Any]) -> Dict[str, Any]:
             else:
                 raw["data_quality"] = {1: "Verified", 2: "Estimated", 3: "Estimated", 4: "Unverified"}.get(tier, "Unverified")
 
+        # Override: if the data_source explicitly says unverified, force the label
+        ds = str(raw.get("data_source", "")).lower()
+        if "no relevant disclosure" in ds:
+            raw["data_quality"] = "Limited Disclosure"
+        elif "unverified" in ds:
+            raw["data_quality"] = "Unverified"
+
         # Fill contribution
         if raw.get("score") is not None and raw.get("weight") is not None:
             raw["contribution"] = round(raw["score"] * raw["weight"], 2)
@@ -167,7 +174,7 @@ _DEFAULT_ENVIRONMENTAL = [
 ]
 
 _DEFAULT_SOCIAL = [
-    {"name": "Employee Health & Safety",           "weight": 0.25, "keywords": ["safety", "health", "occupational", "injury", "ltifr", "fatality"]},
+    {"name": "Employee Health & Safety",           "weight": 0.25, "keywords": ["safety", "health", "occupational", "injury", "ltifr", "fatality", "trir", "trcf", "process safety", "lost time injury", "recordable", "incident rate", "work-related"]},
     {"name": "Labor Rights & Fair Wages",          "weight": 0.25, "keywords": ["labor", "wage", "minimum wage", "fair wage", "working condition"]},
     {"name": "Community Impact & CSR Spend",       "weight": 0.20, "keywords": ["community", "csr", "social responsibility", "philanthropy", "donation"]},
     {"name": "Supply Chain Labor Standards",       "weight": 0.15, "keywords": ["supply chain", "child labor", "forced labor", "supplier audit", "vendor"]},
@@ -175,11 +182,11 @@ _DEFAULT_SOCIAL = [
 ]
 
 _DEFAULT_GOVERNANCE = [
-    {"name": "Board Independence",                 "weight": 0.20, "keywords": ["board independence", "independent director", "non-executive"]},
-    {"name": "Board Diversity",                    "weight": 0.20, "keywords": ["board diversity", "women directors", "female directors", "diverse directors"]},
-    {"name": "Executive Pay Ratio",                "weight": 0.20, "keywords": ["executive pay", "ceo pay", "pay ratio", "compensation ratio", "remuneration"]},
-    {"name": "Anti-Corruption Policies",           "weight": 0.20, "keywords": ["anti-corruption", "bribery", "corruption", "ethics", "compliance"]},
-    {"name": "Whistleblower Mechanisms",           "weight": 0.10, "keywords": ["whistleblower", "grievance", "reporting mechanism", "speak up"]},
+    {"name": "Board Independence",                 "weight": 0.20, "keywords": ["board independence", "independent director", "non-executive", "independent non-executive", "outside director", "independent member", "board composition"]},
+    {"name": "Board Diversity",                    "weight": 0.20, "keywords": ["board diversity", "women directors", "female directors", "diverse directors", "gender diversity", "women on board", "female representation", "board gender"]},
+    {"name": "Executive Pay Ratio",                "weight": 0.20, "keywords": ["executive pay", "ceo pay", "pay ratio", "compensation ratio", "remuneration", "director remuneration", "executive compensation"]},
+    {"name": "Anti-Corruption Policies",           "weight": 0.20, "keywords": ["anti-corruption", "bribery", "corruption", "ethics", "compliance", "code of conduct", "integrity", "anti-bribery"]},
+    {"name": "Whistleblower Mechanisms",           "weight": 0.10, "keywords": ["whistleblower", "grievance", "reporting mechanism", "speak up", "ethics helpline", "ethics hotline", "helpline", "ethics line", "anonymous reporting", "raise concern"]},
     {"name": "ESG Disclosure Quality",             "weight": 0.10, "keywords": ["disclosure", "transparency", "reporting", "brsr", "gri", "tcfd"]},
 ]
 
@@ -417,6 +424,149 @@ _STRUCTURED_SCORING_RULES: Dict[str, Dict[str, Any]] = {
         "gri_alignment": ["GRI 306-3", "GRI 306-4", "GRI 306-5"],
         "sasb_alignment": ["SASB CG-MR-150a.1", "SASB RT-CH-410a.1"],
     },
+    "Water Usage & Stress": {
+        "primary_metric": "Water withdrawal/intensity disclosure",
+        "metric_unit": "%",
+        "direction": "higher_better",
+        "thresholds": {
+            "top_decile": 90.0,
+            "above_average": 70.0,
+            "average": 50.0,
+            "below_average": 30.0,
+        },
+        "metric_patterns": [
+            r"water[^.\n]{0,80}?(\d{1,3}(?:\.\d+)?)\s*%",
+            r"water[^.\n]{0,80}?(\d[\d,\.]+)\s*(?:million\s*m3|m3|m\^3|cubic\s*met(?:er|re)s?)",
+        ],
+        "claim_keywords": ["water", "water stress", "water usage", "wastewater", "withdrawal"],
+        "policy_keywords": ["water policy", "water stewardship", "cdp water", "grI 303", "aqueduct"],
+        "source_hint": "CDP Water, sustainability report environmental tables",
+        "gri_alignment": ["GRI 303-1", "GRI 303-3"],
+        "sasb_alignment": ["SASB IF-EU-140a.1"],
+    },
+    "ESG Disclosure Quality": {
+        "primary_metric": "Disclosure completeness across carbon and verification controls",
+        "metric_unit": "%",
+        "direction": "higher_better",
+        "thresholds": {
+            "top_decile": 90.0,
+            "above_average": 70.0,
+            "average": 50.0,
+            "below_average": 30.0,
+        },
+        "metric_patterns": [],
+        "claim_keywords": ["disclosure", "transparency", "reporting", "gri", "tcfd", "sbti", "scope 3"],
+        "policy_keywords": ["assurance", "verified", "audited", "methodology", "third-party"],
+        "source_hint": "Integrated report + carbon disclosure completeness",
+        "gri_alignment": ["GRI 2-1", "GRI 2-3"],
+        "sasb_alignment": ["SASB CG-MR-000.A"],
+    },
+    "Board Diversity": {
+        "primary_metric": "Board gender/diversity representation (%)",
+        "metric_unit": "%",
+        "direction": "higher_better",
+        "thresholds": {
+            "top_decile": 45.0,
+            "above_average": 35.0,
+            "average": 25.0,
+            "below_average": 15.0,
+        },
+        "metric_patterns": [
+            r"board diversity[^.\n]{0,50}?(\d{1,3}(?:\.\d+)?)\s*%",
+            r"(\d{1,3}(?:\.\d+)?)\s*%[^.\n]{0,60}board diversity",
+            r"(\d{1,3}(?:\.\d+)?)\s*%[^.\n]{0,60}(?:women|female|diverse)[^.\n]{0,40}board",
+            r"(\d{1,2})\s+of\s+(\d{1,2})\s+(?:directors|board members)[^.\n]{0,40}(?:women|female|diverse)",
+        ],
+        "claim_keywords": ["board diversity", "women directors", "female directors", "diverse directors"],
+        "policy_keywords": ["nominating committee", "board composition", "director nominee", "proxy statement"],
+        "source_hint": "Proxy statement / annual report board composition disclosure",
+        "gri_alignment": ["GRI 405-1"],
+        "sasb_alignment": ["SASB CG-AA-330a.1"],
+    },
+    "Executive Pay Ratio": {
+        "primary_metric": "CEO pay ratio",
+        "metric_unit": "ratio",
+        "direction": "lower_better",
+        "thresholds": {
+            "top_decile": 100.0,
+            "above_average": 150.0,
+            "average": 250.0,
+            "below_average": 400.0,
+        },
+        "metric_patterns": [
+            r"pay ratio[^0-9]{0,30}(\d{1,4})\s*(?::|to)\s*1",
+            r"ceo pay ratio[^0-9]{0,30}(\d{1,4})\s*(?::|to)\s*1",
+            r"ratio of the annual total compensation[^0-9]{0,60}(\d{1,4})\s*(?::|to)\s*1",
+        ],
+        "claim_keywords": ["executive pay", "ceo pay", "pay ratio", "compensation ratio", "remuneration"],
+        "policy_keywords": ["proxy statement", "compensation discussion", "def 14a", "executive compensation"],
+        "source_hint": "SEC proxy statement / remuneration report",
+        "gri_alignment": ["GRI 2-21"],
+        "sasb_alignment": ["SASB CG-AA-330a.2"],
+    },
+    "Renewable Energy Transition": {
+        "primary_metric": "Renewable energy share (% of total energy consumption)",
+        "metric_unit": "%",
+        "direction": "higher_better",
+        "thresholds": {
+            "top_decile": 80.0,
+            "above_average": 50.0,
+            "average": 30.0,
+            "below_average": 10.0,
+        },
+        "metric_patterns": [
+            r"renewable[^.\n]{0,70}?(\d{1,3}(?:\.\d+)?)\s*%",
+            r"(\d{1,3}(?:\.\d+)?)\s*%[^.\n]{0,70}?renewable",
+            r"clean energy[^.\n]{0,70}?(\d{1,3}(?:\.\d+)?)\s*%",
+        ],
+        "claim_keywords": ["renewable", "clean energy", "solar", "wind", "transition"],
+        "policy_keywords": ["target", "policy", "roadmap", "sourcing", "ppa", "commitment"],
+        "source_hint": "Sustainability report, annual report energy table, CDP climate disclosure",
+        "gri_alignment": ["GRI 302-1", "GRI 302-4"],
+        "sasb_alignment": ["SASB IF-EU-000.B", "SASB SV-PS-130a.1"],
+    },
+    "Biodiversity & Land Use": {
+        "primary_metric": "Share of operational sites with biodiversity management plans (%)",
+        "metric_unit": "%",
+        "direction": "higher_better",
+        "thresholds": {
+            "top_decile": 90.0,
+            "above_average": 70.0,
+            "average": 50.0,
+            "below_average": 30.0,
+        },
+        "metric_patterns": [
+            r"biodiversity[^.\n]{0,90}?(\d{1,3}(?:\.\d+)?)\s*%",
+            r"ecosystem[^.\n]{0,90}?(\d{1,3}(?:\.\d+)?)\s*%",
+            r"sites?[^.\n]{0,60}?biodiversity[^.\n]{0,60}?(\d{1,3}(?:\.\d+)?)\s*%",
+        ],
+        "claim_keywords": ["biodiversity", "ecosystem", "habitat", "deforestation", "land use"],
+        "policy_keywords": ["tnfd", "no net loss", "restoration", "conservation", "plan"],
+        "source_hint": "BRSR Principle 6 disclosures, biodiversity section in sustainability report",
+        "gri_alignment": ["GRI 304-1", "GRI 304-3"],
+        "sasb_alignment": ["SASB RR-FM-160a.1", "SASB CG-HP-430a.1"],
+    },
+    "Waste & Circular Economy": {
+        "primary_metric": "Waste diversion rate (% waste diverted from landfill)",
+        "metric_unit": "%",
+        "direction": "higher_better",
+        "thresholds": {
+            "top_decile": 90.0,
+            "above_average": 75.0,
+            "average": 60.0,
+            "below_average": 40.0,
+        },
+        "metric_patterns": [
+            r"waste diversion[^.\n]{0,70}?(\d{1,3}(?:\.\d+)?)\s*%",
+            r"recycl(?:ed|ing)[^.\n]{0,70}?(\d{1,3}(?:\.\d+)?)\s*%",
+            r"(\d{1,3}(?:\.\d+)?)\s*%[^.\n]{0,70}?(?:diverted|recycled)",
+        ],
+        "claim_keywords": ["waste", "recycling", "circular economy", "landfill", "diversion"],
+        "policy_keywords": ["zero waste", "circularity", "waste policy", "hazardous waste", "take-back"],
+        "source_hint": "Annual sustainability waste KPIs, GRI waste tables, regulator filings",
+        "gri_alignment": ["GRI 306-3", "GRI 306-4", "GRI 306-5"],
+        "sasb_alignment": ["SASB CG-MR-150a.1", "SASB RT-CH-410a.1"],
+    },
     "Employee Health & Safety": {
         "primary_metric": "Lost Time Injury Frequency Rate (LTIFR)",
         "metric_unit": "rate",
@@ -431,8 +581,11 @@ _STRUCTURED_SCORING_RULES: Dict[str, Dict[str, Any]] = {
             r"ltifr[^\d]{0,25}(\d+(?:\.\d+)?)",
             r"lost time injury frequency rate[^\d]{0,25}(\d+(?:\.\d+)?)",
             r"trir[^\d]{0,25}(\d+(?:\.\d+)?)",
+            r"trcf[^\d]{0,25}(\d+(?:\.\d+)?)",
+            r"total recordable[^\d]{0,40}(\d+(?:\.\d+)?)",
+            r"process safety[^.\n]{0,60}?(\d+(?:\.\d+)?)",
         ],
-        "claim_keywords": ["health", "safety", "occupational", "injury", "fatality", "ltifr"],
+        "claim_keywords": ["health", "safety", "occupational", "injury", "fatality", "ltifr", "trir", "trcf", "process safety", "lost time injury"],
         "policy_keywords": ["iso 45001", "ohs policy", "safety management", "certified", "assured"],
         "source_hint": "Safety tables in annual/sustainability report, assured OHS metrics",
         "gri_alignment": ["GRI 403-9", "GRI 403-10"],
@@ -474,9 +627,12 @@ _STRUCTURED_SCORING_RULES: Dict[str, Dict[str, Any]] = {
             r"(?:independent|non-executive)\s*(?:director|board)[^.\n]{0,60}(\d{1,3}(?:\.\d+)?)\s*%",
             r"(\d{1,2})\s+of\s+(\d{1,2})\s+(?:directors|board members)\s+(?:are\s+)?independent",
             r"board independence[^.\n]{0,50}?(\d{1,3}(?:\.\d+)?)\s*%",
+            r"(\d{1,3}(?:\.\d+)?)\s*%[^.\n]{0,60}independent\s+non[- ]executive",
+            r"independent\s+non[- ]executive[^.\n]{0,60}(\d{1,3}(?:\.\d+)?)\s*%",
+            r"(\d{1,3}(?:\.\d+)?)\s*%[^.\n]{0,40}board\s+(?:is|are|were|was)\s+independent",
         ],
-        "claim_keywords": ["board independence", "independent director", "non-executive", "outside director"],
-        "policy_keywords": ["corporate governance guidelines", "board charter", "independence criteria", "nyse listing"],
+        "claim_keywords": ["board independence", "independent director", "non-executive", "outside director", "independent non-executive", "board composition", "independent member"],
+        "policy_keywords": ["corporate governance guidelines", "board charter", "independence criteria", "nyse listing", "uk corporate governance code", "nominations committee"],
         "source_hint": "Proxy statement / corporate governance guidelines / annual report",
         "gri_alignment": ["GRI 2-9", "GRI 2-10"],
         "sasb_alignment": ["SASB CG-AA-330a.1"],
@@ -514,12 +670,12 @@ _STRUCTURED_SCORING_RULES: Dict[str, Dict[str, Any]] = {
             "below_average": 1.0,
         },
         "metric_patterns": [
-            r"(?:whistleblower|ethics\s*hotline|speak\s*up)[^.\n]{0,80}?(\d{1,6}(?:,\d{3})*(?:\.\d+)?)\s*(?:reports?|cases?|complaints?)",
-            r"(\d{1,6}(?:,\d{3})*(?:\.\d+)?)\s*(?:reports?|cases?|complaints?)[^.\n]{0,60}(?:whistleblower|ethics\s*hotline|speak\s*up)",
+            r"(?:whistleblower|ethics\s*hotline|speak\s*up|ethics\s*helpline)[^.\n]{0,80}?(\d{1,6}(?:,\d{3})*(?:\.\d+)?)\s*(?:reports?|cases?|complaints?)",
+            r"(\d{1,6}(?:,\d{3})*(?:\.\d+)?)\s*(?:reports?|cases?|complaints?)[^.\n]{0,60}(?:whistleblower|ethics\s*hotline|speak\s*up|ethics\s*helpline)",
             r"(?:grievance|reporting)[^.\n]{0,80}?(\d{1,6}(?:,\d{3})*(?:\.\d+)?)\s*(?:incidents?|cases?|matters?)",
         ],
-        "claim_keywords": ["whistleblower", "grievance", "reporting mechanism", "speak up", "ethics hotline"],
-        "policy_keywords": ["whistleblower protection", "anonymous reporting", "non-retaliation", "ethics line", "hotline"],
+        "claim_keywords": ["whistleblower", "grievance", "reporting mechanism", "speak up", "ethics hotline", "ethics helpline", "helpline", "raise concern"],
+        "policy_keywords": ["whistleblower protection", "anonymous reporting", "non-retaliation", "ethics line", "hotline", "helpline", "speak up policy", "raise concern"],
         "source_hint": "Annual report governance section, ethics/compliance report",
         "gri_alignment": ["GRI 2-16", "GRI 2-26"],
         "sasb_alignment": ["SASB FN-CB-510a.2"],

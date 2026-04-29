@@ -249,7 +249,11 @@ class CommitmentLedger:
         o = original.lower()
         r = revised.lower()
 
-        if o == r:
+        import string
+        def _normalize(text):
+            return " ".join(text.translate(str.maketrans('', '', string.punctuation)).split())
+
+        if _normalize(o) == _normalize(r):
             return {"revision_type": "no_change", "severity": 0.0, "explanation": "No substantive change"}
 
         oy = self._extract_target_year(o)
@@ -278,6 +282,13 @@ class CommitmentLedger:
         if self._extract_first_number(r) and self._extract_first_number(o):
             if self._extract_first_number(r) > self._extract_first_number(o):
                 return {"revision_type": "strengthened", "severity": 20.0, "explanation": "Target appears more ambitious"}
+
+        # Semantic-equivalence gate: if the wording is highly similar (just
+        # minor phrasing/punctuation/prefix differences like adding the
+        # company name), treat as no substantive change rather than reframing.
+        sim = self._combined_similarity(original, revised)
+        if sim >= 0.85:
+            return {"revision_type": "no_change", "severity": 0.0, "explanation": "Minor wording variation — semantically equivalent"}
 
         return {"revision_type": "reframed", "severity": 40.0, "explanation": "Wording changed with accountability impact"}
 

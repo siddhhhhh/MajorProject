@@ -223,6 +223,46 @@ def build_pdf(report: Dict[str, Any], raw: Dict[str, Any] = None) -> bytes:
         s.append(Paragraph("No specific data quality metrics logged.", BD))
     s.append(SP)
 
+    # === INSTITUTIONAL VERIFICATION (10-Rule Framework) ===
+    iv = raw.get("institutional_verification") or {}
+    if iv:
+        s += _sec("SECTION 2B: INSTITUTIONAL VERIFICATION ASSESSMENT")
+        verdict_color = RED if "CONTRADICT" in str(iv.get("institutional_verdict","")) or "INSUFFICIENT" in str(iv.get("institutional_verdict","")) else GREEN
+        s.append(Paragraph(f"<b>Verdict: {iv.get('institutional_verdict','N/A')}</b>",
+            ParagraphStyle("ivv", fontName="Helvetica-Bold", fontSize=10, textColor=verdict_color, spaceAfter=4)))
+
+        cv = iv.get("claim_verification", {})
+        st = iv.get("source_tier_breakdown", {})
+        rd = iv.get("rating_divergence", {})
+        ab = iv.get("abstention_assessment", {})
+        cc = iv.get("carbon_data_completeness", {})
+        cont = iv.get("controversy_summary", {})
+
+        s.append(_kvtbl([
+            ["Claim Verification Status", str(cv.get("status","N/A"))],
+            ["Supporting Evidence",       f"{cv.get('supporting_count',0)} sources ({cv.get('strong_support_count',0)} Tier 1-2)"],
+            ["Contradicting Evidence",    str(cv.get("contradicting_count",0))],
+            ["Source Tier 1 (Regulatory)",str(st.get("tier1_regulatory",0))],
+            ["Source Tier 2 (ESG Agencies)",str(st.get("tier2_esg_agencies",0))],
+            ["Source Tier 3 (Major Media)",str(st.get("tier3_media",0))],
+            ["Source Tier 4 (Web)",       str(st.get("tier4_general_web",0))],
+            ["Rating Divergence Risk",    "YES ⚠" if rd.get("divergence_detected") else "No"],
+            ["Provider Score Spread",     f"{rd.get('spread_points',0):.1f} pts"],
+            ["Carbon Data Completeness",  f"{cc.get('completeness_pct',0):.0f}%"],
+            ["Carbon Missing Fields",     str(cc.get("missing_count",0))],
+            ["Total Controversies",       str(cont.get("total_controversies",0))],
+            ["Regulatory Actions",        str(cont.get("regulatory_actions",0))],
+            ["Abstention Decision",       "ABSTAIN" if ab.get("abstain") else "PROCEED"],
+        ]))
+
+        flags = iv.get("data_quality_flags", [])
+        if flags:
+            s.append(Paragraph(f"<b>Data Quality Flags:</b> {', '.join(flags)}", WN))
+
+        if ab.get("abstain") and ab.get("abstain_reasons"):
+            s.append(Paragraph(f"<b>Abstention Reason:</b> {ab['abstain_reasons'][0]}", WN))
+        s.append(SP)
+
     # === CLAIM BREAKDOWN ===
     s += _sec("SECTION 3B: CLAIM BREAKDOWN")
     s.append(Paragraph(f"The claim is broken down into key components for evaluation:", BD))

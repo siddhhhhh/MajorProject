@@ -85,10 +85,10 @@ def fetch_wayback(url: str, target_year: int) -> str | None:
         logger.info("Wayback: found snapshot %s", snapshot_url)
         return snapshot_url
     except requests.exceptions.Timeout:
-        logger.warning("Wayback: request timed out for %s", url)
+        logger.debug("Wayback: timed out for %s", url)
         return None
     except requests.exceptions.RequestException as exc:
-        logger.warning("Wayback: request failed for %s — %s", url, exc)
+        logger.debug("Wayback: request failed for %s — %s", url, type(exc).__name__)
         return None
     except (ValueError, KeyError, IndexError) as exc:
         logger.warning("Wayback: failed to parse response for %s — %s", url, exc)
@@ -164,9 +164,9 @@ def fetch_archive_today(url: str, target_year: int | None = None) -> str | None:
                     )
                     return best_url
             except requests.exceptions.Timeout:
-                logger.warning("Archive.today timemap: request timed out for %s", tm_url)
+                logger.debug("Archive.today timemap: timed out for %s", tm_url)
             except requests.exceptions.RequestException as exc:
-                logger.warning("Archive.today timemap: request failed for %s — %s", tm_url, exc)
+                logger.debug("Archive.today timemap: failed for %s — %s", tm_url, type(exc).__name__)
 
     # archive.ph and archive.is search endpoints use redirect-based lookup.
     search_endpoints = [
@@ -197,9 +197,9 @@ def fetch_archive_today(url: str, target_year: int | None = None) -> str | None:
                 search_url, resp.status_code, final_url,
             )
         except requests.exceptions.Timeout:
-            logger.warning("Archive.today: request timed out for %s", search_url)
+            logger.debug("Archive.today: timed out for %s", search_url)
         except requests.exceptions.RequestException as exc:
-            logger.warning("Archive.today: request failed — %s", exc)
+            logger.debug("Archive.today: failed — %s", type(exc).__name__)
 
     logger.info("Archive.today: no snapshots found for %s", url)
     return None
@@ -271,14 +271,14 @@ def fetch_memento(url: str, target_year: int) -> str | None:
     except requests.exceptions.Timeout:
         _MEMENTO_DISABLED = True
         _MEMENTO_DISABLED_REASON = "timeout"
-        logger.warning("Memento: request timed out for %s — disabling for rest of process", url)
+        logger.debug("Memento: timed out for %s — disabling for rest of process", url)
         return None
     except requests.exceptions.ConnectionError as exc:
         _MEMENTO_DISABLED = True
-        _MEMENTO_DISABLED_REASON = f"connection_error: {exc}"
-        logger.warning(
-            "Memento: connection error for %s — disabling for rest of process (%s)",
-            url, exc,
+        _MEMENTO_DISABLED_REASON = f"connection_error"
+        logger.debug(
+            "Memento: connection error for %s — disabling for rest of process",
+            url,
         )
         return None
     except requests.exceptions.RequestException as exc:
@@ -358,7 +358,7 @@ def get_historical_snapshot(
             result["source"], result["snapshot_url"],
         )
     else:
-        logger.warning(
+        logger.debug(
             "No historical snapshot found for %s (year=%d) across all archives.",
             url, target_year,
         )

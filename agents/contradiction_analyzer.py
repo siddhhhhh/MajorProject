@@ -61,8 +61,16 @@ class ContradictionAnalyzer:
     def __init__(self):
         self.name = "Contradiction & Verification Analyst"
         try:
-            total_cases = sum(len(v) for v in KNOWN_GREENWASHING_CASES.values())
-            print(f"[ContradictionDB] Loaded {total_cases} known cases for {len(KNOWN_GREENWASHING_CASES)} companies")
+            if isinstance(KNOWN_GREENWASHING_CASES, list):
+                total_cases = len(KNOWN_GREENWASHING_CASES)
+                companies = len({c.get("company", "") for c in KNOWN_GREENWASHING_CASES if isinstance(c, dict)})
+            elif isinstance(KNOWN_GREENWASHING_CASES, dict):
+                total_cases = sum(len(v) if isinstance(v, list) else 1 for v in KNOWN_GREENWASHING_CASES.values())
+                companies = len(KNOWN_GREENWASHING_CASES)
+            else:
+                total_cases = 0
+                companies = 0
+            print(f"[ContradictionDB] Loaded {total_cases} known cases for {companies} companies")
         except Exception:
             pass
 

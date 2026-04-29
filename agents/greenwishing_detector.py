@@ -138,7 +138,7 @@ class GreenwishingDetector:
         
         # 4. Carbon Tunnel Vision Check
         print("🔭 Checking for carbon tunnel vision...")
-        tunnel_vision = self._detect_carbon_tunnel_vision(full_text)
+        tunnel_vision = self._detect_carbon_tunnel_vision(full_text, industry, structured_context or {})
         
         # 5. LLM Deep Analysis
         print("🤖 Running AI deep analysis...")
@@ -574,9 +574,10 @@ class GreenwishingDetector:
             "risk_level": "High" if score >= 50 else "Medium" if score >= 25 else "Low"
         }
     
-    def _detect_carbon_tunnel_vision(self, evidence_text: str) -> Dict[str, Any]:
+    def _detect_carbon_tunnel_vision(self, evidence_text: str, industry: str, structured_context: Dict[str, Any]) -> Dict[str, Any]:
         """
         Detect carbon tunnel vision: Focus only on carbon while ignoring other ESG
+        Also triggers if a bank ignores financed emissions (the only carbon that matters).
         """
         
         evidence_lower = evidence_text.lower()
@@ -606,11 +607,19 @@ class GreenwishingDetector:
         
         if total_esg > 0:
             carbon_percentage = (carbon_count / total_esg) * 100
-            
             if carbon_percentage > 70:
                 tunnel_vision_detected = True
                 imbalance_detail = f"Carbon topics: {carbon_percentage:.0f}% of ESG mentions"
-        
+
+        # Financial institution specific check: If financed emissions are missing, 
+        # it's a form of tunnel vision (focusing on operational carbon only).
+        is_bank = any(b in industry.lower() for b in ["banking", "financial", "asset", "nbfc"])
+        if is_bank:
+            has_financed = "financed" in evidence_lower or "portfolio" in evidence_lower
+            if not has_financed:
+                tunnel_vision_detected = True
+                imbalance_detail = "Carbon Tunnel Vision: Financial institution reporting emissions but omitting Financed Emissions (Scope 3 Cat 15)"
+
         return {
             "detected": tunnel_vision_detected,
             "carbon_focus_percentage": (carbon_count / max(total_esg, 1)) * 100,

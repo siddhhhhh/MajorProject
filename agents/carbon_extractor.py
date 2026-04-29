@@ -1065,6 +1065,15 @@ class CarbonExtractor:
         def _candidate_rank(c):
             text = (c.get("source_text") or "").lower()
             total_bonus = 1 if "total" in text else 0
+            
+            # CRITICAL: For financial institutions, financed emissions ARE the Scope 3 total.
+            # Operational Scope 3 (travel, paper) is negligible but often reported first.
+            # We must boost financed emissions massively to prevent operational shadowing.
+            if "financed" in text or "portfolio" in text:
+                ind = str(industry_hint or "").lower()
+                if ind in ("banking", "financial services", "nbfc", "asset management"):
+                    total_bonus += 10
+                    
             return (total_bonus, c.get("year") or 0, c.get("value") or 0)
 
         best = max(pool_for_pick, key=_candidate_rank)

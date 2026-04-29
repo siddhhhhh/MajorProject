@@ -231,7 +231,16 @@ def analyze_company_esg(company_name: str) -> Dict:
 
          parts = []
          if target is not None:
-             parts.append(f"{target} {unit}")
+             unit_str = str(unit) if unit and str(unit).lower() != "none" else ""
+             # Format fractional targets (e.g. 0.5) as percentages for readability
+             try:
+                 target_f = float(target)
+                 if 0 < target_f < 1:
+                     parts.append(f"{target_f * 100:.0f}% reduction")
+                 else:
+                     parts.append(f"{target}{' ' + unit_str if unit_str else ''}")
+             except (ValueError, TypeError):
+                 parts.append(f"{target}{' ' + unit_str if unit_str else ''}")
          parts.append(f"of {metric_name}")
          if scope:
              parts.append(f"({scope})")

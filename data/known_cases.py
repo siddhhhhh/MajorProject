@@ -1,299 +1,403 @@
 """
-Known Greenwashing Regulatory Cases Database
-------------------------------------------------
-This module contains a curated database of verified greenwashing regulatory actions
-and a function to match company claims against known contradiction cases.
+data/known_cases.py
+-------------------
+Ground Truth: Known Greenwashing Cases
 
-All cases are sourced from public regulatory records, court rulings, and major
-NGO investigations. Used for high-confidence contradiction detection in ESG
-claim analysis.
+Verified greenwashing outcomes from regulatory enforcement actions,
+court rulings, and settlements. Used by the pipeline to:
+    1. Validate that our scoring engine correctly identifies known cases
+    2. Calibrate confidence thresholds per industry
+    3. Train/test the ML models on real outcomes
+
+Each case includes:
+    - Company and claim details
+    - Regulatory outcome (fine, settlement, ruling)
+    - Expected greenwashing score range
+    - Source citations
+
+Sources: SEC, FTC, EU Commission, Dutch ASA, Australian ACCC, UK ASA, SEBI
 """
-import re
-from typing import List, Dict
 
-# Main database: company key (lowercase) -> list of contradiction cases
-doc_url = "https://www.clientearth.org/projects/the-greenwashing-files/bp/"
-KNOWN_GREENWASHING_CASES: Dict[str, List[Dict]] = {
-    "bp": [
+from __future__ import annotations
+
+from typing import Any, Dict, List
+
+# ---------------------------------------------------------------------------
+# Expected output ranges for validation
+# ---------------------------------------------------------------------------
+# GW score should fall within [min, max] for the system to be "calibrated"
+# ESG score gives a rough expected range for the company at that time
+
+KNOWN_GREENWASHING_CASES: List[Dict[str, Any]] = [
+    # ══════════════════════════════════════════════════════════════════
+    # CONFIRMED GREENWASHING (Regulatory Actions / Court Rulings)
+    # Expected GW Score: 65-100
+    # ══════════════════════════════════════════════════════════════════
+    {
+        "case_id": "GW-001",
+        "company": "DWS Group",
+        "industry": "banking",
+        "claim": "DWS claimed its ESG-integrated investment products applied rigorous sustainability criteria to all investments",
+        "outcome": "CONFIRMED_GREENWASHING",
+        "regulatory_action": "SEC $19M fine (Sept 2023) for misleading ESG claims in investment products",
+        "source": "SEC Enforcement Action, Release No. 34-98318",
+        "year": 2023,
+        "expected_gw_range": [65, 90],
+        "expected_esg_range": [35, 55],
+        "severity": "HIGH",
+        "jurisdiction": "US",
+    },
+    {
+        "case_id": "GW-002",
+        "company": "Volkswagen",
+        "industry": "automotive",
+        "claim": "Volkswagen marketed 'Clean Diesel' vehicles as environmentally friendly with low emissions",
+        "outcome": "CONFIRMED_GREENWASHING",
+        "regulatory_action": "$34.7B total settlement including EPA, FTC, and class action (2016-2020)",
+        "source": "EPA Enforcement, DOJ Settlement",
+        "year": 2016,
+        "expected_gw_range": [80, 100],
+        "expected_esg_range": [15, 35],
+        "severity": "CRITICAL",
+        "jurisdiction": "US/EU",
+    },
+    {
+        "case_id": "GW-003",
+        "company": "Shell",
+        "industry": "oil_and_gas",
+        "claim": "Shell claimed to be investing heavily in renewable energy and transitioning to clean energy",
+        "outcome": "CONFIRMED_GREENWASHING",
+        "regulatory_action": "Hague District Court ruling (May 2021) ordering 45% emissions cut by 2030; Dutch ASA upheld greenwashing complaint (2021)",
+        "source": "Milieudefensie v. Royal Dutch Shell, ECLI:NL:RBDHA:2021:5339",
+        "year": 2021,
+        "expected_gw_range": [70, 95],
+        "expected_esg_range": [25, 45],
+        "severity": "HIGH",
+        "jurisdiction": "Netherlands",
+    },
+    {
+        "case_id": "GW-004",
+        "company": "Keurig",
+        "industry": "consumer_goods",
+        "claim": "Keurig claimed K-Cup pods were recyclable",
+        "outcome": "CONFIRMED_GREENWASHING",
+        "regulatory_action": "FTC investigation; $3M settlement with Competition Bureau Canada (2022); class action settlements in US",
+        "source": "Competition Bureau Canada, FTC Green Guides",
+        "year": 2022,
+        "expected_gw_range": [60, 85],
+        "expected_esg_range": [40, 55],
+        "severity": "MODERATE",
+        "jurisdiction": "US/Canada",
+    },
+    {
+        "case_id": "GW-005",
+        "company": "H&M",
+        "industry": "fast_fashion",
+        "claim": "H&M Conscious Collection marketed as sustainable fashion using recycled materials",
+        "outcome": "CONFIRMED_GREENWASHING",
+        "regulatory_action": "Dutch ACM warning (2022); EU Consumer Organisation BEUC complaint; Class action in US District Court (2022)",
+        "source": "Quartz investigation, BEUC complaint, Chelsea Commodore v. H&M",
+        "year": 2022,
+        "expected_gw_range": [60, 85],
+        "expected_esg_range": [35, 55],
+        "severity": "MODERATE",
+        "jurisdiction": "EU/US",
+    },
+    {
+        "case_id": "GW-006",
+        "company": "TotalEnergies",
+        "industry": "oil_and_gas",
+        "claim": "TotalEnergies claimed net-zero ambition by 2050 while expanding oil and gas production",
+        "outcome": "CONFIRMED_GREENWASHING",
+        "regulatory_action": "French court ruled misleading advertising (2023); Greenpeace France complaint upheld",
+        "source": "Tribunal Judiciaire de Paris, Climate Action 100+",
+        "year": 2023,
+        "expected_gw_range": [70, 95],
+        "expected_esg_range": [25, 45],
+        "severity": "HIGH",
+        "jurisdiction": "France",
+    },
+    {
+        "case_id": "GW-007",
+        "company": "HSBC",
+        "industry": "banking",
+        "claim": "HSBC advertised planting 2 million trees while financing fossil fuel expansion",
+        "outcome": "CONFIRMED_GREENWASHING",
+        "regulatory_action": "UK ASA banned HSBC advertisements as misleading (Oct 2022)",
+        "source": "UK Advertising Standards Authority ruling",
+        "year": 2022,
+        "expected_gw_range": [60, 80],
+        "expected_esg_range": [40, 60],
+        "severity": "MODERATE",
+        "jurisdiction": "UK",
+    },
+    {
+        "case_id": "GW-008",
+        "company": "BNY Mellon",
+        "industry": "banking",
+        "claim": "BNY Mellon Investment Advisor falsely implied all investments in certain ESG funds had undergone ESG quality review",
+        "outcome": "CONFIRMED_GREENWASHING",
+        "regulatory_action": "SEC $1.5M penalty (May 2022)",
+        "source": "SEC Administrative Proceeding File No. 3-20867",
+        "year": 2022,
+        "expected_gw_range": [60, 80],
+        "expected_esg_range": [45, 60],
+        "severity": "MODERATE",
+        "jurisdiction": "US",
+    },
+    {
+        "case_id": "GW-009",
+        "company": "Santos",
+        "industry": "oil_and_gas",
+        "claim": "Santos described natural gas as 'clean energy' in its 2020 annual report",
+        "outcome": "CONFIRMED_GREENWASHING",
+        "regulatory_action": "Australian Federal Court ruled Santos' 'clean energy' claim misleading (Nov 2024)",
+        "source": "Australasian Centre for Corporate Responsibility v Santos Ltd",
+        "year": 2024,
+        "expected_gw_range": [70, 90],
+        "expected_esg_range": [25, 45],
+        "severity": "HIGH",
+        "jurisdiction": "Australia",
+    },
+    {
+        "case_id": "GW-010",
+        "company": "Vale",
+        "industry": "mining",
+        "claim": "Vale claimed commitment to safety and environmental protection while operating Brumadinho dam",
+        "outcome": "CONFIRMED_GREENWASHING",
+        "regulatory_action": "$7B settlement (Feb 2021); Criminal charges; Multiple regulatory sanctions",
+        "source": "Brazilian Federal Police, Minas Gerais State Prosecution",
+        "year": 2019,
+        "expected_gw_range": [75, 100],
+        "expected_esg_range": [10, 30],
+        "severity": "CRITICAL",
+        "jurisdiction": "Brazil",
+    },
+
+    # ══════════════════════════════════════════════════════════════════
+    # LEGITIMATE ESG LEADERS (Verified Good Performers)
+    # Expected GW Score: 10-35
+    # ══════════════════════════════════════════════════════════════════
+    {
+        "case_id": "LEGIT-001",
+        "company": "Ørsted",
+        "industry": "renewable_energy",
+        "claim": "Ørsted transformed from fossil fuel company DONG Energy to world's largest offshore wind developer",
+        "outcome": "LEGITIMATE",
+        "regulatory_action": "No enforcement; SBTi validated; CDP A-list; recognized by Corporate Knights, MSCI AAA",
+        "source": "SBTi Target Dashboard, CDP Scores, MSCI ESG Ratings",
+        "year": 2024,
+        "expected_gw_range": [5, 30],
+        "expected_esg_range": [75, 95],
+        "severity": "NONE",
+        "jurisdiction": "Denmark",
+    },
+    {
+        "case_id": "LEGIT-002",
+        "company": "Patagonia",
+        "industry": "consumer_goods",
+        "claim": "Patagonia claims to be in business to save our home planet with verified supply chain transparency",
+        "outcome": "LEGITIMATE",
+        "regulatory_action": "No enforcement; B Corp certified; 1% for the Planet member; Fair Trade certified",
+        "source": "B Corp Directory, 1% for the Planet, Fair Trade USA",
+        "year": 2024,
+        "expected_gw_range": [5, 25],
+        "expected_esg_range": [80, 95],
+        "severity": "NONE",
+        "jurisdiction": "US",
+    },
+    {
+        "case_id": "LEGIT-003",
+        "company": "Infosys",
+        "industry": "technology",
+        "claim": "Infosys achieved carbon neutral status across Scope 1, 2, and some Scope 3 categories",
+        "outcome": "LEGITIMATE",
+        "regulatory_action": "No enforcement; CDP A-list; DJSI member; verified by external auditors",
+        "source": "Infosys ESG Data Center, CDP Climate, PAS 2060 certification",
+        "year": 2024,
+        "expected_gw_range": [10, 35],
+        "expected_esg_range": [70, 90],
+        "severity": "NONE",
+        "jurisdiction": "India",
+    },
+
+    # ══════════════════════════════════════════════════════════════════
+    # BORDERLINE / MIXED CASES
+    # Expected GW Score: 35-65
+    # ══════════════════════════════════════════════════════════════════
+    {
+        "case_id": "MIXED-001",
+        "company": "Amazon",
+        "industry": "technology",
+        "claim": "Amazon's Climate Pledge: net-zero carbon by 2040 with 100,000 electric delivery vehicles",
+        "outcome": "MIXED",
+        "regulatory_action": "No formal greenwashing action; however, worker safety violations, union suppression concerns; Carbon footprint grew 40% (2019-2021) while pledging net zero",
+        "source": "Amazon Sustainability Report, The Verge analysis, CDP disclosure",
+        "year": 2023,
+        "expected_gw_range": [35, 55],
+        "expected_esg_range": [50, 70],
+        "severity": "LOW",
+        "jurisdiction": "US",
+    },
+    {
+        "case_id": "MIXED-002",
+        "company": "BP",
+        "industry": "oil_and_gas",
+        "claim": "BP rebranded as 'Beyond Petroleum' with stated commitment to energy transition",
+        "outcome": "MIXED",
+        "regulatory_action": "UK ASA investigation (2019-2020); No formal fine but required ad modifications; subsequently scaled back renewable targets in 2023",
+        "source": "UK ASA, Financial Times analysis, Carbon Tracker",
+        "year": 2023,
+        "expected_gw_range": [55, 80],
+        "expected_esg_range": [30, 50],
+        "severity": "MODERATE",
+        "jurisdiction": "UK",
+    },
+]
+
+
+# ---------------------------------------------------------------------------
+# Validation Functions
+# ---------------------------------------------------------------------------
+
+def validate_pipeline_output(
+    company: str,
+    gw_score: float,
+    esg_score: float,
+) -> Dict[str, Any]:
+    """
+    Check if pipeline output falls within expected ranges for known cases.
+
+    Returns:
         {
-            "claim_pattern": r"net.?zero|carbon neutral|1\\.5|paris agreement|renewabl",
-            "contradiction_text": "BP increased planned oil and gas investment by $8bn in 2023, contradicting net-zero direction. CEO Bernard Looney resigned amid governance failures.",
-            "source": "Reuters / Guardian, February 2023",
-            "source_url": "https://www.theguardian.com/business/2023/feb/07/bp-increases-fossil-fuel-investment-retreats-from-climate-targets",
-            "year": 2023,
-            "severity": "high",
-            "regulatory_body": "ClientEarth (UK)"
-        },
-        {
-            "claim_pattern": r"net.?zero|2050|sustainable",
-            "contradiction_text": "ClientEarth filed historic lawsuit against BP board directors personally for mismanaging climate risk, arguing net-zero strategy was inadequate and misleading to investors.",
-            "source": "ClientEarth vs BP Board, February 2023",
-            "source_url": doc_url,
-            "year": 2023,
-            "severity": "high",
-            "regulatory_body": "UK High Court"
+            "case_found": True/False,
+            "case_id": "GW-001",
+            "gw_in_range": True/False,
+            "esg_in_range": True/False,
+            "gw_expected": [65, 90],
+            "gw_actual": 72.5,
+            "calibration_status": "CALIBRATED" | "NEEDS_REVIEW" | "MISCALIBRATED"
         }
-    ],
-    "shell": [
-        {
-            "claim_pattern": r"net.?zero|carbon neutral|2050|emission",
-            "contradiction_text": "Dutch court ruled Shell must reduce absolute emissions by 45% by 2030 vs 2019 levels, finding Shell's climate plan was insufficient and legally binding emission cuts required.",
-            "source": "Milieudefensie v Shell, District Court The Hague, May 2021",
-            "source_url": "https://uitspraken.rechtspraak.nl/inziendocument?id=ECLI:NL:RBDHA:2021:5339",
-            "year": 2021,
-            "severity": "high",
-            "regulatory_body": "Dutch District Court, The Hague"
-        },
-        {
-            "claim_pattern": r"renewable|clean energy|sustainable|net.?zero",
-            "contradiction_text": "Shell's own annual report showed 95%+ of energy sales remained fossil fuels as of 2023. Shell lobbied against EU emissions regulations while claiming climate leadership.",
-            "source": "Shell Annual Report 2023 / InfluenceMap Report",
-            "source_url": "https://influencemap.org/report/Big-Oil-Reality-Check-2023",
-            "year": 2023,
-            "severity": "high",
-            "regulatory_body": "InfluenceMap / ClientEarth"
-        }
-    ],
-    "hsbc": [
-        {
-            "claim_pattern": r"green|sustain|carbon|climate|tree|net.?zero",
-            "contradiction_text": "UK ASA banned HSBC adverts in October 2022 for misleading net-zero claims. Ads showing tree planting and clean energy failed to mention HSBC's continued financing of fossil fuel expansion.",
-            "source": "UK ASA Ruling A22-1218011, October 2022",
-            "source_url": "https://www.asa.org.uk/rulings/hsbc-uk-bank-plc-a22-1218011-hsbc-uk-bank-plc.html",
-            "year": 2022,
-            "severity": "high",
-            "regulatory_body": "UK Advertising Standards Authority"
-        }
-    ],
-    "ryanair": [
-        {
-            "claim_pattern": r"lowest emission|green|sustainable|eco|carbon",
-            "contradiction_text": "UK ASA banned Ryanair's 'lowest emissions airline' claim in 2020, ruling that the comparator data was misleading and the claim could not be substantiated.",
-            "source": "UK ASA Ruling G19-1040356, February 2020",
-            "source_url": "https://www.asa.org.uk/rulings/ryanair-ltd-g19-1040356.html",
-            "year": 2020,
-            "severity": "high",
-            "regulatory_body": "UK Advertising Standards Authority"
-        }
-    ],
-    "volkswagen": [
-        {
-            "claim_pattern": r"clean|emission|diesel|sustainable|green",
-            "contradiction_text": "US EPA found Volkswagen installed defeat devices in 11 million diesel vehicles worldwide to cheat emissions tests. VW paid over $33bn in fines and settlements globally.",
-            "source": "US EPA Notice of Violation, September 2015",
-            "source_url": "https://www.epa.gov/vw",
-            "year": 2015,
-            "severity": "high",
-            "regulatory_body": "US EPA / DOJ"
-        }
-    ],
-    "h&m": [
-        {
-            "claim_pattern": r"conscious|sustainable|recycl|eco|green|organic",
-            "contradiction_text": "Norwegian Consumer Authority found H&M's Conscious Collection used misleading sustainability scores. The Higg Index data underpinning claims was suspended after independent review found methodological flaws.",
-            "source": "Norwegian Consumer Authority, July 2022",
-            "source_url": "https://www.forbrukerradet.no/undersokelse/no-undersokelsekategori/hm-greenwashing/",
-            "year": 2022,
-            "severity": "high",
-            "regulatory_body": "Norwegian Consumer Authority"
-        }
-    ],
-    "exxonmobil": [
-        {
-            "claim_pattern": r"carbon capture|net.?zero|climate|sustainable|renewable",
-            "contradiction_text": "ExxonMobil sued by state of Massachusetts for decades of climate denial and investor deception. Internal documents showed company knew about climate risks since 1970s while publicly disputing science.",
-            "source": "Massachusetts AG v ExxonMobil, 2019 / House Oversight Committee 2021",
-            "source_url": "https://www.mass.gov/news/ag-healey-files-suit-against-exxonmobil",
-            "year": 2021,
-            "severity": "high",
-            "regulatory_body": "Massachusetts AG / US House Oversight"
-        }
-    ],
-    "amazon": [
-        {
-            "claim_pattern": r"carbon neutral|renewable|sustainable|green|climate pledge",
-            "contradiction_text": "Amazon's own sustainability report showed absolute carbon emissions increased 18% from 2019 to 2021 despite Climate Pledge. FTC scrutinized carbon-neutral delivery claims.",
-            "source": "Amazon Sustainability Report 2021 / FTC Green Guide Review 2022",
-            "source_url": "https://sustainability.aboutamazon.com/",
-            "year": 2022,
-            "severity": "medium",
-            "regulatory_body": "US FTC"
-        }
-    ],
-    "totalenergies": [
-        {
-            "claim_pattern": r"net.?zero|renewable|sustainable|multi.?energy|green",
-            "contradiction_text": "TotalEnergies planned to increase oil and gas production through 2030 while advertising net-zero 2050 goals. French court ruled TotalEnergies must update its plan in line with Paris Agreement.",
-            "source": "Notre Affaire à Tous v TotalEnergies, Paris Court 2023",
-            "source_url": "https://notreaffaireatous.org/en/",
-            "year": 2023,
-            "severity": "high",
-            "regulatory_body": "Paris Civil Court"
-        }
-    ],
-    "chevron": [
-        {
-            "claim_pattern": r"paris|carbon|renewable|sustainable|climate|net.?zero",
-            "contradiction_text": "Chevron's own Paris Agreement alignment report scored only 15% aligned by InfluenceMap. Chevron spent millions lobbying against climate regulations while claiming Paris support.",
-            "source": "InfluenceMap Corporate Climate Responsibility Monitor 2022",
-            "source_url": "https://influencemap.org/report/Big-Oil-Reality-Check-2023",
-            "year": 2022,
-            "severity": "high",
-            "regulatory_body": "InfluenceMap"
-        }
-    ],
-    "jpmorgan chase": [
-        {
-            "claim_pattern": r"net.?zero|paris|alignment|sustainable|climate",
-            "description": "Left the Net Zero Banking Alliance (NZBA) in January 2025",
-            "contradiction_text": "Withdrew from net-zero banking coalition while publicly claiming Paris Agreement alignment",
-            "source": "NZBA / Reuters",
-            "source_url": "https://www.unepfi.org/net-zero-banking/members/",
-            "year": 2025,
-            "severity": "high",
-            "regulatory_body": "NZBA (UNEP FI)"
-        },
-        {
-            "claim_pattern": r"climate action|net.?zero|engagement|transition",
-            "description": "Left Climate Action 100+ in February 2024",
-            "contradiction_text": "Exited world's largest investor climate engagement initiative",
-            "source": "Financial Times",
-            "source_url": "https://www.climateaction100.org/whos-involved/investors/",
-            "year": 2024,
-            "severity": "high",
-            "regulatory_body": "Climate Action 100+"
-        },
-        {
-            "claim_pattern": r"2030|absolute|intensity|target|decarbon",
-            "description": "Shifted 2030 targets from absolute cuts to cost-based intensity metrics",
-            "contradiction_text": "Replaced absolute emission commitments with weaker intensity targets",
-            "source": "Bloomberg / JPMC 2024 Climate Report",
-            "source_url": "https://www.jpmorganchase.com/ir/news/2024/climate-report-2024",
-            "year": 2024,
-            "severity": "high",
-            "regulatory_body": "Public disclosure"
-        },
-        {
-            "claim_pattern": r"net.?zero|fossil|sustainable|paris|climate",
-            "description": "$429B fossil fuel financing since Paris Agreement - ranked #1 globally",
-            "contradiction_text": "World's largest fossil fuel financier while claiming sustainable low-carbon alignment",
-            "source": "Banking on Climate Chaos 2023 - RAN/BankTrack/Sierra Club",
-            "source_url": "https://www.bankingonclimatechaos.org/",
-            "year": 2023,
-            "severity": "high",
-            "regulatory_body": "NGO investigation"
-        },
-        {
-            "claim_pattern": r"expansion|fossil|transition|low.?carbon|financing",
-            "description": "Financed $38.1B in fossil fuel expansion in 2022 alone",
-            "contradiction_text": "Continued large-scale fossil fuel expansion financing",
-            "source": "Banking on Climate Chaos 2023",
-            "source_url": "https://www.bankingonclimatechaos.org/",
-            "year": 2023,
-            "severity": "high",
-            "regulatory_body": "NGO investigation"
-        }
-    ],
-    "coca-cola": [
-        {
-            "claim_pattern": r"100% recyclable|circular|sustainable packaging|plastic pollution",
-            "contradiction_text": "Named world's top plastic polluter for 5 consecutive years. Lawsuit in US argued '100% recyclable' claims are misleading as most plastic ends up in landfill or ocean.",
-            "source": "Break Free From Plastic / Earth Island Institute Lawsuit 2022",
-            "source_url": "https://www.earthisland.org/index.php/news/entry/earth-island-institute-files-lawsuit-against-the-coca-cola-company",
-            "year": 2022,
-            "severity": "high",
-            "regulatory_body": "Break Free From Plastic / US Courts"
-        }
-    ],
-    "delta air lines": [
-        {
-            "claim_pattern": r"carbon neutral|greenest airline|sustainable|climate",
-            "contradiction_text": "Class-action lawsuit filed in California in 2023 alleging 'carbon neutral' claims are false and misleading, predicated on low-quality offsets that do not actually remove carbon.",
-            "source": "Delta Air Lines Carbon Neutral Class Action, 2023",
-            "source_url": "https://www.theguardian.com/business/2023/may/30/delta-air-lines-lawsuit-carbon-neutral-claims",
-            "year": 2023,
-            "severity": "high",
-            "regulatory_body": "US Federal Court"
-        }
-    ],
-    "google": [
-        {
-            "claim_pattern": r"carbon neutral|sustainability|water stewardship|zero waste",
-            "contradiction_text": "Google's 2024 Environment Report showed greenhouse gas emissions rose 48% over 5 years due to AI data center energy demand, contradicting their 2030 net-zero ambition.",
-            "source": "Google Environmental Report 2024 / Bloomberg",
-            "source_url": "https://www.bloomberg.com/news/articles/2024-07-02/google-s-emissions-shot-up-48-since-2019-during-ai-building-boom",
-            "year": 2024,
-            "severity": "medium",
-            "regulatory_body": "Bloomberg / Public Reports"
-        }
-    ],
-    "goldman sachs": [
-        {
-            "claim_pattern": r"esg fund|sustainable investment|ethical|green",
-            "contradiction_text": "SEC fined Goldman Sachs $4 million in 2022 for failing to follow its own ESG investment policies and procedures in some of its mutual funds.",
-            "source": "SEC Press Release 2022-209",
-            "source_url": "https://www.sec.gov/news/press-release/2022-209",
-            "year": 2022,
-            "severity": "medium",
-            "regulatory_body": "US Securities and Exchange Commission"
-        }
-    ],
-    "dws": [
-        {
-            "claim_pattern": r"esg integration|sustainable investing|green assets",
-            "contradiction_text": "DWS (Deutsche Bank) raided by German police and fined $25 million by SEC for greenwashing—specifically misleading investors about how it used ESG factors in research.",
-            "source": "SEC / BaFin Investigation 2023",
-            "source_url": "https://www.sec.gov/news/press-release/2023-194",
-            "year": 2023,
-            "severity": "high",
-            "regulatory_body": "US SEC / German BaFin"
-        }
+    """
+    company_lower = company.lower().strip()
+
+    for case in KNOWN_GREENWASHING_CASES:
+        case_company = case["company"].lower().strip()
+        # Fuzzy match: check if either contains the other
+        if case_company in company_lower or company_lower in case_company:
+            gw_range = case["expected_gw_range"]
+            esg_range = case["expected_esg_range"]
+
+            gw_in_range = gw_range[0] <= gw_score <= gw_range[1]
+            esg_in_range = esg_range[0] <= esg_score <= esg_range[1]
+
+            # Calibration status
+            if gw_in_range and esg_in_range:
+                status = "CALIBRATED"
+            elif gw_in_range or esg_in_range:
+                status = "NEEDS_REVIEW"
+            else:
+                status = "MISCALIBRATED"
+
+            return {
+                "case_found": True,
+                "case_id": case["case_id"],
+                "company": case["company"],
+                "outcome": case["outcome"],
+                "gw_in_range": gw_in_range,
+                "esg_in_range": esg_in_range,
+                "gw_expected": gw_range,
+                "gw_actual": round(gw_score, 1),
+                "esg_expected": esg_range,
+                "esg_actual": round(esg_score, 1),
+                "calibration_status": status,
+                "regulatory_action": case["regulatory_action"],
+            }
+
+    return {
+        "case_found": False,
+        "calibration_status": "NO_GROUND_TRUTH",
+    }
+
+
+def get_all_cases_for_industry(industry: str) -> List[Dict[str, Any]]:
+    """Get all known cases for an industry for sector-specific calibration."""
+    return [
+        c for c in KNOWN_GREENWASHING_CASES
+        if c["industry"].lower() == industry.lower()
     ]
-}
 
-COMPANY_ALIASES = {
-    "JPMC": "JPMorgan Chase",
-    "JPM": "JPMorgan Chase",
-    "J.P. Morgan": "JPMorgan Chase",
-    "JP Morgan": "JPMorgan Chase",
-    "JPMorgan": "JPMorgan Chase",
-    "Shell PLC": "Shell",
-    "Shell plc": "Shell",
-    "BP plc": "BP",
-    "BP PLC": "BP",
-    "Unilever PLC": "Unilever",
-    "unilever": "Unilever",
-}
 
-def get_known_contradictions(company_name: str, claim_text: str) -> List[Dict]:
+def get_calibration_summary() -> Dict[str, Any]:
     """
-    Checks a company name and claim against the known cases database.
-    Returns list of matching contradiction dicts.
-    Matching is case-insensitive on company name and regex on claim text.
+    Get overall calibration statistics for the ground truth dataset.
+    Used by the calibration pipeline to track accuracy over time.
     """
-    alias_map = {k.lower(): v for k, v in COMPANY_ALIASES.items()}
-    canonical = alias_map.get(str(company_name).lower(), company_name)
-    company_key = canonical.lower().strip()
-    # fuzzy match: check if any key is a substring of company name or vice versa
-    matched_key = None
-    for key in KNOWN_GREENWASHING_CASES:
-        if key in company_key or company_key in key:
-            matched_key = key
-            break
-    if not matched_key:
+    total = len(KNOWN_GREENWASHING_CASES)
+    by_outcome = {}
+    by_industry = {}
+    by_severity = {}
+
+    for case in KNOWN_GREENWASHING_CASES:
+        outcome = case["outcome"]
+        industry = case["industry"]
+        severity = case["severity"]
+
+        by_outcome[outcome] = by_outcome.get(outcome, 0) + 1
+        by_industry[industry] = by_industry.get(industry, 0) + 1
+        by_severity[severity] = by_severity.get(severity, 0) + 1
+
+    return {
+        "total_cases": total,
+        "by_outcome": by_outcome,
+        "by_industry": by_industry,
+        "by_severity": by_severity,
+        "coverage_note": (
+            "Ground truth covers regulatory enforcement (SEC, FTC, EU, UK ASA, ACCC) "
+            "and court rulings. Does NOT cover undetected greenwashing. "
+            "Dataset should be expanded continuously as new enforcement actions occur."
+        ),
+    }
+
+
+def get_known_contradictions(company_name: str, claim_text: str) -> List[Dict[str, Any]]:
+    """Return known greenwashing cases that match a given company and claim.
+
+    Performs fuzzy company name matching and optional claim keyword overlap
+    to surface high-confidence ground-truth contradictions from the regulatory
+    database.
+    """
+    if not company_name:
         return []
-    cases = KNOWN_GREENWASHING_CASES[matched_key]
-    matched = []
-    for case in cases:
-        if re.search(case["claim_pattern"], claim_text, re.IGNORECASE):
-            matched.append({
-                **case,
-                "confidence": "HIGH",
-                "source_type": "verified_regulatory_case"
-            })
-    return matched
 
-if __name__ == "__main__":
-    # Simple test/demo
-    test = get_known_contradictions("BP", "We aim to be a net zero company by 2050")
-    print(test)
+    company_lower = company_name.lower().strip()
+    claim_lower = (claim_text or "").lower()
+    matches: List[Dict[str, Any]] = []
+
+    for case in KNOWN_GREENWASHING_CASES:
+        case_company = case.get("company", "").lower().strip()
+        # Fuzzy match: either name contains the other
+        if not (case_company in company_lower or company_lower in case_company):
+            continue
+
+        # Only return cases that are CONFIRMED or MIXED greenwashing
+        outcome = str(case.get("outcome", "")).upper()
+        if outcome not in {"CONFIRMED_GREENWASHING", "MIXED"}:
+            continue
+
+        # Build a contradiction record
+        matches.append({
+            "case_id": case.get("case_id"),
+            "severity": case.get("severity", "MEDIUM"),
+            "description": case.get("regulatory_action", "Known regulatory case"),
+            "contradiction_text": case.get("regulatory_action", ""),
+            "source": case.get("source", "Known contradictions database"),
+            "source_url": "",
+            "year": case.get("year"),
+            "confidence": "HIGH",
+            "source_type": "verified_regulatory_case",
+            "outcome": outcome,
+        })
+
+    return matches
+

@@ -32,7 +32,27 @@ from core.esg_data_apis import fill_missing_pillars
 from core.fact_graph_builder import build_esg_fact_graph
 from core.adversarial_audit import build_adversarial_audit
 from core.company_knowledge_graph import CompanyKnowledgeGraph
+from core.objective_function import (
+    UnifiedESGOutput,
+    build_unified_output_from_state,
+    extract_consistency_context,
+)
+from core.claim_evidence_requirements import (
+    analyze_evidence_gaps,
+    classify_claim,
+    get_targeted_search_queries,
+)
+from data.known_cases import validate_pipeline_output
 from core.pillar_factors_builder import synthesize_sec_metric_evidence
+from core.evidence_intelligence import (
+    rank_evidence_by_quality,
+    compute_evidence_sufficiency,
+    filter_noise,
+    ConclusionLinker,
+)
+from core.feature_engineering import compute_engineered_features, select_top_features
+from core.causal_reasoner import build_causal_chains, generate_score_explanation
+from core.dynamic_industry import detect_industry, detect_geography, get_regulatory_context
 
 # ============================================================
 # LIVE DATA FETCHER - Gets fresh content for analysis
@@ -642,6 +662,18 @@ def evidence_retrieval_node(state: ESGState) -> ESGState:
             financial_context = None
 
         state["evidence"].extend(evidence_list)
+
+        # ── EVIDENCE INTELLIGENCE: Quality scoring + noise filtering ──
+        try:
+            ev_sufficiency = compute_evidence_sufficiency(state["evidence"], state.get("claim", ""))
+            state["evidence_sufficiency"] = ev_sufficiency
+            grade = ev_sufficiency.get("grade", "UNKNOWN")
+            print(f"   📊 Evidence quality: {grade} (weighted={ev_sufficiency.get('total_weighted_score', 0):.1f}, tier1-2={ev_sufficiency.get('tier_distribution', {}).get(1, 0) + ev_sufficiency.get('tier_distribution', {}).get(2, 0)})")
+            if ev_sufficiency.get("needs_escalation"):
+                for trigger in ev_sufficiency.get("escalation_triggers", [])[:2]:
+                    print(f"   ⚠️ {trigger}")
+        except Exception as e:
+            print(f"   ⚠️ Evidence intelligence error (non-fatal): {e}")
 
         # NEW: Store enrichment data at state level for report access
         if isinstance(result, dict):
@@ -2734,6 +2766,63 @@ def risk_scoring_node(state: ESGState) -> ESGState:
                 print(f"   ML saw pillar scores: E={pillar_scores.get('environmental_score', 0):.0f}, "
                       f"S={pillar_scores.get('social_score', 0):.0f}, "
                       f"G={pillar_scores.get('governance_score', 0):.0f}")
+            # ── INSTITUTIONAL VERIFICATION ENGINE (10-Rule Framework) ────────
+            try:
+                from core.institutional_verifier import build_institutional_report
+                _carbon_data = state.get("carbon_extraction") or {}
+                _emissions = _carbon_data.get("emissions") or {}
+                _scope1_val = (_emissions.get("scope1") or {}).get("value") if isinstance(_emissions.get("scope1"), dict) else _emissions.get("scope1")
+                _scope2_val = (_emissions.get("scope2") or {}).get("value") if isinstance(_emissions.get("scope2"), dict) else _emissions.get("scope2")
+                _scope3_val = (_emissions.get("scope3") or {}).get("total", (_emissions.get("scope3") or {}).get("value")) if isinstance(_emissions.get("scope3"), dict) else _emissions.get("scope3")
+                _carbon_flat = {
+                    "scope1": _scope1_val,
+                    "scope2": _scope2_val,
+                    "scope3": _scope3_val,
+                    "net_zero_target": _carbon_data.get("net_zero_target"),
+                    "sbti_status": _carbon_data.get("sbti_status"),
+                    "renewable_pct": _carbon_data.get("renewable_pct"),
+                }
+                _pathway = state.get("carbon_pathway_analysis") or {}
+                _temporal = all_analyses.get("temporal_consistency") or {}
+                _contras = (
+                    (state.get("contradiction_results") or {}).get("contradictions")
+                    or (state.get("contradiction_results") or {}).get("contradiction_list")
+                    or []
+                )
+                _reg_gaps = (
+                    (state.get("regulatory_compliance") or {}).get("compliance_results") or []
+                )
+                _conf_pct = float(result.get("confidencelevel", result.get("confidence_pct", 65)))
+                _esg_score = float(result.get("esg_score", 50))
+
+                institutional = build_institutional_report(
+                    claim_text=state.get("claim", ""),
+                    evidence=list(state.get("evidence", [])),
+                    esg_score=_esg_score,
+                    confidence_pct=_conf_pct,
+                    carbon_data=_carbon_flat,
+                    pathway_data=_pathway,
+                    temporal_data=_temporal,
+                    contradictions=_contras,
+                    regulatory_gaps=_reg_gaps,
+                    external_benchmarks=external_benchmarks,
+                )
+                result["institutional_verification"] = institutional
+                state["institutional_verification"] = institutional
+                print(f"\n🏛️  INSTITUTIONAL VERIFICATION: {institutional['institutional_verdict']}")
+                print(f"   Claim status : {institutional['claim_verification']['status']}")
+                print(f"   Source tiers : T1={institutional['source_tier_breakdown']['tier1_regulatory']} "
+                      f"T2={institutional['source_tier_breakdown']['tier2_esg_agencies']} "
+                      f"T3={institutional['source_tier_breakdown']['tier3_media']} "
+                      f"T4={institutional['source_tier_breakdown']['tier4_general_web']}")
+                if institutional["rating_divergence"]["divergence_detected"]:
+                    print(f"   ⚠️  {institutional['rating_divergence']['note']}")
+                if institutional["abstention_assessment"]["abstain"]:
+                    print(f"   🚫 ABSTAIN: {institutional['abstention_assessment']['abstain_reasons'][0]}")
+            except Exception as _iv_err:
+                logger.warning("Institutional verifier failed (non-fatal): %s", _iv_err)
+            # ── END INSTITUTIONAL VERIFICATION ───────────────────────────────
+
             state["riskresults"] = result
         else:
             risk_level = "MODERATE"
@@ -3819,6 +3908,175 @@ def verdict_generation_node(state: ESGState) -> ESGState:
 
     if intelligence_sources:
         print(f"   Intelligence Sources: {', '.join(intelligence_sources)}")
+
+    # ============================================================
+    # UNIFIED DUAL-OBJECTIVE OUTPUT (ESG + GW co-primary)
+    # ============================================================
+    try:
+        unified_output = build_unified_output_from_state(state)
+        state["unified_assessment"] = unified_output
+
+        # Sync risk_level from unified output (consistency-enforced)
+        unified_risk = unified_output.get("risk_level")
+        if unified_risk and unified_risk != state["risk_level"]:
+            print(f"   🔄 Unified consistency adjusted risk: {state['risk_level']} → {unified_risk}")
+            state["risk_level"] = unified_risk
+            verdict_data["risk_level"] = unified_risk
+
+        # Sync confidence from unified output
+        unified_conf = unified_output.get("final_confidence")
+        if unified_conf and isinstance(unified_conf, (int, float)):
+            state["confidence"] = unified_conf
+            verdict_data["final_confidence"] = unified_conf
+
+        consistency_flags = unified_output.get("quality_metadata", {}).get("consistency_flags", [])
+        if consistency_flags:
+            print(f"   ⚠️ Consistency flags raised: {len(consistency_flags)}")
+            for flag in consistency_flags:
+                print(f"      - [{flag['rule']}] {flag['message'][:100]}")
+
+        print(f"   ✅ Unified dual-objective output built (ESG + GW co-primary)")
+    except Exception as e:
+        print(f"   ⚠️ Unified output builder error (non-fatal): {e}")
+
+    # ============================================================
+    # CLAIM-EVIDENCE GAP ANALYSIS
+    # ============================================================
+    try:
+        evidence_list = state.get("evidence", []) if isinstance(state.get("evidence", []), list) else []
+        gap_analysis = analyze_evidence_gaps(
+            claim_text=state.get("claim", ""),
+            company=state.get("company", ""),
+            evidence=evidence_list,
+        )
+        state["evidence_gap_analysis"] = gap_analysis
+        verdict_data["evidence_gap_analysis"] = {
+            "claim_types": gap_analysis.get("claim_types", []),
+            "evidence_sufficiency": gap_analysis.get("overall_evidence_sufficiency", 0),
+            "total_required": gap_analysis.get("total_required", 0),
+            "total_found": gap_analysis.get("total_found", 0),
+            "priority_gaps": gap_analysis.get("highest_priority_gaps", [])[:3],
+        }
+        sufficiency = gap_analysis.get("overall_evidence_sufficiency", 0)
+        print(f"   📋 Evidence sufficiency: {sufficiency:.0%} ({gap_analysis.get('total_found', 0)}/{gap_analysis.get('total_required', 0)} required evidence types found)")
+        if gap_analysis.get("highest_priority_gaps"):
+            print(f"   🔍 Top evidence gaps:")
+            for gap in gap_analysis["highest_priority_gaps"][:3]:
+                print(f"      - MISSING: {gap.get('description', 'Unknown')}")
+    except Exception as e:
+        print(f"   ⚠️ Evidence gap analysis error (non-fatal): {e}")
+
+    # ============================================================
+    # GROUND TRUTH VALIDATION (for known cases)
+    # ============================================================
+    try:
+        risk_outputs = [o for o in state.get("agent_outputs", []) if isinstance(o, dict) and o.get("agent") == "risk_scoring"]
+        if risk_outputs:
+            _risk_out = risk_outputs[-1].get("output", {})
+            _gw = float((_risk_out.get("greenwashing_result") or {}).get("greenwashing_score", 50) if isinstance(_risk_out, dict) else 50)
+            _esg = float(_risk_out.get("esg_score", 50) if isinstance(_risk_out, dict) else 50)
+        else:
+            _gw, _esg = 50.0, 50.0
+
+        gt_validation = validate_pipeline_output(
+            company=state.get("company", ""),
+            gw_score=_gw,
+            esg_score=_esg,
+        )
+        if gt_validation.get("case_found"):
+            verdict_data["ground_truth_validation"] = gt_validation
+            cal_status = gt_validation.get("calibration_status", "UNKNOWN")
+            print(f"   🎯 Ground truth case found: {gt_validation.get('case_id')} ({gt_validation.get('outcome')})")
+            print(f"      GW: {gt_validation.get('gw_actual')}/100 (expected {gt_validation.get('gw_expected')}) {'✅' if gt_validation.get('gw_in_range') else '❌'}")
+            print(f"      ESG: {gt_validation.get('esg_actual')}/100 (expected {gt_validation.get('esg_expected')}) {'✅' if gt_validation.get('esg_in_range') else '❌'}")
+            print(f"      Calibration: {cal_status}")
+    except Exception as e:
+        print(f"   ⚠️ Ground truth validation error (non-fatal): {e}")
+
+    # ============================================================
+    # CAUSAL REASONING CHAINS (Problem #14 + #6)
+    # ============================================================
+    try:
+        gap_data = state.get("evidence_gap_analysis", {})
+        claim_types_for_causal = gap_data.get("claim_types", classify_claim(state.get("claim", "")))
+        causal_chains = build_causal_chains(
+            claim_text=state.get("claim", ""),
+            claim_types=claim_types_for_causal,
+            evidence_gaps=gap_data,
+            contradiction_count=contradiction_count,
+        )
+        verdict_data["causal_chains"] = causal_chains
+        unmet = sum(1 for c in causal_chains if c.get("status") in ("UNMET", "RED_FLAG", "FAILED"))
+        print(f"   🔗 Causal chains: {len(causal_chains)} total, {unmet} unmet conditions")
+
+        # Per-factor GW score explanations
+        _risk_outs = [o for o in state.get("agent_outputs", []) if isinstance(o, dict) and o.get("agent") == "risk_scoring"]
+        if _risk_outs:
+            _r_out = _risk_outs[-1].get("output", {})
+            _gw_res = _r_out.get("greenwashing_result", {}) if isinstance(_r_out, dict) else {}
+            if isinstance(_gw_res, dict) and _gw_res:
+                score_explanations = generate_score_explanation(_gw_res, {})
+                verdict_data["score_explanations"] = score_explanations
+                print(f"   📝 GW factor explanations generated for {len(score_explanations)} factors")
+    except Exception as e:
+        print(f"   ⚠️ Causal reasoning error (non-fatal): {e}")
+
+    # ============================================================
+    # ENGINEERED FEATURES (Problem #5 + #13)
+    # ============================================================
+    try:
+        _risk_outs2 = [o for o in state.get("agent_outputs", []) if isinstance(o, dict) and o.get("agent") == "risk_scoring"]
+        _r2 = _risk_outs2[-1].get("output", {}) if _risk_outs2 else {}
+        _ps2 = _r2.get("pillarscores", _r2.get("pillar_scores", {})) if isinstance(_r2, dict) else {}
+        _ctx2 = extract_consistency_context(state)
+        eng_features = compute_engineered_features(
+            company=state.get("company", ""),
+            industry=state.get("industry", "General"),
+            claim=state.get("claim", ""),
+            esg_score=float(_r2.get("esg_score", 50) if isinstance(_r2, dict) else 50),
+            environmental_score=float(_ps2.get("environmental_score", 50) if isinstance(_ps2, dict) else 50),
+            social_score=float(_ps2.get("social_score", 50) if isinstance(_ps2, dict) else 50),
+            governance_score=float(_ps2.get("governance_score", 50) if isinstance(_ps2, dict) else 50),
+            greenwashing_score=float((_r2.get("greenwashing_result") or {}).get("greenwashing_score", 50) if isinstance(_r2, dict) else 50),
+            evidence_count=_ctx2.get("evidence_count", 0),
+            tier1_count=_ctx2.get("tier1_evidence_count", 0),
+            tier2_count=_ctx2.get("tier2_evidence_count", 0),
+            contradiction_count=_ctx2.get("contradiction_count", 0),
+        )
+        top_features = select_top_features(eng_features, top_n=8)
+        verdict_data["engineered_features"] = eng_features
+        verdict_data["top_features"] = top_features
+        print(f"   🧮 {len(eng_features)} engineered features computed, top-8 selected")
+    except Exception as e:
+        print(f"   ⚠️ Feature engineering error (non-fatal): {e}")
+
+    # ============================================================
+    # DYNAMIC INDUSTRY & GEOGRAPHY (Problem #10)
+    # ============================================================
+    try:
+        ev_text = " ".join(
+            str(e.get("snippet", "") or e.get("relevant_text", ""))
+            for e in (state.get("evidence", []) or [])[:20]
+            if isinstance(e, dict)
+        )
+        detected_ind, ind_conf, ind_method = detect_industry(
+            state.get("company", ""), state.get("claim", ""), ev_text, state.get("industry", "")
+        )
+        geo, geo_conf = detect_geography(state.get("company", ""), state.get("claim", ""), ev_text)
+        reg_context = get_regulatory_context(geo)
+        verdict_data["context_awareness"] = {
+            "detected_industry": detected_ind,
+            "industry_confidence": ind_conf,
+            "detection_method": ind_method,
+            "geography": geo,
+            "geography_confidence": geo_conf,
+            "regulatory_frameworks": reg_context,
+        }
+        if ind_method == "keyword_detection" and detected_ind != state.get("industry", "").lower():
+            print(f"   🌍 Industry refined: {state.get('industry')} → {detected_ind} (conf={ind_conf})")
+        print(f"   🌍 Geography: {geo} | Regulatory: {', '.join(reg_context.get('primary', []))}")
+    except Exception as e:
+        print(f"   ⚠️ Context awareness error (non-fatal): {e}")
 
     state["agent_outputs"].append({
         "agent": "verdict_generation",
