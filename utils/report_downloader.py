@@ -156,7 +156,19 @@ class ReportDownloaderService:
     def __init__(self):
         self.name = "ESG Report Downloader Service"
         self.session: requests.Session = requests.Session()
-        
+        # Use a realistic browser User-Agent — many vendor sites (Tesla,
+        # Apple, etc.) sit behind Cloudflare and reject default Python
+        # requests UA with 403. A generic Chrome UA gets through their
+        # anti-bot rules for static asset downloads (the actual PDF files).
+        self.session.headers.update({
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            ),
+            "Accept": "application/pdf,text/html,application/xhtml+xml,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+        })
+
         # Create reports directory
         Path(self.REPORTS_DIR).mkdir(parents=True, exist_ok=True)
     
@@ -203,10 +215,85 @@ class ReportDownloaderService:
         # Create company-specific report directory
         company_dir = Path(self.REPORTS_DIR) / self._sanitize_company_name(company_name)
         company_dir.mkdir(parents=True, exist_ok=True)
-        
+
         print(f"📁 Storage directory: {company_dir}")
-        
+
         successfully_downloaded = []
+
+        # Pre-populate from existing local PDFs in the company directory
+        # AND alternate sanitization variants (e.g. "Tesla, Inc." sanitizes
+        # to `tesla_inc/` but a previous run named the dir `tesla/`). We
+        # search both the canonical sanitized dir AND any sibling whose
+        # name shares the company's distinctive tokens.
+        try:
+            search_dirs = {company_dir}
+            try:
+                reports_root = Path(self.REPORTS_DIR)
+                # Distinctive tokens (≥4 chars, not generic suffixes)
+                import re as _re_tok
+                tokens = [
+                    t for t in _re_tok.split(r"[^A-Za-z0-9]+", company_name.lower())
+                    if len(t) >= 4 and t not in {"corp", "inc", "ltd", "plc", "group", "company", "limited"}
+                ]
+                if not tokens:  # short ticker
+                    tokens = [(company_name or "").split()[0].lower()] if company_name else []
+                if reports_root.is_dir() and tokens:
+                    for sib in reports_root.iterdir():
+                        if not sib.is_dir():
+                            continue
+                        sib_name = sib.name.lower()
+                        # Match if any distinctive token is in the dir name
+                        if any(tok in sib_name for tok in tokens):
+                            search_dirs.add(sib)
+            except Exception:
+                pass
+
+            local_pdfs: List[Path] = []
+            for d in search_dirs:
+                local_pdfs.extend(p for p in d.glob("*.pdf") if p.stat().st_size >= 200_000)
+            local_pdfs = sorted(local_pdfs, key=lambda p: p.stat().st_mtime, reverse=True)
+            if local_pdfs:
+                # Take the largest 2 (most likely to be substantive ESG/Impact reports).
+                local_pdfs.sort(key=lambda p: p.stat().st_size, reverse=True)
+                _seen_paths: set = set()
+                for pdf_path in local_pdfs[:2]:
+                    if str(pdf_path) in _seen_paths:
+                        continue
+                    _seen_paths.add(str(pdf_path))
+                    name = pdf_path.name.lower()
+                    # Skip files we've already seen via the discovered URLs
+                    already = any(
+                        Path(r.get("local_path", "")).name == pdf_path.name
+                        for r in successfully_downloaded
+                    )
+                    if already:
+                        continue
+                    # Year inference from filename
+                    import re as _re_year
+                    yr_match = _re_year.search(r"(20\d{2})", name)
+                    inferred_year = int(yr_match.group(1)) if yr_match else None
+                    rtype = (
+                        "sustainability" if "sustain" in name or "impact" in name
+                        else "annual" if "annual" in name or "10-k" in name
+                        else "esg" if "esg" in name
+                        else "unknown"
+                    )
+                    successfully_downloaded.append({
+                        "url": f"local://{pdf_path}",
+                        "local_path": str(pdf_path),
+                        "year": inferred_year,
+                        "report_type": rtype,
+                        "file_size": pdf_path.stat().st_size,
+                        "download_timestamp": datetime.fromtimestamp(pdf_path.stat().st_mtime).isoformat(),
+                        "from_cache": True,
+                        "source_origin": "pre_existing_local_pdf",
+                    })
+                    print(
+                        f"      📂 Pre-existing local PDF added: {pdf_path.name} "
+                        f"({pdf_path.stat().st_size/1e6:.1f}MB) — feeds parser even if discovery missed it"
+                    )
+        except Exception as _exc:
+            print(f"      ⚠️ Could not enumerate pre-existing local PDFs: {_exc}")
         
         # Download each report
         for i, report in enumerate(discovered_reports, 1):
@@ -551,7 +638,14 @@ class ReportDownloaderService:
         return filename
     
     def _validate_url(self, url: str) -> bool:
-        """Validate URL format and accessibility"""
+        """Validate URL format and accessibility.
+
+        Tesla, Apple, and other vendors block HEAD requests via Cloudflare/
+        anti-bot rules but happily serve GET. Previously the validator
+        rejected on HEAD 403 and the actual report (63MB Tesla Impact
+        Report) never got downloaded. We now treat HEAD 403/405/406/410
+        as inconclusive (try the GET anyway) and only reject on hard 404.
+        """
         try:
             # Basic URL validation
             if not url.startswith(('http://', 'https://')):
@@ -564,15 +658,21 @@ class ReportDownloaderService:
             parsed = urlparse(url)
             if not parsed.netloc:
                 return False
-            
+
             # Check HEAD request (quick validation without download)
             try:
                 response = self.session.head(url, timeout=5, allow_redirects=True)
-                return response.status_code in [200, 206]
-            except:
-                # HEAD might not work, allow proceeding to GET
+                # Hard reject only on 404. Many vendors return 403/405/406
+                # for HEAD because their anti-bot rules don't whitelist it.
+                if response.status_code == 404:
+                    return False
+                # 200/206 = explicit success; anything else (incl. 403, 405,
+                # 410) = let the GET attempt make the final decision.
                 return True
-            
+            except Exception:
+                # HEAD might not work; allow proceeding to GET
+                return True
+
         except Exception:
             return False
     

@@ -139,7 +139,10 @@ async def fetch_newsapi(query: str, cap: int = NEWSAPI_FETCH_CAP) -> list[dict]:
         or os.getenv("NEWSAPI_ORG_KEY")
     )
     if not api_key:
-        return []
+        # Marker so the wrapper can distinguish "key missing" from "0 hits"
+        # — we don't want to spam "silent miss" on every call when the
+        # operator simply hasn't provisioned a key.
+        return [{"_no_api_key": True, "_retriever": "newsapi"}]
 
     params = {
         "q": query,
@@ -186,7 +189,7 @@ async def fetch_newsdata(query: str, cap: int = NEWSDATA_FETCH_CAP) -> list[dict
         or os.getenv("NEWS_DATA_KEY_2")
     )
     if not api_key:
-        return []
+        return [{"_no_api_key": True, "_retriever": "newsdata"}]
 
     try:
         async with httpx.AsyncClient() as session:
@@ -1211,7 +1214,16 @@ class EvidenceRetriever:
         # ============================================================
         print(f"🌐 CACHE MISS - Running two-stage evidence pipeline for {company}...")
 
-        query = f"{company} {claim_text[:100]} ESG sustainability"
+        # NewsAPI / NewsData treat every word in the query as a required
+        # term (implicit AND). Long queries like "<company> <full claim text>
+        # ESG sustainability" return 0 hits even for famous companies. Use
+        # a short, broadly-shaped query: company + one ESG anchor term.
+        # The claim text still informs scoring downstream — it just
+        # shouldn't gate retrieval.
+        query = f'"{company}" climate sustainability'
+        # Used by retrievers that take a longer descriptor (e.g. DuckDuckGo,
+        # vector-store similarity).
+        long_query = f"{company} {claim_text[:100]} ESG sustainability"
 
         async def _run_pipeline() -> Dict[str, Any]:
             raw: List[Dict[str, Any]] = []
@@ -1220,6 +1232,26 @@ class EvidenceRetriever:
             # impossible to tell whether NewsAPI/SBTi/InfluenceMap actually
             # contributed or just quietly returned [].
             tally: Dict[str, int] = {}
+
+            # Per-run dedupe so retrievers without API keys don't log the
+            # same "no_api_key" line on every call inside a single pipeline.
+            _logged_missing_key: set = set()
+
+            def _process_result(label: str, out):
+                """Distinguish missing-API-key (log once) from genuine 0-result."""
+                if isinstance(out, list) and len(out) == 1 and isinstance(out[0], dict) and out[0].get("_no_api_key"):
+                    if label not in _logged_missing_key:
+                        _logged_missing_key.add(label)
+                        print(f"  ⓘ retriever '{label}' skipped — API key not configured")
+                    tally[label] = 0
+                    return []
+                n = len(out) if isinstance(out, list) else 0
+                tally[label] = n
+                if n == 0:
+                    print(f"  ⚠️  retriever '{label}' returned 0 items (no results for this query)")
+                else:
+                    print(f"  ✓ retriever '{label}' returned {n} items")
+                return out if isinstance(out, list) else []
 
             async def _try_async(label: str, coro):
                 """Call an async retriever, log how many items it yielded, and
@@ -1231,13 +1263,7 @@ class EvidenceRetriever:
                     print(f"  ⚠️  retriever '{label}' raised {type(exc).__name__}: {str(exc)[:100]}")
                     tally[label] = -1
                     return []
-                n = len(out) if isinstance(out, list) else 0
-                tally[label] = n
-                if n == 0:
-                    print(f"  ⚠️  retriever '{label}' returned 0 items (silent miss — check API key / endpoint)")
-                else:
-                    print(f"  ✓ retriever '{label}' returned {n} items")
-                return out if isinstance(out, list) else []
+                return _process_result(label, out)
 
             def _try_sync(label: str, fn, *args, **kwargs):
                 try:
@@ -1246,18 +1272,15 @@ class EvidenceRetriever:
                     print(f"  ⚠️  retriever '{label}' raised {type(exc).__name__}: {str(exc)[:100]}")
                     tally[label] = -1
                     return []
-                n = len(out) if isinstance(out, list) else 0
-                tally[label] = n
-                if n == 0:
-                    print(f"  ⚠️  retriever '{label}' returned 0 items (silent miss — check API key / endpoint)")
-                else:
-                    print(f"  ✓ retriever '{label}' returned {n} items")
-                return out if isinstance(out, list) else []
+                return _process_result(label, out)
 
-            # Stage 1: broad fetch with updated source caps
+            # Stage 1: broad fetch with updated source caps. NewsAPI /
+            # NewsData get the short query (company + ESG anchor), which
+            # actually matches articles. DuckDuckGo handles longer queries
+            # well so it gets the descriptive form.
             raw += await _try_async("newsapi",       fetch_newsapi(query, cap=NEWSAPI_FETCH_CAP))
             raw += await _try_async("newsdata",      fetch_newsdata(query, cap=NEWSDATA_FETCH_CAP))
-            raw += _try_sync(       "duckduckgo",    fetch_duckduckgo, query, cap=DUCKDUCKGO_FETCH_CAP)
+            raw += _try_sync(       "duckduckgo",    fetch_duckduckgo, long_query, cap=DUCKDUCKGO_FETCH_CAP)
             raw += _try_sync(       "reuters_rss",   fetch_reuters_rss, company, cap=REUTERS_RSS_FETCH_CAP)
 
             # Historical context remains useful but bounded

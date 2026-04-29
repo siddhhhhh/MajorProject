@@ -329,16 +329,44 @@ class GovernanceAgent:
             f'"{company}" DOJ investigation FCPA',
             f'"{company}" competition authority fine',
         ]
+        # Build a token set of the company's distinctive name parts so we
+        # can filter out off-topic results. DDG sometimes returns wildly
+        # unrelated pages (e.g. Kraft Heinz Wikipedia for a "Tesla SEC
+        # enforcement" query) — without this filter those leak into
+        # Tesla's enforcement section as if they were Tesla evidence.
+        import re as _re
+        company_tokens = [
+            t for t in _re.split(r"[^A-Za-z0-9]+", (company or "").lower())
+            if len(t) >= 4 and t not in {"corp", "inc", "ltd", "plc", "group", "company", "limited"}
+        ]
+        # Companies whose names are short tickers (BP, GE, GM, IBM, SAP) —
+        # use the original short token if no long token exists.
+        if not company_tokens and company:
+            short = (company or "").split()[0].lower()
+            if 2 <= len(short) <= 4:
+                company_tokens = [short]
+
         for q in queries:
             for item in search_duckduckgo(q, max_results=2):
+                title = str(item.get("title", "") or "")
+                url = str(item.get("url", "") or "")
+                snippet = str(item.get("snippet", "") or "")
+                hay_for_match = f"{title} {snippet} {url}".lower()
+
+                # Skip results that don't reference the queried company
+                # at all. This kills the Kraft Heinz / unrelated-company
+                # contamination problem.
+                if company_tokens and not any(tok in hay_for_match for tok in company_tokens):
+                    continue
+
                 sources.append(
                     {
-                        "title": item.get("title", ""),
-                        "url": item.get("url", ""),
+                        "title": title,
+                        "url": url,
                         "source": "Regulatory/legal search",
                     }
                 )
-                hay = f"{item.get('title', '')} {item.get('snippet', '')}".lower()
+                hay = f"{title} {snippet}".lower()
                 if any(term in hay for term in ["fine", "enforcement", "violation", "settlement", "investigation"]):
                     fine_signals += 1
 

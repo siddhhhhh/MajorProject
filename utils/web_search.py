@@ -54,17 +54,50 @@ class RealTimeDataFetcher:
         return sorted_results[:max_results]
     
     def search_news_api(self, query: str, max_results: int = 5) -> List[Dict[str, Any]]:
-        """NewsAPI - Real-time news from 80,000+ sources"""
+        """NewsAPI - Real-time news from 80,000+ sources.
+
+        NewsAPI ANDs every word in `q`, so verbose queries like
+        "Volkswagen Group emissions lawsuit ruling" return 0 results because
+        the API requires ALL terms to appear in each article. We rewrite
+        long queries into a short quoted-company + 1-2 anchor pair so we
+        actually get matches. The caller's original intent is preserved
+        in the response (we still surface ESG/legal/climate content because
+        the company name + anchor terms keep results topical).
+        """
         if not self.news_api_key:
             return []
-        
+
+        # Rewrite verbose queries: extract the first quoted company name OR
+        # the first 2-3 capitalized words, plus one ESG-anchor term.
+        import re as _re
+        original_query = query
+        m = _re.search(r'"([^"]+)"', query)
+        if m:
+            company_part = m.group(1)
+        else:
+            # Take leading words until lowercase begins or punctuation
+            words = query.split()
+            company_words = []
+            for w in words[:4]:
+                if w[:1].isupper() or w[:1].isdigit():
+                    company_words.append(w)
+                else:
+                    break
+            company_part = " ".join(company_words) if company_words else " ".join(words[:2])
+        # Anchor term — pick the first ESG keyword present in the original query
+        anchor_terms = ("emissions", "climate", "sustainability", "lawsuit",
+                        "fine", "violation", "regulator", "esg", "scope")
+        ql = query.lower()
+        anchor = next((a for a in anchor_terms if a in ql), "climate")
+        compact_query = f'"{company_part}" {anchor}'
+
         try:
             # Search last 30 days for relevance
             from_date = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
-            
+
             url = "https://newsapi.org/v2/everything"
             params = {
-                "q": query,
+                "q": compact_query,
                 "apiKey": self.news_api_key,
                 "language": "en",
                 "sortBy": "publishedAt",  # Most recent first
@@ -143,14 +176,21 @@ class RealTimeDataFetcher:
         return []
     
     def search_duckduckgo(self, query: str, max_results: int = 5) -> List[Dict[str, Any]]:
-        """DuckDuckGo - No API key needed, real-time web search"""
+        """DuckDuckGo - No API key needed, real-time web search.
+
+        DDGS proxies through Yahoo by default, and the Yahoo backend rejects
+        ~70% of automated requests with a verbose RequestError stack. We
+        retry on the lite backend and dedupe error-spam: a verbose Yahoo/
+        backend RequestError is logged once per run as a single warning,
+        not 10+ times across every retriever invocation.
+        """
         try:
             from ddgs import DDGS  # ✅ Updated from duckduckgo_search
-            
+
             results = []
             with DDGS() as ddgs:
                 search_results = ddgs.text(query, max_results=max_results)
-                
+
                 for result in search_results:
                     results.append({
                         "source": self._extract_domain(result.get("href", "")),
@@ -160,13 +200,45 @@ class RealTimeDataFetcher:
                         "date": datetime.now().isoformat(),
                         "data_source": "DuckDuckGo - Real-time Web"
                     })
-            
+
             print(f"✅ DuckDuckGo: Found {len(results)} web results")
             return results
         except ImportError:
             print("⚠️ ddgs not installed. Run: pip install ddgs")
             return []
         except Exception as e:
+            err_str = str(e)
+            # Yahoo-backend rejections are noisy and unhelpful — dedupe them
+            # to one log line per process. Other DDG errors still surface.
+            is_yahoo_reject = (
+                "search.yahoo.com" in err_str
+                or "RequestError" in err_str
+                or "error sending request" in err_str
+            )
+            if is_yahoo_reject:
+                if not getattr(RealTimeDataFetcher, "_yahoo_warned", False):
+                    print("⚠️ DuckDuckGo's Yahoo backend rejecting requests — silenced for remaining run")
+                    RealTimeDataFetcher._yahoo_warned = True
+                # Try a "html" backend fallback once for this query
+                try:
+                    from ddgs import DDGS  # type: ignore
+                    results = []
+                    with DDGS() as ddgs:
+                        for result in ddgs.text(query, max_results=max_results, backend="html"):
+                            results.append({
+                                "source": self._extract_domain(result.get("href", "")),
+                                "url": result.get("href", ""),
+                                "title": result.get("title", ""),
+                                "snippet": result.get("body", ""),
+                                "date": datetime.now().isoformat(),
+                                "data_source": "DuckDuckGo HTML fallback",
+                            })
+                    if results:
+                        return results
+                except Exception:
+                    pass
+                return []
+            # Non-yahoo errors: log normally
             print(f"⚠️ DuckDuckGo error: {e}")
             return []
 

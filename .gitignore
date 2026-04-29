@@ -43,6 +43,9 @@ htmlcov/
 # Local speech draft
 speech.md
 
+# Scratch directory
+scratch/
+
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints/
 *.ipynb_checkpoints/
@@ -56,6 +59,7 @@ speech.md
 
 # Local AI tooling settings
 .claude/
+claude.md
 
 # Frontend & Node.js
 node_modules/

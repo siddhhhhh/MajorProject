@@ -6,6 +6,16 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 import fitz  # PyMuPDF
 
+# Silence MuPDF C-library warnings ("format error: No common ancestor in
+# structure tree", "expected ID for tag", etc.). These are non-fatal —
+# tagged-PDF metadata quirks that don't affect text extraction — but they
+# spam stderr on every parse. Once set, this applies process-wide.
+try:
+    fitz.TOOLS.mupdf_display_errors(False)
+    fitz.TOOLS.mupdf_display_warnings(False)
+except Exception:
+    pass
+
 def get_sustainability_page_url(company_name: str) -> Optional[str]:
     """Search for the official sustainability page of the company."""
     from utils.web_search import RealTimeDataFetcher
@@ -138,16 +148,43 @@ def download_pdf(url: str, output_path: str) -> Optional[str]:
     return None
 
 def validate_pdf(file_path: str, company_name: str) -> bool:
-    """Check if the downloaded PDF mentions the company name within the first few pages."""
+    """Check if the downloaded PDF mentions the company name within the first few pages.
+
+    Token-based check rather than substring: a sustainability report for
+    "JPMorgan Chase" may say "JPMorgan Chase & Co.", "JPMorgan", "JPMC",
+    etc. We tokenize on word boundaries, drop generic suffixes (inc, ltd,
+    corp, group, etc.), and require all remaining content tokens to appear
+    in the first 8 pages. Single-token names ("Apple", "Tesla") still need
+    that exact token. Two-token names ("Tata Steel") need both tokens.
+    """
     try:
         doc = fitz.open(file_path)
         text = ""
-        # Just check first 5 pages to save time/memory for validation
-        for i in range(min(5, doc.page_count)):
+        # Scan first 8 pages — covers cover, table-of-contents, CEO letter,
+        # which is where the company name reliably appears at least once.
+        for i in range(min(8, doc.page_count)):
             text += doc[i].get_text()
-            
         doc.close()
-        return company_name.lower() in text.lower()
+
+        if not text:
+            return False
+        text_lower = text.lower()
+
+        import re as _re
+        normalized = _re.sub(r"[^a-z0-9 &]+", " ", company_name.lower())
+        normalized = _re.sub(r"\b(inc|incorporated|ltd|limited|corp|corporation|plc|group|company|co|holdings|holding|the|and|of)\b", " ", normalized)
+        tokens = [t for t in normalized.split() if len(t) >= 2]
+        # Tickers (BP, GE) need only an exact-token match; longer multi-
+        # token names need every meaningful token to appear.
+        if not tokens:
+            # Fallback: original substring check
+            return company_name.lower() in text_lower
+        # Token presence on word boundaries (so "JP" doesn't accidentally
+        # match "JPL" inside another word).
+        for tok in tokens:
+            if not _re.search(r"\b" + _re.escape(tok) + r"\b", text_lower):
+                return False
+        return True
     except Exception as e:
         print(f"Error validating PDF {file_path}: {e}")
         return False
@@ -173,11 +210,25 @@ def extract_tables_from_pdf(pdf_path: str) -> str:
 
 def validate_company(text: str, company_name: str) -> bool:
     """
-    Verify that the document actually belongs to the requested company.
+    Verify that a search snippet actually belongs to the requested company.
+
+    Looser than ``validate_pdf`` because snippets are short — a snippet
+    saying "JPMorgan reported strong Q3" should still match a "JPMorgan
+    Chase" query. Rule: the brand-token (first content token of the query)
+    must appear; subsequent tokens are nice-to-have.
     """
     if not text:
         return False
-    return company_name.lower() in text.lower()
+    text_lower = text.lower()
+    import re as _re
+    normalized = _re.sub(r"[^a-z0-9 &]+", " ", company_name.lower())
+    normalized = _re.sub(r"\b(inc|incorporated|ltd|limited|corp|corporation|plc|group|company|co|holdings|holding|the|and|of)\b", " ", normalized)
+    tokens = [t for t in normalized.split() if len(t) >= 2]
+    if not tokens:
+        return company_name.lower() in text_lower
+    # Brand token must appear; require ≥1 content token to match (the brand).
+    brand = tokens[0]
+    return bool(_re.search(r"\b" + _re.escape(brand) + r"\b", text_lower))
 
 def extract_pdf_text_pymupdf(file_path: str) -> str:
     """Read a PDF fully into text using PyMuPDF."""

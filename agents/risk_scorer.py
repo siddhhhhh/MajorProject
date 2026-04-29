@@ -877,6 +877,41 @@ class RiskScorer:
             else:
                 print(f"  [supplemental_evidence] WARNING: no supplemental items found in external_payload "
                       f"(keys present: {list(external_payload.keys())[:10]})")
+
+        # Inject parsed report chunks as evidence so structured indicators
+        # (Board Independence, Board Diversity, Renewable Energy, etc.)
+        # can find their patterns in the company's own annual report.
+        # Without this, board metrics scored 0/100 with "no relevant
+        # disclosure" even when the data was disclosed in the report.
+        report_chunks = all_analyses.get("report_chunks") or []
+        if not report_chunks:
+            # Fallback: pull from agent_outputs if not lifted to top level.
+            for _ao in all_analyses.get("agent_outputs", []) or []:
+                if isinstance(_ao, dict) and _ao.get("agent") == "report_parser":
+                    _out = _ao.get("output") or {}
+                    if isinstance(_out, dict):
+                        report_chunks = _out.get("chunks") or []
+                    break
+        if isinstance(report_chunks, list) and report_chunks:
+            chunk_evidence = []
+            for c in report_chunks[:300]:
+                if not isinstance(c, dict):
+                    continue
+                t = c.get("text") or c.get("page_content") or ""
+                if not t or len(t) < 50:
+                    continue
+                chunk_evidence.append({
+                    "title": "Parsed report chunk",
+                    "snippet": t[:1500],
+                    "content": t[:1500],
+                    "url": "parsed_report_chunk",
+                    "source": "report_parser",
+                    "tier": 1,  # company-self-reported via parsed PDF
+                })
+            if chunk_evidence:
+                evidence_list = evidence_list + chunk_evidence
+                print(f"  [report_chunks] +{len(chunk_evidence)} parsed report chunks merged into evidence_list "
+                      f"(total: {len(evidence_list)}) — feeds Board Independence / Diversity / Renewable patterns")
         
         carbon_data_for_factors = all_analyses.get("carbon_extraction") or all_analyses.get("carbon_results") or {}
 
@@ -1738,6 +1773,37 @@ class RiskScorer:
                 else:
                     print(f"  [supplemental_evidence] WARNING: no supplemental items found in external_payload "
                           f"(keys present: {list(external_payload.keys())[:10]})")
+            # Mirror the report-chunk injection from the first calculate_pillar_scores
+            # call so this second build_pillar_factors invocation also sees the
+            # parsed annual report (Board Independence / Diversity patterns).
+            report_chunks_2 = all_analyses.get("report_chunks") or []
+            if not report_chunks_2:
+                for _ao in all_analyses.get("agent_outputs", []) or []:
+                    if isinstance(_ao, dict) and _ao.get("agent") == "report_parser":
+                        _out = _ao.get("output") or {}
+                        if isinstance(_out, dict):
+                            report_chunks_2 = _out.get("chunks") or []
+                        break
+            if isinstance(report_chunks_2, list) and report_chunks_2:
+                _chunk_ev2 = []
+                for _c in report_chunks_2[:300]:
+                    if not isinstance(_c, dict):
+                        continue
+                    _t = _c.get("text") or _c.get("page_content") or ""
+                    if not _t or len(_t) < 50:
+                        continue
+                    _chunk_ev2.append({
+                        "title": "Parsed report chunk",
+                        "snippet": _t[:1500],
+                        "content": _t[:1500],
+                        "url": "parsed_report_chunk",
+                        "source": "report_parser",
+                        "tier": 1,
+                    })
+                if _chunk_ev2:
+                    evidence_list = evidence_list + _chunk_ev2
+                    print(f"  [report_chunks/2nd] +{len(_chunk_ev2)} parsed report chunks merged "
+                          f"(total: {len(evidence_list)}) — Board / Renewable patterns")
             carbon_data_for_factors = all_analyses.get("carbon_extraction") or all_analyses.get("carbon_results") or {}
             result["pillarfactors"] = build_pillar_factors(
                 company=company,
@@ -2544,6 +2610,16 @@ Industry:"""
             components['historical_pattern'] = 50
 
         # 6. Contradiction Severity
+        # CRITICAL contradictions (e.g. $34.7B Dieselgate settlement) must
+        # dominate the score, not be capped at the same level as a few
+        # MEDIUM signals. Per-contradiction weights are roughly:
+        #   CRITICAL = 50  (equates to a single docu­mented enforcement case
+        #                   forcing the score above the 50/100 "Moderate" line)
+        #   HIGH     = 30
+        #   MEDIUM   = 12
+        #   LOW      = 5
+        # Cap raised to 90 so multiple CRITICAL contradictions can push to
+        # the top of the scale without infinitely accumulating.
         severity_score = 0
         contradiction_rows = [c for c in contradictions if isinstance(c, dict)]
         for c in contradiction_rows:
@@ -2553,16 +2629,15 @@ Industry:"""
                     continue
                 severity = str(item.get("severity", "")).upper()
                 if severity == "CRITICAL":
-                    severity_score += 35
+                    severity_score += 50
                 elif severity in ("HIGH", "MAJOR"):
-                    severity_score += 25
+                    severity_score += 30
                 elif severity == "MEDIUM":
                     severity_score += 12
                 elif severity == "LOW":
                     severity_score += 5
 
-        # Cap at 50 so contradictions materially impact risk without fully dominating.
-        components['contradiction_severity'] = min(50, severity_score)
+        components['contradiction_severity'] = min(90, severity_score)
 
         # At the end of calculate_components method (before return components, around line 440):
 

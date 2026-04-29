@@ -813,10 +813,49 @@ def _extract_best_metric_value(
     rule: Dict[str, Any],
     evidence_sources: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    """Extract the best quantitative metric value for a structured-scoring indicator."""
+    """Extract the best quantitative metric value for a structured-scoring indicator.
+
+    Geographic-scope guard: many companies report region-specific figures
+    (e.g. "European sites: 100% renewable") alongside lower group-wide
+    numbers ("66.9% globally"). The previous extractor took whichever
+    figure had the highest source-tier without checking scope, so VW's
+    EU-only "100% renewable" got applied group-wide. We now prefer
+    candidates whose surrounding context says "global" / "group-wide" /
+    "consolidated" over those qualified by "European" / "EU" / "regional"
+    / "production sites only" / similar narrowing language.
+    """
     metric_patterns = rule.get("metric_patterns", [])
     metric_unit = rule.get("metric_unit")
     best_match: Optional[Dict[str, Any]] = None
+
+    # Words that narrow a metric to a specific region/segment — when the
+    # match text includes one of these, the value is NOT representative
+    # of the company's group-wide figure.
+    narrowing_qualifiers = (
+        "european", " eu ", "europe-wide", "europe wide",
+        "regional", "region-specific", "north america", "north-america",
+        "uk only", "uk-only", "us only", "us-only",
+        "production sites only", "manufacturing only", "operations only",
+        "selected sites", "key sites", "pilot",
+        "scope 2 only",
+    )
+    # Words that confirm the figure is GROUP-WIDE / consolidated.
+    broadening_qualifiers = (
+        "group-wide", "group wide", "globally", "global",
+        "consolidated", "company-wide", "company wide",
+        "worldwide", "world-wide",
+        "total operations", "across all sites",
+    )
+
+    def _scope_modifier(matched_text_with_context: str) -> int:
+        """Return a small bonus/penalty based on geographic-scope qualifiers
+        found in the match's surrounding context. Range: -2 to +2."""
+        ctx = matched_text_with_context.lower()
+        if any(q in ctx for q in broadening_qualifiers):
+            return 2
+        if any(q in ctx for q in narrowing_qualifiers):
+            return -2
+        return 0
 
     for ev in evidence_sources:
         if not isinstance(ev, dict):
@@ -847,6 +886,19 @@ def _extract_best_metric_value(
                 if metric_unit == "rate" and (value < 0 or value > 1000):
                     continue
 
+                # Pull a wider context window (±100 chars) around the match
+                # so geographic qualifiers like "European sites: 100%" are
+                # captured even when they're outside the regex span.
+                start = max(0, match.start() - 100)
+                end = min(len(ev_text), match.end() + 100)
+                ctx_window = ev_text[start:end]
+                scope_score = _scope_modifier(ctx_window)
+                # Skip narrowed candidates entirely if the metric is supposed
+                # to be group-wide. They'd otherwise inflate the score even
+                # when sorted last (e.g. only 1 candidate exists).
+                if scope_score < 0 and metric_unit == "%":
+                    continue
+
                 candidate = {
                     "value": value,
                     "url": url or None,
@@ -854,17 +906,25 @@ def _extract_best_metric_value(
                     "tier": tier,
                     "year": data_year,
                     "matched_text": match.group(0),
+                    "scope_score": scope_score,
+                    "context": ctx_window[:200],
                 }
 
                 if best_match is None:
                     best_match = candidate
                     continue
 
-                # Prefer higher-reliability sources first, then newer year.
+                # Ranking: (a) higher scope_score wins (group-wide > unspecified > narrow),
+                # (b) higher tier wins (lower number = better), (c) newer year wins.
                 best_year = best_match.get("year") or 0
                 cand_year = candidate.get("year") or 0
-                if candidate["tier"] < best_match["tier"] or (
-                    candidate["tier"] == best_match["tier"] and cand_year > best_year
+                best_scope = best_match.get("scope_score", 0)
+                cand_scope = candidate.get("scope_score", 0)
+                if cand_scope > best_scope:
+                    best_match = candidate
+                elif cand_scope == best_scope and (
+                    candidate["tier"] < best_match["tier"]
+                    or (candidate["tier"] == best_match["tier"] and cand_year > best_year)
                 ):
                     best_match = candidate
 
@@ -1082,7 +1142,16 @@ def _score_structured_indicator(
         verified = False
     else:
         fallback_score = 0.0
-        fallback_source = "No relevant disclosure"
+        # Distinguish "data wasn't retrieved" (no evidence sources reached
+        # the analyzer) from "actually not disclosed" (evidence exists but
+        # has no relevant content). The former is a system limitation, the
+        # latter is a real disclosure gap — conflating them mislabels VW's
+        # board composition (which IS in the annual report we just didn't
+        # retrieve a row from) as "No relevant disclosure".
+        if not evidence_sources:
+            fallback_source = "Data not retrieved (evidence pool empty for this factor)"
+        else:
+            fallback_source = "No relevant disclosure in retrieved evidence"
         verified = False
 
     megabank_structured_factors = {
@@ -1297,6 +1366,58 @@ def _score_indicator(
 
     # Base score: 40 + evidence hits * 8 + tier bonus, capped at 95
     raw_score = min(95.0, max(20.0, 40.0 + evidence_density * 8.0 + tier_bonus))
+
+    # NEGATIVE-EVIDENCE PENALTY: deduct when the SAME evidence pool that
+    # awarded the score also contains contradicting signals (lawsuits,
+    # rulings, violations). Without this, Tesla scored 90/100 on Labor
+    # Rights & Supply Chain Labor Standards while the same report cited
+    # the IRAdvocates cobalt forced-labor lawsuit and NLRB rulings.
+    indicator_negative_markers = {
+        "Labor Rights & Fair Wages": [
+            "nlrb ruling", "nlrb against", "labor lawsuit", "labor violation",
+            "wage theft", "wage violation", "unionbusting", "union-busting",
+            "minimum wage violation", "back pay", "wage and hour suit",
+        ],
+        "Supply Chain Labor Standards": [
+            "forced labor", "child labor", "modern slavery", "uyghur",
+            "supply chain lawsuit", "supplier human rights",
+            "iradvocates", "ir advocates", "cobalt lawsuit", "cobalt mining",
+            "supplier audit failure", "supplier non-compliance",
+            "human rights violation", "unethical sourcing",
+        ],
+        "Employee Health & Safety": [
+            "fatality", "workplace fatality", "osha fine", "osha violation",
+            "safety violation", "lost-time injury increase",
+        ],
+        "Community Impact & CSR Spend": [
+            "community lawsuit", "community protest", "land grab",
+            "indigenous rights violation",
+        ],
+        "Diversity, Equity & Inclusion": [
+            "discrimination lawsuit", "harassment lawsuit", "title vii",
+            "eeoc complaint", "race discrimination",
+        ],
+        "Anti-Corruption Policies": [
+            "fcpa violation", "bribery charge", "corruption scandal",
+            "indictment", "consent decree on corruption",
+        ],
+    }
+    negative_markers = indicator_negative_markers.get(name, [])
+    if negative_markers and matching_texts:
+        full_text = " ".join(matching_texts).lower()
+        # Also scan all evidence_sources, not just matching ones — a labor
+        # lawsuit might be flagged by a different agent than the one
+        # awarding "Labor Rights" credit.
+        all_text = full_text + " " + " ".join(
+            _evidence_text(ev).lower() for ev in evidence_sources[:50] if isinstance(ev, dict)
+        )
+        negative_hits = [m for m in negative_markers if m in all_text]
+        if negative_hits:
+            # Each negative marker docks 15 points, capped at 60-point reduction.
+            penalty = min(60.0, 15.0 * len(negative_hits))
+            raw_score = max(15.0, raw_score - penalty)
+            # Append to data_source so the report shows WHY the score dropped
+            matching_sources.insert(0, f"NEG-evidence: {', '.join(negative_hits[:3])}")
 
     # Build data_source string
     unique_sources = list(dict.fromkeys(matching_sources))[:3]

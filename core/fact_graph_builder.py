@@ -38,27 +38,59 @@ def _safe_year(value: Any) -> int | None:
 
 
 def _pillar_from_text(text: str) -> str:
+    """Classify a fact into E / S / G / O (Other) based on keyword density.
+
+    Previously this function defaulted ties (and zero-hit text) to "E",
+    which created reports where Social and Governance pillar coverage was
+    artificially zero — every news headline / regulatory snippet got tagged
+    Environmental even when it had no E content. The fix:
+      - Expanded keyword lists per pillar.
+      - "O" (Other) bucket when no pillar gets at least 1 hit.
+      - Tie-break uses a small E-bias only when E has at least 1 hit (not
+        when all are zero).
+    """
     low = text.lower()
-    env_hits = sum(
-        1
-        for kw in ["carbon", "emission", "water", "climate", "waste", "energy", "pollution", "biodiversity"]
-        if kw in low
-    )
-    soc_hits = sum(
-        1
-        for kw in ["labor", "employee", "worker", "human rights", "community", "safety", "diversity", "inclusion"]
-        if kw in low
-    )
-    gov_hits = sum(
-        1
-        for kw in ["board", "audit", "governance", "ethics", "corruption", "compliance", "transparency", "disclosure"]
-        if kw in low
-    )
-    if env_hits >= soc_hits and env_hits >= gov_hits:
+    env_kws = [
+        "carbon", "emission", "co2", "ghg", "greenhouse",
+        "water", "climate", "waste", "energy", "renewable",
+        "pollution", "biodiversity", "deforestation", "circular",
+        "recycl", "scope 1", "scope 2", "scope 3", "tCO2e", "tco2e",
+        "net zero", "net-zero", "decarboniz",
+    ]
+    soc_kws = [
+        "labor", "labour", "employee", "worker", "workforce",
+        "human rights", "community", "safety", "diversity", "inclusion",
+        "gender", "minority", "wage", "wages", "training", "engagement",
+        "stakeholder", "supply chain", "supplier",
+        "child labor", "modern slavery", "indigenous",
+    ]
+    gov_kws = [
+        "board", "audit", "governance", "ethics", "corruption",
+        "bribery", "compliance", "transparency", "disclosure",
+        "executive pay", "ceo", "shareholder", "voting", "whistleblow",
+        "fraud", "settlement", "lawsuit", "fine", "penalty",
+        "regulatory", "enforcement", "tax", "lobbying",
+    ]
+    env_hits = sum(1 for kw in env_kws if kw in low)
+    soc_hits = sum(1 for kw in soc_kws if kw in low)
+    gov_hits = sum(1 for kw in gov_kws if kw in low)
+
+    if env_hits == 0 and soc_hits == 0 and gov_hits == 0:
+        return "O"  # Other / unclassified — don't pollute E
+    # Strict argmax (no E-bias on ties when other pillars also have hits).
+    if env_hits > soc_hits and env_hits > gov_hits:
         return "E"
-    if soc_hits >= env_hits and soc_hits >= gov_hits:
+    if soc_hits > env_hits and soc_hits > gov_hits:
         return "S"
-    return "G"
+    if gov_hits > env_hits and gov_hits > soc_hits:
+        return "G"
+    # Tie: choose the pillar with at least one hit, prefer S then G then E.
+    # This rebalances away from the prior E-dominance default.
+    if soc_hits >= 1:
+        return "S"
+    if gov_hits >= 1:
+        return "G"
+    return "E"
 
 
 def _fact_polarity(text: str) -> str:
@@ -164,7 +196,10 @@ def build_esg_fact_graph(
     )
 
     claim_tokens = _token_set(claim_text or "")
-    pillar_counter = {"E": 0, "S": 0, "G": 0}
+    # "O" = Other (unclassified) — separates non-ESG general business
+    # mentions from genuine Environmental hits, which previously bloated
+    # the E pillar to 100% on text without any sustainability terms.
+    pillar_counter = {"E": 0, "S": 0, "G": 0, "O": 0}
     linked_count = 0
 
     for idx, rec in enumerate(records[:200], start=1):

@@ -27,6 +27,14 @@ import fitz  # PyMuPDF
 import tempfile
 import os
 
+# Silence MuPDF non-fatal warnings (tagged-PDF structure-tree errors etc.).
+# Process-wide once set; idempotent if already silenced elsewhere.
+try:
+    fitz.TOOLS.mupdf_display_errors(False)
+    fitz.TOOLS.mupdf_display_warnings(False)
+except Exception:
+    pass
+
 logger = logging.getLogger(__name__)
 logging.getLogger("pypdf").setLevel(logging.ERROR)
 

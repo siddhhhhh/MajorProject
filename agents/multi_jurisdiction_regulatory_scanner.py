@@ -183,7 +183,21 @@ class MultiJurisdictionRegulatoryScanner:
             })
 
         litigation_hits = self._litigation_hits(company, evidence)
-        for hit in litigation_hits[:3]:
+        # Dedupe — same lawsuit can show up in multiple evidence rows.
+        # Without dedupe, Tesla's IRAdvocates cobalt lawsuit produced TWO
+        # active_enforcement rows = 50pt double penalty for one event.
+        # Key by URL when present, else by summary first-80-chars.
+        _seen: set = set()
+        _deduped = []
+        for hit in litigation_hits:
+            key = (hit.get("url") or "").strip().lower()
+            if not key:
+                key = (hit.get("summary") or "").strip().lower()[:80]
+            if not key or key in _seen:
+                continue
+            _seen.add(key)
+            _deduped.append(hit)
+        for hit in _deduped[:3]:
             rows.append({
                 "jurisdiction": hit.get("jurisdiction", "Global"),
                 "framework": "Active Enforcement / Litigation",
@@ -415,22 +429,72 @@ class MultiJurisdictionRegulatoryScanner:
         return "Global"
 
     def _litigation_hits(self, company: str, evidence: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Detect documented litigation/enforcement against the company.
+
+        Hardened against false positives. The previous version flagged any
+        evidence row whose text contained the word "court" or "enforcement",
+        which captured Companies House officer listings (a directory of
+        corporate directors, NOT an enforcement record) and news-aggregator
+        homepages (e.g., reuters.com/sustainability) as active enforcement
+        — each carrying a 25-point penalty and "material misstatement risk:
+        True". Two such false positives added 50 fake penalty points to VW.
+
+        Filters now applied:
+          1. URL-based exclusion list — directories, registries, and news
+             homepages are not enforcement records by themselves.
+          2. Stronger keyword set — requires lawsuit/settlement/penalty/
+             violation/breach (or a court-action verb), NOT just "court".
+          3. Explicit company-name match in title or snippet (token alone
+             is insufficient; "court" appearing far from the company name
+             is too weak a signal).
+        """
         hits = []
-        token = (company or "").lower().split()[0] if company else ""
+        company_lower = (company or "").lower()
+        company_tokens = [t for t in re.split(r"[^a-z0-9]+", company_lower) if len(t) >= 4]
+
+        # URLs that are categorically NOT enforcement records.
+        url_blocklist = (
+            "/officers",                          # Companies House officer page
+            "company-information.service.gov.uk", # Companies House root
+            "/sustainability$", "/esg$", "/news$", # section homepages
+            "linkedin.com/posts",                 # social posts
+            "linkedin.com/in/",                   # individual profiles
+            "youtube.com",
+            "researchgate.net",                   # academic papers ≠ enforcement
+            "wikipedia.org",                      # Wikipedia summary articles
+        )
+        # Strong enforcement keywords — require something specific, not just "court".
+        strong_enforcement_kws = [
+            "lawsuit", "settlement", "fined", "penalty", "penalties",
+            "consent decree", "guilty plea", "indictment", "subpoena",
+            "violation of", "breach of", "regulatory action against",
+            "enforcement action against", "convict", "court ruling",
+            "court-ordered", "court ordered", "greenwashing case",
+            "found liable", "ordered to pay", "agreed to pay",
+        ]
+
         for item in evidence or []:
             if not isinstance(item, dict):
                 continue
-            text = " ".join([
-                str(item.get("title", "")),
-                str(item.get("snippet", "")),
-                str(item.get("relevant_text", "")),
-            ]).lower()
-            if token and token not in text:
+            url = str(item.get("url") or "").lower()
+            if any(blocked in url for blocked in url_blocklist):
                 continue
-            if any(k in text for k in ["lawsuit", "court", "ruling", "enforcement", "greenwashing case"]):
-                hits.append({
-                    "summary": str(item.get("title") or item.get("snippet") or "Climate litigation signal")[:200],
-                    "url": item.get("url"),
-                    "jurisdiction": "Netherlands" if "dutch" in text else "Global",
-                })
+            title = str(item.get("title", ""))
+            snippet = str(item.get("snippet", "") or item.get("relevant_text", ""))
+            text = f"{title} {snippet}".lower()
+
+            # Company name must appear alongside the enforcement signal.
+            if company_tokens and not any(tok in text for tok in company_tokens):
+                continue
+
+            # Require at least one STRONG enforcement keyword, not just generic
+            # "court"/"enforcement" mentions which are too easily triggered.
+            if not any(k in text for k in strong_enforcement_kws):
+                continue
+
+            hits.append({
+                "summary": (title or snippet or "Litigation signal")[:200],
+                "url": item.get("url"),
+                "jurisdiction": "Netherlands" if "dutch" in text else "Global",
+            })
         return hits

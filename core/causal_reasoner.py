@@ -66,12 +66,15 @@ def build_causal_chains(
             condition = tmpl["condition"]
             # Determine if condition is met based on evidence gaps
             condition_tokens = set(re.findall(r"[a-z]{3,}", condition.lower()))
-            # Check if evidence was found for this condition
+            # Check if evidence was found for this condition. ``f`` is a
+            # dict from the per-type-analysis structure; the description
+            # string is what we tokenize, NOT the dict itself.
             is_met = any(
-                len(condition_tokens & set(re.findall(r"[a-z]{3,}", f.lower()))) >= 2
+                len(condition_tokens & set(re.findall(r"[a-z]{3,}", f_text.lower()))) >= 2
                 for f in (type_analysis.get("found_evidence", []) or [])
                 if isinstance(f, dict)
-                for f_text in [f.get("description", "")]
+                for f_text in [str(f.get("description", ""))]
+                if f_text
             )
 
             if is_met:

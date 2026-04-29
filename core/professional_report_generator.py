@@ -10,7 +10,7 @@ import logging
 from urllib.parse import urlparse
 from datetime import datetime, timezone
 from core.carbon_validator import CarbonDataValidator
-from typing import Dict, Any, List, Tuple, Set
+from typing import Dict, Any, List, Tuple, Set, Optional
 from core.safe_utils import safe_get, safe_number, parse_source_name, normalize_industry_label, normalize_industry_key, get_reliability_tier
 from core.report_schema import ReportPayload, EvidenceItem, EvidenceRoleCount, PeerEntry, CredibilityTierCount, FactGraphSummary, NewsItem
 from pydantic import ValidationError
@@ -553,8 +553,24 @@ class ProfessionalReportGenerator:
         else:
             section.append("YEAR-OVER-YEAR DRIFT SIGNALS")
             section.append("-" * 70)
-            section.append("  No prior recorded values for this company yet —")
-            section.append("  drift signals will appear from the second run onward.")
+            # Distinguish "this is the first run" from "prior run exists but
+            # no comparable metrics yet drifted". Without this, the report
+            # said "1 prior run recorded" two lines above and "no prior
+            # recorded values" here — internally contradictory.
+            try:
+                _hr = int(history_runs or 0)
+            except (TypeError, ValueError):
+                _hr = 0
+            if _hr == 0:
+                section.append("  No prior recorded values for this company yet —")
+                section.append("  drift signals will appear from the second run onward.")
+            else:
+                section.append(
+                    f"  Prior runs recorded: {_hr}, but no metrics changed by enough to trigger"
+                )
+                section.append(
+                    "  a drift signal this cycle (default threshold ±5% YoY)."
+                )
             section.append("")
 
         if fg_motifs:
@@ -655,12 +671,24 @@ class ProfessionalReportGenerator:
         section.append(major)
         return section
 
-    def _confidence_label(self, pct: float) -> str:
-        if pct >= 75:
-            return "HIGH"
-        if pct >= 50:
-            return "MEDIUM"
-        return "LOW"
+    def _confidence_label(self, pct: float, quality_label: Optional[str] = None) -> str:
+        """Map percentage to a coarse confidence label.
+
+        When ``quality_label`` is provided (from ReportQualityChecker), use
+        the more conservative of the two — i.e. if the percentage suggests
+        MEDIUM but the quality checker downgraded to LOW (due to coverage/
+        evidence gaps), surface LOW. Without this rule, Section 3 said
+        "59.0% (MEDIUM)" while the header/JSON said LOW for the same run.
+        """
+        pct_label = "HIGH" if pct >= 75 else "MEDIUM" if pct >= 50 else "LOW"
+        if not quality_label:
+            return pct_label
+        # Pick the more conservative of (pct-derived, quality-derived).
+        order = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
+        q = quality_label.upper().strip()
+        if q not in order:
+            return pct_label
+        return pct_label if order[pct_label] <= order[q] else q
 
     def _rating_from_esg_score(self, esg_score: Any) -> str:
         if not isinstance(esg_score, (int, float)):
@@ -809,7 +837,12 @@ class ProfessionalReportGenerator:
             if conf_pct > capped_conf:
                 conf_pct = capped_conf
 
-        conf_label = self._confidence_label(conf_pct)
+        # Use ReportQualityChecker's label as a conservative override —
+        # so a "59% (MEDIUM by pct)" run with a LOW quality label
+        # consistently shows LOW everywhere, not MEDIUM in Section 3 and
+        # LOW in the JSON.
+        _quality_label = quality.get("report_confidence_level") if isinstance(quality, dict) else None
+        conf_label = self._confidence_label(conf_pct, quality_label=_quality_label)
 
         _raw_threshold = calibration.get("optimal_threshold")
         threshold = float(_raw_threshold) if isinstance(_raw_threshold, (int, float)) else None
@@ -1002,9 +1035,30 @@ class ProfessionalReportGenerator:
         carbon = dict(raw_carbon)
         if "emissions" not in carbon:
             carbon["emissions"] = {}
-        carbon["emissions"]["scope1"] = {"value": validated_carbon.get("scope1"), "year": validated_carbon.get("data_year"), "source": validated_carbon.get("source")}
-        carbon["emissions"]["scope2"] = {"value": validated_carbon.get("scope2"), "year": validated_carbon.get("data_year"), "source": validated_carbon.get("source")}
-        carbon["emissions"]["scope3"] = {"total": validated_carbon.get("scope3"), "year": validated_carbon.get("data_year"), "source": validated_carbon.get("source")}
+        # Merge validated values into existing scope dicts so subkeys like
+        # `boundary` (Scope 3 boundary classification) and other extractor-
+        # supplied metadata aren't dropped by the validation step. Without
+        # this merge, a flat assignment like {"value", "year", "source"}
+        # silently strips fields the renderer needs.
+        for _scope_key, _val_field, _val in (
+            ("scope1", "value", validated_carbon.get("scope1")),
+            ("scope2", "value", validated_carbon.get("scope2")),
+            ("scope3", "total", validated_carbon.get("scope3")),
+        ):
+            existing = carbon["emissions"].get(_scope_key) or {}
+            if not isinstance(existing, dict):
+                existing = {}
+            existing.update({
+                _val_field: _val,
+                "year": validated_carbon.get("data_year") or existing.get("year"),
+                "source": validated_carbon.get("source") or existing.get("source"),
+            })
+            carbon["emissions"][_scope_key] = existing
+        # Preserve top-level lifecycle_emissions if the extractor set it.
+        if "lifecycle_emissions" not in carbon and isinstance(raw_carbon, dict):
+            _le = raw_carbon.get("lifecycle_emissions")
+            if _le:
+                carbon["lifecycle_emissions"] = _le
         if "data_quality" not in carbon:
             carbon["data_quality"] = {}
         carbon["data_quality"]["overall_score"] = validated_carbon.get("data_quality", 0)
@@ -1135,11 +1189,25 @@ class ProfessionalReportGenerator:
             for finding in verdict_findings:
                 if not isinstance(finding, str):
                     continue
-                upper = finding.upper()
+                # Skip findings that are verdict-warning artifacts ("[~]"
+                # MEDIUM informational lines, "[i]" info lines, summary
+                # statements about regulatory gaps already shown in Section
+                # 7). These are NOT contradictions between claim and
+                # evidence — promoting them creates the bizarre
+                # "[MEDIUM] [~] MEDIUM - Regulatory gaps identified..." rows
+                # the user spotted in Tesla's report.
+                stripped = finding.strip()
+                if stripped.startswith(("[~]", "[i]", "[~ ]", "[i ]")):
+                    continue
+                if "regulatory gaps identified" in stripped.lower():
+                    continue
+                if "sources analyzed" in stripped.lower():
+                    continue
+                upper = stripped.upper()
                 if any(kw in upper for kw in ["HIGH", "CRITICAL", "!", "MISALIGN", "GAP"]):
                     v["contradiction_items"].append({
-                        "description": finding.strip("! "),
-                        "severity": "HIGH" if "!" in finding or "CRITICAL" in upper else "MEDIUM",
+                        "description": stripped.strip("! "),
+                        "severity": "HIGH" if "!" in stripped or "CRITICAL" in upper else "MEDIUM",
                         "source": "Integrated multi-agent verdict analysis",
                     })
 
@@ -2153,7 +2221,31 @@ class ProfessionalReportGenerator:
                 badge = ""
                 
             section5.append(f"\n  Data Quality Score:   {int(p_score)}/100 ({dq_conf} confidence) {badge}")
-            
+
+            # Carbon intensity (revenue-normalized) \u2014 pulled from
+            # intensity_metrics.intensity_per_revenue_m_tco2e populated by
+            # the carbon-extractor's 3-tier revenue resolver. Without this
+            # line, Section 8 only showed the absolute total tCO2e \u2014 useful
+            # but not comparable across companies of different sizes.
+            _im = carbon.get("intensity_metrics") if isinstance(carbon, dict) else None
+            if isinstance(_im, dict):
+                _intensity_per_m = _im.get("intensity_per_revenue_m_tco2e")
+                _ccy = _im.get("revenue_currency") or "USD"
+                _rev_source = _im.get("revenue_source") or ""
+                _src_label = {
+                    "financial_analyst": "(financial-analyst data)",
+                    "report_text_extraction": "(extracted from report text)",
+                    "curated_table_2024": "(curated 2024 baseline)",
+                }.get(_rev_source, "")
+                if isinstance(_intensity_per_m, (int, float)) and _intensity_per_m > 0:
+                    section5.append(
+                        f"  Carbon Intensity:     {_intensity_per_m:,.1f} tCO2e per million {_ccy} revenue {_src_label}"
+                    )
+                else:
+                    section5.append(
+                        "  Carbon Intensity:     not computed (no revenue denominator available)"
+                    )
+
             if carbon_validation.get("warnings"):
                 section5.append("")
                 for w in (carbon_validation.get("warnings") or []):  # FIX: safe .get
@@ -2179,12 +2271,44 @@ class ProfessionalReportGenerator:
         # tells us the disclosure mentioned SBTi — so map True to a
         # narrower "Reported as set" label rather than over-asserting that
         # near-term targets were independently approved.
+        # SBTi status: prefer the authoritative result from the
+        # regulatory-fetcher (Section 7B) over the LLM/in-disclosure flag.
+        # Without this, Section 8 said "portal status unverified" while
+        # Section 7B simultaneously said "Listed on SBTi public registry"
+        # — the report contradicted itself in adjacent sections.
         sbti_status_str = carbon.get("sbti_status")
         sbti_raw = carbon.get("science_based_target")
-        if isinstance(sbti_status_str, str) and len(sbti_status_str.strip()) > 3:
-            sbti_display = sbti_status_str.strip()
+        sbti_registry_result = None  # populated from real-data fetcher
+        try:
+            _reg_compliance = state.get("regulatory_compliance") or state.get("regulatory_results") or {}
+            _frameworks = (_reg_compliance.get("compliance_result") or {}).get("frameworks") or []
+            for _fr in _frameworks:
+                if not isinstance(_fr, dict):
+                    continue
+                _fwk = str(_fr.get("framework") or "").lower()
+                if _fwk == "science based targets initiative" and _fr.get("real_data"):
+                    sbti_registry_result = _fr
+                    break
+        except Exception:
+            pass
+        if sbti_registry_result:
+            _status = str(sbti_registry_result.get("status") or "").lower()
+            _evidence = str(sbti_registry_result.get("specific_violation") or "")[:150]
+            _src_url = sbti_registry_result.get("evidence_url") or ""
+            if _status == "compliant":
+                sbti_display = f"Listed on SBTi registry — {_evidence}"
+            elif _status == "gap":
+                sbti_display = f"Not on SBTi registry — {_evidence}"
+            elif _status == "uncertain":
+                sbti_display = f"Registry check inconclusive — {_evidence}"
+            else:
+                sbti_display = f"{_status.upper()} — {_evidence}"
+            if _src_url:
+                sbti_display += f" (source: {_src_url[:60]})"
+        elif isinstance(sbti_status_str, str) and len(sbti_status_str.strip()) > 3:
+            sbti_display = sbti_status_str.strip() + " (in-disclosure flag only; SBTi registry not queried)"
         elif sbti_raw is True or str(sbti_raw).lower() in ("true", "yes", "1"):
-            sbti_display = "Reported as set (SBTi flag in disclosure; portal status unverified)"
+            sbti_display = "Reported as set in disclosure (SBTi registry not queried)"
         elif sbti_raw is False or str(sbti_raw).lower() in ("false", "no", "0"):
             sbti_display = "Not submitted"
         elif isinstance(sbti_raw, str) and len(sbti_raw) > 3:
@@ -2192,16 +2316,38 @@ class ProfessionalReportGenerator:
         else:
             sbti_display = "Not submitted"
         section5.append(f"  SBTi Status:          {sbti_display}")
-        _raw_offset_status = safe_get(carbon, 'offset_transparency', 'status', default='not disclosed')
+        _offset_audit = carbon.get("offset_transparency") if isinstance(carbon, dict) else {}
+        if not isinstance(_offset_audit, dict):
+            _offset_audit = {}
+        _raw_offset_status = _offset_audit.get("status") or "not disclosed"
         _OFFSET_LABEL_MAP = {
-            "balanced_or_removal_weighted": "Balanced offset strategy (removal-weighted)",
+            "balanced_or_removal_weighted": "Balanced (removal-weighted)",
             "high_avoidance_reliance": "High avoidance reliance (low-quality offset risk)",
             "moderate_avoidance_reliance": "Moderate avoidance reliance",
+            "offset_disclosure_uncategorized": "Mentioned but not categorizable (generic 'offset/credit' refs only — no removal-vs-avoidance breakdown)",
             "no_offset_disclosure": "No offset disclosure",
             "not disclosed": "Not disclosed",
         }
         _offset_display = _OFFSET_LABEL_MAP.get(str(_raw_offset_status), str(_raw_offset_status).replace("_", " ").title())
         section5.append(f"  Offset Transparency:  {_offset_display}")
+        # Cite the specific marker phrases that triggered the classification
+        # so the reader can verify against the disclosure text.
+        _matched_terms = _offset_audit.get("matched_terms") or []
+        _rem_pct = _offset_audit.get("removal_share_pct")
+        _avd_pct = _offset_audit.get("avoidance_share_pct")
+        if _matched_terms or (
+            isinstance(_rem_pct, (int, float)) and isinstance(_avd_pct, (int, float))
+            and (_rem_pct > 0 or _avd_pct > 0)
+        ):
+            _info_bits = []
+            if isinstance(_rem_pct, (int, float)) and _rem_pct > 0:
+                _info_bits.append(f"removal {_rem_pct:.0f}%")
+            if isinstance(_avd_pct, (int, float)) and _avd_pct > 0:
+                _info_bits.append(f"avoidance {_avd_pct:.0f}%")
+            if _matched_terms:
+                _info_bits.append(f"markers: {', '.join(_matched_terms[:5])}")
+            if _info_bits:
+                section5.append(f"      └─ {' | '.join(_info_bits)}")
         scope3_categories = scope3.get("categories") if isinstance(scope3, dict) else None
         if isinstance(scope3_categories, dict):
             scope3_count = len(scope3_categories)
@@ -2215,6 +2361,116 @@ class ProfessionalReportGenerator:
             section5.append(f"  Scope 3 Completeness: Disclosed as total only (no category breakdown)")
         else:
             section5.append(f"  Scope 3 Completeness: {scope3_count}/15 categories")
+
+        # GHG Protocol 15-category coverage audit (text + LLM merged).
+        # Shows which categories appear in the company's own disclosures
+        # so a reader can see exactly what's covered vs. missing — no more
+        # vague "verify all 15 categories" hand-wave.
+        s3_completeness = (carbon.get("intensity_metrics") or {}).get("scope3_completeness") or {}
+        if not isinstance(s3_completeness, dict):
+            s3_completeness = {}
+        category_audit = s3_completeness.get("category_audit") or []
+        if isinstance(category_audit, list) and category_audit:
+            present_count = sum(
+                1 for c in category_audit
+                if isinstance(c, dict) and (c.get("explicitly_disclosed") or c.get("mentioned_in_text"))
+            )
+            material_present = sum(
+                1 for c in category_audit
+                if isinstance(c, dict) and c.get("is_material") and (
+                    c.get("explicitly_disclosed") or c.get("mentioned_in_text")
+                )
+            )
+            section5.append(
+                f"  Scope 3 Coverage:    {present_count}/15 categories detected; "
+                f"{material_present}/5 material (Cat 1, 4, 9, 11, 12)"
+            )
+            section5.append("")
+            section5.append("  GHG Protocol Scope 3 — per-category audit:")
+            section5.append(f"    {'Cat':<5} {'Name':<48} {'Status':<14} {'Material':<8}")
+            section5.append("    " + "-" * 78)
+            for c in category_audit:
+                if not isinstance(c, dict):
+                    continue
+                num = c.get("category", "?")
+                name = (c.get("name") or "?")[:48]
+                if c.get("explicitly_disclosed"):
+                    status = "DISCLOSED"
+                elif c.get("mentioned_in_text"):
+                    status = "MENTIONED"
+                else:
+                    status = "NOT FOUND"
+                material = "Yes" if c.get("is_material") else "—"
+                section5.append(f"    {str(num):<5} {name:<48} {status:<14} {material:<8}")
+            section5.append("")
+            section5.append(
+                "    DISCLOSED = explicit category breakdown found; MENTIONED = canonical "
+                "phrase appeared in disclosure text but no explicit number; NOT FOUND = "
+                "category not referenced. 'Material' = expected to dominate Scope 3 by sector."
+            )
+
+        # Boundary classification — flags PARTIAL_SCOPE3 / NARROW disclosures
+        # so a reader sees that 26.8 Mt is the company's narrow boundary, not
+        # the full lifecycle picture. Sourced from CarbonExtractor's
+        # _classify_scope3_boundary which compares against industry-expected
+        # ranges and looks for use-phase keywords in the same report.
+        scope3_boundary = scope3.get("boundary") if isinstance(scope3, dict) else None
+        if isinstance(scope3_boundary, dict) and scope3_boundary.get("boundary"):
+            _b = scope3_boundary["boundary"]
+            _b_label = {
+                "FULL": "FULL (15-category coverage)",
+                "NARROW": "NARROW (likely excludes major categories)",
+                "PARTIAL_SCOPE3": "PARTIAL — major categories disclosed outside Scope 3 total",
+                "UNKNOWN": "UNKNOWN",
+            }.get(_b, _b)
+            section5.append(f"  Scope 3 Boundary:    {_b_label}")
+            if scope3_boundary.get("reason"):
+                section5.append(self._wrap_paragraph(
+                    "  → " + scope3_boundary["reason"], width=80,
+                ))
+            for cat in (scope3_boundary.get("missing_categories") or [])[:3]:
+                section5.append(f"  → Likely missing: {cat}")
+            if scope3_boundary.get("use_phase_disclosed_separately"):
+                # Only point to a lifecycle metric "below" if we actually
+                # extracted a numeric value — otherwise the reader looks
+                # for it and finds nothing.
+                _has_lifecycle_value = bool(
+                    isinstance(carbon, dict)
+                    and isinstance(carbon.get("lifecycle_emissions"), dict)
+                    and carbon["lifecycle_emissions"].get("value")
+                )
+                if _has_lifecycle_value:
+                    section5.append(
+                        "  → NOTE: Report separately discusses use-phase / lifecycle emissions "
+                        "(see lifecycle metric below)."
+                    )
+                else:
+                    section5.append(
+                        "  → NOTE: Report mentions use-phase / lifecycle emissions but a "
+                        "concrete tonnage figure could not be extracted from parsed chunks."
+                    )
+
+        # Lifecycle / use-phase emissions — extracted parallel to Scope 3
+        # when the company discloses them outside the headline total.
+        # Surfaces the FULL carbon picture (e.g., automakers' use-of-sold-
+        # products) so readers don't underestimate by 10× when looking
+        # only at the narrow Scope 3 number.
+        lifecycle = carbon.get("lifecycle_emissions") if isinstance(carbon, dict) else None
+        if isinstance(lifecycle, dict) and lifecycle.get("value"):
+            _val = lifecycle["value"]
+            _label = (lifecycle.get("label") or "lifecycle / use-phase").strip()
+            section5.append("")
+            section5.append(f"  Lifecycle / Use-Phase Emissions (reported separately from Scope 3):")
+            section5.append(f"    Value:               {int(_val):,} tCO2e")
+            section5.append(f"    Disclosure context:  {_label[:78]}")
+            if scope3_total and isinstance(scope3_total, (int, float)) and scope3_total > 0:
+                _ratio = _val / float(scope3_total)
+                if _ratio >= 2:
+                    section5.append(
+                        f"    Magnitude vs Scope 3: lifecycle metric is {_ratio:.1f}× larger than the "
+                        f"reported Scope 3 total — confirms the headline Scope 3 figure excludes use-phase."
+                    )
+
         if missing_scopes:
             for m in missing_scopes:
                 section5.append(f"\n  WARNING - {m} not disclosed. Net-zero claim cannot be quantitatively")
@@ -2341,23 +2597,52 @@ class ProfessionalReportGenerator:
             section5b.append(f"  Carbon Budget Remaining (yrs): {pathway.get('carbon_budget_remaining_yrs', 'N/A')}")
             section5b.append("")
 
-            # Risk Signal
+            # Risk Signal — incorporates carbon budget remaining as a HARD
+            # override: when the IPCC budget for this industry/pathway is
+            # effectively exhausted (≤1yr), no rate improvement closes the
+            # gap and the risk MUST be CRITICAL. Without this, the report
+            # said "Carbon Budget Remaining: 0.1 yrs" yet "Risk: LOW",
+            # which is logically inverted.
             _gap_num = float(_display_gap) if isinstance(_display_gap, (int, float)) else 0.0
             _s3_share_pw = (
                 float(pathway_scope3_share)
                 if isinstance(pathway_scope3_share, (int, float))
                 else (float(_s3_share) if _s3_share is not None else 0.0)
             )
-            if _align_status == "physically_impossible" or (_gap_num > 20 and _s3_share_pw >= 60):
+            _budget_yrs_raw = pathway.get('carbon_budget_remaining_yrs')
+            try:
+                _budget_yrs = float(_budget_yrs_raw) if _budget_yrs_raw is not None else None
+            except (TypeError, ValueError):
+                _budget_yrs = None
+
+            if _budget_yrs is not None and _budget_yrs <= 1.0:
+                _risk_signal = "CRITICAL"
+                _risk_basis = (
+                    f"carbon budget {_budget_yrs:.1f} yrs remaining at current trajectory — "
+                    f"IPCC pathway exhausted before target year"
+                )
+            elif _budget_yrs is not None and _budget_yrs <= 5.0:
                 _risk_signal = "HIGH"
+                _risk_basis = (
+                    f"carbon budget {_budget_yrs:.1f} yrs remaining — narrow window to align"
+                )
+            elif _align_status == "physically_impossible" or (_gap_num > 20 and _s3_share_pw >= 60):
+                _risk_signal = "HIGH"
+                _risk_basis = (
+                    f"{_gap_label.lower()} {_gap_display_val}% with Scope 3 share {_s3_share_pw:.0f}%"
+                )
             elif _gap_num > 10 or _s3_share_pw >= 70:
                 _risk_signal = "MODERATE"
+                _risk_basis = (
+                    f"{_gap_label.lower()} {_gap_display_val}% / Scope 3 share {_s3_share_pw:.0f}%"
+                )
             else:
                 _risk_signal = "LOW"
+                _risk_basis = (
+                    f"{_gap_label.lower()} {_gap_display_val}% / Scope 3 share {_s3_share_pw:.0f}%"
+                )
             section5b.append(
-                f"  Carbon Alignment Risk: {_risk_signal} "
-                f"(based on {_gap_label.lower()} of {_gap_display_val}% and "
-                f"Scope 3 share of {_s3_share_pw:.0f}% of total emissions)"
+                f"  Carbon Alignment Risk: {_risk_signal} ({_risk_basis})"
             )
         section5b.append(major)
 
@@ -3046,8 +3331,8 @@ class ProfessionalReportGenerator:
                     _bits.append(f"Risk Level: {comp_risk}")
                 compliance_lines.append("  " + "    ".join(_bits))
                 compliance_lines.append("")
-            compliance_lines.append(f"  {'Jurisdiction':<10} {'Framework':<42} {'Status':<11} {'Material':<8} {'Sources':<8}")
-            compliance_lines.append("  " + "-" * 84)
+            compliance_lines.append(f"  {'Jurisdiction':<10} {'Framework':<42} {'Status':<11} {'Weight':<6} {'Material':<8} {'Sources':<8}")
+            compliance_lines.append("  " + "-" * 92)
             # Dedupe by (jurisdiction, framework, status). Multiple URL-level
             # rows for the same framework/status are aggregated into one row
             # with a count of sources reviewed.
@@ -3124,7 +3409,18 @@ class ProfessionalReportGenerator:
                 material = "Yes" if row["material"] else "No"
                 src_n = row["source_count"]
                 src_label = f"{src_n}" if src_n > 1 else "1"
-                compliance_lines.append(f"  {juris:<10} {fwk:<42} {status:<11} {material:<8} {src_label:<8}")
+                # Source-credibility weight from the framework registry — only
+                # meaningful for real-data rows (heuristic rows show "—").
+                if row.get("real_data"):
+                    try:
+                        from utils.regulatory_fetchers import get_framework_weight
+                        _w = get_framework_weight(row["framework"])
+                        weight_label = f"{_w:.1f}"
+                    except Exception:
+                        weight_label = "—"
+                else:
+                    weight_label = "—"
+                compliance_lines.append(f"  {juris:<10} {fwk:<42} {status:<11} {weight_label:<6} {material:<8} {src_label:<8}")
                 # Violation / explanation
                 if row["violation"] and row["status"] not in {"COMPLIANT", "NOT_EVALUATED", "NOT EVALUATED"}:
                     compliance_lines.append(f"      └─ {row['violation'][:120]}")
@@ -3143,13 +3439,24 @@ class ProfessionalReportGenerator:
                     if src_url:
                         line += f"  {src_url[:90]}"
                     compliance_lines.append(line)
-            compliance_lines.append("  " + "-" * 84)
+            compliance_lines.append("  " + "-" * 92)
             compliance_lines.append(
-                f"  Sources column = number of underlying URL-level evidence rows merged into the framework status."
+                "  Sources column = number of underlying URL-level evidence rows merged into the framework status."
             )
             compliance_lines.append(
-                "  Status with '*' = verified against a public registry (SEC EDGAR, SBTi portal, "
-                "FSB-TCFD, CDP A-list, UN Global Compact). Other rows are keyword / web-search heuristics."
+                "  Weight column = source-credibility weight (0.0-1.0). 1.0 = government registry / mandatory"
+            )
+            compliance_lines.append(
+                "  filing (SEC EDGAR, SEBI BRSR, FTC, CDP, SBTi, EU ESEF). 0.8 = voluntary registry (UN GC, GRI)."
+            )
+            compliance_lines.append(
+                "  0.7 = in-disclosure inference (GHG Protocol, NSE/BSE listing fact). '—' = heuristic-only row."
+            )
+            compliance_lines.append(
+                "  Status with '*' = verified against a public registry (SEC EDGAR, SBTi portal, FSB-TCFD,"
+            )
+            compliance_lines.append(
+                "  CDP A-list, UN Global Compact, NSE/BSE, EU ESEF, SEBI BRSR). Others are heuristic signals."
             )
         else:
             compliance_lines.append("  Framework-level status not available for this run.")
@@ -3219,10 +3526,101 @@ class ProfessionalReportGenerator:
         _fine_sources = _reg_legal.get("sources") or []
         if not isinstance(_fine_sources, list):
             _fine_sources = []
+
+        # CROSS-SECTION RECONCILIATION: Pull enforcement signals from three
+        # additional places so Section 7C is consistent with the rest of
+        # the report. Without this, Section 7 could say "$34.7B Dieselgate
+        # settlement (CRITICAL)" while Section 7C said "0 fines detected"
+        # — the two sections drew from different agents and never crossed.
+        #
+        # Sources merged:
+        #   1. Contradictions with severity CRITICAL/HIGH and a regulatory_action
+        #      keyword (lawsuit/settlement/fine/enforcement/EPA/SEC/DOJ)
+        #   2. regulatory_compliance.compliance_results rows with status =
+        #      "active_enforcement" or framework = "Active Enforcement / Litigation"
+        #   3. verdict_data.ground_truth_validation when outcome is
+        #      CONFIRMED_GREENWASHING (the regulatory_action field carries the
+        #      authoritative description: "$34.7B settlement (EPA, FTC, DOJ)")
+        _enforce_keywords = (
+            "lawsuit", "ruling", "settlement", "fine", "fines", "fined",
+            "enforcement", "epa", "ftc", "doj", "sec ", "court", "consent decree",
+        )
+        # 1. Contradictions
+        _contras = []
+        for _ao in (state.get("agent_outputs") or []):
+            if isinstance(_ao, dict) and _ao.get("agent") == "contradiction_analysis":
+                _out = _ao.get("output") or {}
+                _contras = (_out.get("contradictions") or []) if isinstance(_out, dict) else []
+                break
+        for c in _contras or []:
+            if not isinstance(c, dict):
+                continue
+            sev = str(c.get("severity") or c.get("level") or "").upper()
+            text = " ".join([
+                str(c.get("title") or c.get("issue") or ""),
+                str(c.get("description") or c.get("evidence") or ""),
+                str(c.get("source") or ""),
+            ]).lower()
+            if sev in {"CRITICAL", "HIGH"} and any(k in text for k in _enforce_keywords):
+                _fine_sources.append({
+                    "title": str(c.get("title") or c.get("issue") or "Enforcement contradiction")[:200],
+                    "url": c.get("url") or c.get("source_url"),
+                    "_origin": "contradiction",
+                    "severity": sev,
+                })
+        # 2. Active enforcement rows from regulatory scanner
+        _reg_compliance = state.get("regulatory_compliance") or state.get("regulatory_results") or {}
+        _frameworks = (_reg_compliance.get("compliance_result") or {}).get("frameworks") or []
+        for fr in _frameworks or []:
+            if not isinstance(fr, dict):
+                continue
+            status = str(fr.get("status") or "").lower()
+            framework = str(fr.get("framework") or "").lower()
+            if status == "active_enforcement" or "active enforcement" in framework or "litigation" in framework:
+                _fine_sources.append({
+                    "title": str(fr.get("specific_violation") or fr.get("framework") or "Active enforcement")[:200],
+                    "url": fr.get("evidence_url"),
+                    "_origin": "regulatory_scanner",
+                })
+        # 3. Ground-truth known cases (CONFIRMED_GREENWASHING)
+        _verdict_ao = next(
+            (o for o in (state.get("agent_outputs") or []) if o.get("agent") == "verdict_generation"),
+            {},
+        )
+        _gt = ((_verdict_ao.get("output") or {}).get("ground_truth_validation") or {}) if isinstance(_verdict_ao, dict) else {}
+        if not _gt:
+            _gt = (state.get("final_verdict") or {}).get("ground_truth_validation") or {}
+        if _gt.get("case_found") and (_gt.get("outcome") or "").upper() == "CONFIRMED_GREENWASHING":
+            _ra = _gt.get("regulatory_action") or ""
+            if _ra:
+                # No "[GROUND TRUTH]" prefix here — the renderer below adds
+                # the origin tag based on _origin, so prefixing here results
+                # in "[GROUND TRUTH] [GROUND TRUTH] $34.7B settlement...".
+                _fine_sources.insert(0, {
+                    "title": str(_ra)[:200],
+                    "url": None,
+                    "_origin": "known_case",
+                    "case_id": _gt.get("case_id"),
+                })
+        # Dedupe by title
+        _seen_titles = set()
+        _deduped = []
+        for s in _fine_sources:
+            t = str(s.get("title") or "").strip().lower()
+            if not t or t in _seen_titles:
+                continue
+            _seen_titles.add(t)
+            _deduped.append(s)
+        _fine_sources = _deduped
+        # Recompute count to match the merged set
+        if _fine_sources and not _fine_count:
+            _fine_count = len(_fine_sources)
+
         enforcement_lines.append(self._wrap_paragraph(
             "Historical regulatory penalties, enforcement actions, and litigation references "
-            "surfaced by the governance analysis. These are independent signals that complement "
-            "the contradiction and compliance frameworks above.",
+            "from governance analysis, contradictions, the regulatory scanner, and the "
+            "ground-truth known-cases registry. Cross-sourced so Section 7 (contradictions) "
+            "and Section 7C (this section) cannot disagree on whether enforcement exists.",
             width=80,
         ))
         enforcement_lines.append("")
@@ -3232,19 +3630,27 @@ class ProfessionalReportGenerator:
             enforcement_lines.append("")
             if _fine_sources:
                 enforcement_lines.append("  Source records:")
-                for _src in _fine_sources[:8]:
+                for _src in _fine_sources[:10]:
                     if not isinstance(_src, dict):
                         continue
-                    title = str(_src.get("title") or "(untitled)").strip()[:110]
+                    title = str(_src.get("title") or "(untitled)").strip()[:140]
                     url = str(_src.get("url") or "").strip()
-                    enforcement_lines.append(f"    • {title}")
+                    origin = _src.get("_origin") or "governance_search"
+                    origin_tag = {
+                        "known_case": "[GROUND TRUTH]",
+                        "contradiction": "[CONTRADICTION]",
+                        "regulatory_scanner": "[REGULATORY]",
+                        "governance_search": "[NEWS/SEARCH]",
+                    }.get(origin, f"[{origin.upper()}]")
+                    enforcement_lines.append(f"    • {origin_tag} {title}")
                     if url:
                         enforcement_lines.append(f"      {url}")
                 enforcement_lines.append("")
                 enforcement_lines.append(
-                    "  These references are aggregated from regulatory/legal search and have "
-                    "not been independently verified against case dockets. Treat as leads for "
-                    "diligence, not adjudicated findings."
+                    "  Origin tags: [GROUND TRUTH] = matched against the curated known-cases "
+                    "registry (data/known_cases.py); [CONTRADICTION] = surfaced by the "
+                    "contradiction analyzer; [REGULATORY] = active_enforcement row from the "
+                    "regulatory scanner; [NEWS/SEARCH] = aggregated from governance search."
                 )
         else:
             enforcement_lines.append("  No regulatory fine or enforcement signals were detected in this run.")
@@ -3352,7 +3758,7 @@ class ProfessionalReportGenerator:
                 "",
                 major,
             ]),
-            "section1": "\n".join([major, "SECTION 3: EXECUTIVE SUMMARY", major, self._wrap_paragraph(section1_text, width=80), "", major]),
+            "section1": "\n".join(self._build_section1_with_limitations(major, section1_text, v, structured)),
             "section_anatomy": "\n".join(section_anatomy),
             "section2": "\n".join(sec2_lines),
             "materiality_profile": "\n".join(materiality_lines),
@@ -3588,6 +3994,100 @@ class ProfessionalReportGenerator:
             "wba_adjustment_allowed": wba_adjustment_allowed,
             "error": merged.get("error"),
         }
+
+    def _build_section1_with_limitations(self, major: str, section1_text: str, v: Dict[str, Any], structured: Dict[str, Any]) -> List[str]:
+        """Build Section 3 (Executive Summary) with critical caveats up front.
+
+        Previously, limitations were buried in Section 11 — a reader skimming
+        the executive summary couldn't tell that calibration was provisional,
+        peer data was estimated, or Scope 3 boundary was partial. This
+        surfaces the top 3-5 most material caveats into the headline section
+        so trust gaps are visible immediately.
+        """
+        lines: List[str] = [major, "SECTION 3: EXECUTIVE SUMMARY", major]
+        lines.append(self._wrap_paragraph(section1_text, width=80))
+        lines.append("")
+
+        caveats: List[str] = []
+
+        # Calibration caveat
+        cal = structured.get("calibration") or {}
+        if isinstance(cal, dict):
+            cal_status = str(cal.get("calibration_status", "")).upper()
+            n_cases = cal.get("dataset_size") or cal.get("sample_size")
+            if cal_status == "MISCALIBRATED":
+                caveats.append(
+                    "CALIBRATION: System score for this company falls outside the expected "
+                    "range from the curated ground-truth registry. Headline numbers have been "
+                    "adjusted via known-case floor; treat as provisional."
+                )
+            elif cal_status in {"PROVISIONAL", "VERY_LOW", "NEEDS_REVIEW"} or (
+                isinstance(n_cases, int) and n_cases < 10
+            ):
+                caveats.append(
+                    f"CALIBRATION: Provisional (n={n_cases or '<10'}) — calibration sample is small; "
+                    f"score margins are wider than reported confidence suggests."
+                )
+
+        # Peer comparison caveat
+        peers = structured.get("peers") or {}
+        if isinstance(peers, dict):
+            real_count = peers.get("real_peer_count")
+            fallback_used = peers.get("fallback_used")
+            if real_count == 0 or fallback_used or peers.get("data_source") in {"placeholder", "cached_fallback"}:
+                caveats.append(
+                    "PEER BENCHMARKING: No live peer data retrieved; comparison uses cached/"
+                    "estimated peers. Industry-relative ranking is indicative only."
+                )
+
+        # Scope 3 boundary caveat
+        carbon = v.get("carbon") or {}
+        s3 = (carbon.get("emissions") or {}).get("scope3") if isinstance(carbon, dict) else {}
+        if isinstance(s3, dict):
+            boundary = s3.get("boundary") or {}
+            if isinstance(boundary, dict):
+                bcls = str(boundary.get("boundary") or "").upper()
+                if bcls in {"PARTIAL_SCOPE3", "NARROW"}:
+                    caveats.append(
+                        f"CARBON BOUNDARY: Reported Scope 3 is classified {bcls} — major "
+                        f"GHG Protocol categories likely disclosed outside the headline number. "
+                        f"See Section 8 boundary breakdown."
+                    )
+
+        # Known-case override caveat — read from the verdict_generation
+        # agent_output (carries `known_case_override` dict when applied).
+        agents = structured.get("agents") or {}
+        if isinstance(agents, dict):
+            verdict_ao = agents.get("verdict_generation") or {}
+            verdict_out = verdict_ao.get("output") if isinstance(verdict_ao, dict) else {}
+            if isinstance(verdict_out, dict):
+                kco = verdict_out.get("known_case_override") or {}
+                if isinstance(kco, dict) and kco.get("applied"):
+                    raw_gw = kco.get("raw_gw_score")
+                    floor_gw = kco.get("floor_gw_score")
+                    case_id = kco.get("case_id", "")
+                    caveats.append(
+                        f"GROUND TRUTH OVERRIDE: Headline scores adjusted (case {case_id}) — "
+                        f"raw GW {raw_gw} → floor {floor_gw}/100. The system's pre-override "
+                        f"verdict differed from the documented regulatory record; raw values "
+                        f"in Section 10."
+                    )
+
+        # Confidence ceiling caveat
+        conf_pct = v.get("confidence_pct") or 0
+        if conf_pct < 70:
+            caveats.append(
+                f"CONFIDENCE: Headline confidence is {conf_pct:.0f}% — below the 70% threshold "
+                f"for high-trust decisions. Treat findings as directional."
+            )
+
+        if caveats:
+            lines.append("CRITICAL CAVEATS — read before relying on these numbers:")
+            for i, cv in enumerate(caveats, 1):
+                lines.append(self._wrap_paragraph(f"  {i}. {cv}", width=80))
+            lines.append("")
+        lines.append(major)
+        return lines
 
     def _resolve_calibration_render_status(self, calibration):
         """Returns one of: 'calibrated', 'sector_mismatch', 'uncalibrated'"""
@@ -5110,11 +5610,12 @@ class ProfessionalReportGenerator:
         """Re-insert spaces into scraped text where HTML stripping concatenated tokens.
 
         Scraped news/profile text often comes back as e.g. "JPMorganChase& Co.",
-        "ESGSustainability", "ESGEnvironmentalScore". The two transformations:
+        "ESGSustainability", "ESGEnvironmentalScore". Transformations applied:
           1. Acronym (3+ uppercase) → TitleCase split: "ESGSustainability" → "ESG Sustainability".
           2. Lowercase → uppercase split (camelCase): "JPMorganChase" → "JPMorgan Chase".
-        Order matters: rule 1 first so "JPMorgan" (only 2 uppers) is not over-split.
-        Letter↔digit boundaries are also separated for readability.
+          3. Letter↔digit boundary split: "Scope3" → "Scope 3", "2030target" → "2030 target".
+          4. Common-word boundary split for all-lowercase concatenated runs:
+             "andenvironmentalgroupsare" → "and environmental groups are".
         """
         if text is None:
             return ""
@@ -5123,9 +5624,26 @@ class ProfessionalReportGenerator:
         s = re.sub(r"([A-Z]{3,})([A-Z][a-z])", r"\1 \2", s)
         # Standard camelCase boundary.
         s = re.sub(r"([a-z])([A-Z])", r"\1 \2", s)
-        # Letter↔digit boundaries (e.g. "Scope3" → "Scope 3", "2030target" → "2030 target").
+        # Letter↔digit boundaries.
         s = re.sub(r"([a-zA-Z])(\d)", r"\1 \2", s)
         s = re.sub(r"(\d)([a-zA-Z])", r"\1 \2", s)
+
+        # All-lowercase concatenated runs from broken HTML extraction:
+        # "andenvironmentalgroupsare" comes from "and environmental groups are"
+        # losing its spaces. We split at common stop-words found inside long
+        # lowercase runs. Pattern: a stop word preceded by a lowercase letter
+        # (i.e. it's stuck to the previous word) gets a space before it.
+        common_words = [
+            "and", "the", "are", "was", "were", "for", "with", "from", "that",
+            "this", "these", "have", "has", "been", "their", "they", "but",
+            "not", "into", "about", "regulatory", "government", "groups",
+            "environmental", "industrial", "company", "companies", "emission",
+            "emissions", "climate", "report", "reports", "carbon", "scope",
+        ]
+        for w in common_words:
+            # Only split when the stop-word is glued to a >=2-letter prefix
+            # AND followed by another lowercase char (i.e. mid-run, not edge).
+            s = re.sub(rf"([a-z]{{2,}})({w})(?=[a-z])", r"\1 \2 ", s, flags=re.IGNORECASE)
         # Collapse any double-space that may now exist.
         s = re.sub(r"  +", " ", s)
         return s
@@ -7587,9 +8105,16 @@ KEY PERFORMANCE METRICS
                     or total_emissions.get("value")
                 )
 
-            carbon_intensity = carbon_data.get("carbon_intensity") or carbon_data.get(
-                "intensity_metrics", {}
-            ).get("carbon_intensity")
+            # New canonical intensity field is intensity_per_revenue_m_tco2e
+            # (tCO2e per million of revenue). Fall back to the legacy
+            # carbon_intensity field for back-compat with cached state.
+            _im = carbon_data.get("intensity_metrics", {}) or {}
+            intensity_per_revenue_m = _im.get("intensity_per_revenue_m_tco2e")
+            revenue_currency = _im.get("revenue_currency") or "USD"
+            carbon_intensity = (
+                carbon_data.get("carbon_intensity")
+                or _im.get("carbon_intensity")
+            )
             if isinstance(carbon_intensity, dict):
                 carbon_intensity = carbon_intensity.get("value")
 
@@ -7603,10 +8128,26 @@ KEY PERFORMANCE METRICS
 
             if total_emissions and isinstance(total_emissions, (int, float)):
                 section += f"Total Emissions: {int(total_emissions):,} tCO2e\n"
-            if carbon_intensity and isinstance(carbon_intensity, (int, float)):
+            # Prefer revenue-normalized intensity (tCO2e per million of
+            # revenue) since "Carbon Intensity = total emissions" was
+            # meaningless and previously misled readers.
+            _rev_source = _im.get("revenue_source") or "unknown"
+            _src_label = {
+                "financial_analyst": "(financial-analyst data)",
+                "report_text_extraction": "(extracted from report text)",
+                "curated_table_2024": "(curated 2024 baseline)",
+            }.get(_rev_source, "")
+            if isinstance(intensity_per_revenue_m, (int, float)) and intensity_per_revenue_m > 0:
+                section += (
+                    f"Carbon Intensity: {intensity_per_revenue_m:,.1f} tCO2e per million {revenue_currency} "
+                    f"of revenue {_src_label}\n"
+                )
+            elif carbon_intensity and isinstance(carbon_intensity, (int, float)):
                 section += f"Carbon Intensity: {carbon_intensity} tCO2e/unit\n"
             elif carbon_intensity:
                 section += f"Carbon Intensity: {carbon_intensity}\n"
+            else:
+                section += "Carbon Intensity: not computed (no revenue denominator available)\n"
             if net_zero_target:
                 section += f"Net Zero Target: {net_zero_target}\n"
             if renewable_pct:

@@ -276,12 +276,21 @@ def extract_promises(report_text: str, company_name: str = "") -> List[Dict]:
             json_str = result.strip().strip('```json').strip('```').strip()
             promises = json.loads(json_str)
             
-        # Deduplicate LLM responses
+        # Deduplicate LLM responses. Type-guard `p` because the LLM
+        # occasionally returns a string in the array instead of an object
+        # — `.get(...)` on a str raises and broke the entire promise
+        # extraction step.
         unique = {}
         for p in promises:
-            key = (p.get("metric", "").lower(), p.get("deadline"), p.get("target"))
+            if not isinstance(p, dict):
+                continue
+            key = (
+                str(p.get("metric", "")).lower(),
+                p.get("deadline"),
+                p.get("target"),
+            )
             unique[key] = p
-            
+
         return list(unique.values())
         
     except Exception as e:

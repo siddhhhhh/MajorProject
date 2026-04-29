@@ -56,7 +56,27 @@ class ReportDiscoveryService:
             "https://www.unilever.com/investor-relations/annual-report-and-accounts/",
             "https://www.unilever.com/investor-relations/annual-report/",
             "https://www.unilever.com/sustainability/reporting-and-disclosures/",
-        ]
+        ],
+        # Tesla's Impact Report is the substantive ESG document (the 10-K is
+        # purely financial); without seeding this URL the discovery service
+        # picks up the 10-K + nav HTML and Tesla's actual scope figures
+        # never reach the carbon extractor. URL is the canonical Tesla
+        # impact-report PDF; Tesla rotates the year in the path each cycle.
+        "tesla": [
+            "https://www.tesla.com/ns_videos/2024-tesla-impact-report.pdf",
+            "https://www.tesla.com/ns_videos/2023-tesla-impact-report.pdf",
+            "https://www.tesla.com/impact",
+        ],
+        "tesla, inc.": [
+            "https://www.tesla.com/ns_videos/2024-tesla-impact-report.pdf",
+            "https://www.tesla.com/ns_videos/2023-tesla-impact-report.pdf",
+            "https://www.tesla.com/impact",
+        ],
+        "tesla inc": [
+            "https://www.tesla.com/ns_videos/2024-tesla-impact-report.pdf",
+            "https://www.tesla.com/ns_videos/2023-tesla-impact-report.pdf",
+            "https://www.tesla.com/impact",
+        ],
     }
     
     def __init__(self):

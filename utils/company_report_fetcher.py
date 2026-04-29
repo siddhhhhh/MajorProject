@@ -108,7 +108,9 @@ class CompanyReportFetcher:
             "google": "https://abc.xyz/investor/",
             "alphabet": "https://abc.xyz/investor/",
             "amazon": "https://ir.aboutamazon.com/annual-reports-proxies-and-shareholder-letters/default.aspx",
-            "tesla": "https://ir.tesla.com/sec-filings",
+            # Tesla's IR portal returns 403 to non-browser User-Agents;
+            # use the SEC EDGAR canonical URL which always works.
+            "tesla": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001318605&type=10-K&dateb=&owner=include&count=10",
             "meta": "https://investor.fb.com/financials/sec-filings/default.aspx",
             "exxonmobil": "https://corporate.exxonmobil.com/investors/investor-relations",
             "shell": "https://www.shell.com/investors/financial-reporting/annual-publications.html",

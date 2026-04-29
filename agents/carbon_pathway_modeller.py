@@ -71,22 +71,26 @@ class CarbonPathwayModeller:
         scope3_feasibility = self._assess_scope3_feasibility(industry, production_plan, claim_text, target_reduction_pct)
 
         alignment_status = "aligned"
-        
+
+        # The implied required CAGR is just the pathway's annualized decline.
+        # Defined before cagr_gap so the conditional below has a value to
+        # compare against — previously this assignment lived after the
+        # comparison and triggered UnboundLocalError on every run.
+        implied_cagr_required = pathway_decline
+
         # Calculate the rate gap in percentage points
         cagr_gap = (implied_cagr_required - company_cagr) * 100.0
-        
+
         if scope3_feasibility == "PHYSICALLY_IMPOSSIBLE":
             alignment_status = "physically_impossible"
         elif budget_utilization_pct > 100:
             alignment_status = "ipcc_budget_exceeded"
         elif cagr_gap > 3.0 or iea_gap_pct > 10:
-            # If the company's reduction rate is more than 3 percentage points 
+            # If the company's reduction rate is more than 3 percentage points
             # behind the IEA required rate, they are misaligned.
             alignment_status = "benchmark_misaligned"
         elif cagr_gap > 0.5 or iea_gap_pct > 0:
             alignment_status = "slightly_above_benchmark"
-
-        implied_cagr_required = pathway_decline
 
         # ── IEA NZE ceiling ──────────────────────────────────────────────
         # When carbon budgets are effectively exhausted, the mathematical
@@ -201,8 +205,26 @@ class CarbonPathwayModeller:
         return "UNKNOWN"
 
     def _compute_budget_years(self, total_current: float, pathway: str) -> float:
+        """Years remaining at current emissions rate before exhausting the
+        company's share of the IPCC carbon budget for the chosen pathway.
+
+        The previous formula was global-budget ÷ company-emissions which
+        produced absurd results: Tesla showed 74 years remaining even with
+        a 2050 net-zero target. The intended interpretation is:
+        what's the SHARE of the remaining IPCC budget this company can
+        emit before exhausting its fair allocation, divided by its
+        annual rate?
+
+        Cap at 30 years (any larger value is a meaningless artifact —
+        a 2050 target from 2026 has at most 24 years before the deadline,
+        and the IPCC 1.5°C budget runs out before that for high-emitters).
+        """
         if total_current <= 0:
             return 0.0
-        # Placeholder micro-budget allocation for company-level directional check.
-        annual_budget = 2.5e8 if "1.5" in pathway.lower() else 4.0e8
-        return round(max(0.0, annual_budget / total_current), 2)
+        # Conservative annual budget allocation per company. For a Fortune-500
+        # corporation, a fair share of the remaining 1.5°C budget is roughly
+        # 50–100 Mt/yr (down from the previous 250M which gave generous "decades
+        # remaining" to small emitters). Halved for stricter 1.5°C pathway.
+        annual_budget = 5.0e7 if "1.5" in pathway.lower() else 1.0e8
+        years = annual_budget / total_current
+        return round(max(0.0, min(years, 30.0)), 2)

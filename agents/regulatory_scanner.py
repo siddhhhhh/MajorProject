@@ -32,7 +32,10 @@ except Exception:  # pragma: no cover - optional runtime dependency
 EU_COUNTRIES = {"DE", "FR", "NL", "DK", "SE", "IT", "ES", "PL", "BE", "AT", "CH"}
 UK_COUNTRIES = {"GB", "UK"}
 US_COUNTRIES = {"US", "USA"}
-SBTI_PROGRESS_REPORT_URL = "https://sciencebasedtargets.org/resources/files/SBTi-Progress-Report.xlsx"
+# Public SBTi target dashboard Excel — Google Sheets backed, served via the
+# canonical /download/excel redirect. Replaces the older /resources/files/
+# URL which now returns 404. Contains 14k+ rows (company_name column).
+SBTI_PROGRESS_REPORT_URL = "https://sciencebasedtargets.org/download/excel"
 SBTI_CACHE_FILE = os.path.join("data", "sbti_company_cache.json")
 SBTI_CACHE_DAYS = 7
 
@@ -925,47 +928,79 @@ class RegulatoryHorizonScanner:
         return any(token and (token in name or name in token) for name in names)
 
     def _load_sbti_company_names(self) -> List[str]:
+        """Load the SBTi company registry from the official Excel download.
+
+        Source: https://sciencebasedtargets.org/download/excel — Google-Sheets
+        backed XLSX with a `company_name` column (~14k rows). This is the
+        authoritative public list. We refuse the brittle HTML-regex fallback
+        that previously polluted the cache with CSS/HTML fragments — if the
+        Excel fails, we keep the existing valid cache or return [] so the
+        caller correctly reports UNCERTAIN rather than fabricating membership.
+        """
         os.makedirs("data", exist_ok=True)
         now = datetime.utcnow()
+        existing_valid: List[str] = []
         if os.path.exists(SBTI_CACHE_FILE):
             try:
                 with open(SBTI_CACHE_FILE, "r", encoding="utf-8") as f:
                     cached = json.load(f)
                 fetched_at = datetime.fromisoformat(str(cached.get("fetched_at")))
-                if now - fetched_at <= timedelta(days=SBTI_CACHE_DAYS):
-                    return cached.get("company_names", [])
+                cache_names = cached.get("company_names", []) or []
+                # Detect poisoned caches: real SBTi data has 5k+ entries and
+                # very few all-lowercase-no-space tokens. The bad regex
+                # produced fragments like "a class", "html", etc.
+                cache_is_clean = len(cache_names) >= 1000 and cached.get("source") == "sbti-excel"
+                if cache_is_clean:
+                    existing_valid = cache_names
+                if cache_is_clean and now - fetched_at <= timedelta(days=SBTI_CACHE_DAYS):
+                    return cache_names
             except Exception:
                 pass
 
         company_names: List[str] = []
         if pd is not None:
             try:
-                frame = pd.read_excel(SBTI_PROGRESS_REPORT_URL)
-                for col in frame.columns:
-                    col_l = str(col).lower()
-                    if "company" in col_l or "organisation" in col_l or "organization" in col_l:
-                        values = frame[col].dropna().astype(str).tolist()
-                        company_names.extend(v.strip().lower() for v in values if v.strip())
+                # SBTi serves a Google-Sheets-backed XLSX. requests handles
+                # the redirect chain better than pandas's URL fetcher, then
+                # we read from a temp buffer.
+                import io
+                resp = requests.get(SBTI_PROGRESS_REPORT_URL, timeout=60, allow_redirects=True)
+                if resp.status_code == 200 and resp.content:
+                    sheets = pd.read_excel(io.BytesIO(resp.content), sheet_name=None)
+                    for sname, frame in sheets.items():
+                        for col in frame.columns:
+                            col_l = str(col).lower()
+                            if col_l in {"company_name", "company"} or "company name" in col_l:
+                                values = frame[col].dropna().astype(str).tolist()
+                                company_names.extend(v.strip().lower() for v in values if v.strip() and len(v.strip()) >= 3)
+                                break
                         if company_names:
                             break
             except Exception:
                 company_names = []
 
-        # Fallback with no pandas/read_excel support.
-        if not company_names:
-            try:
-                resp = requests.get("https://sciencebasedtargets.org/companies-taking-action", timeout=10)
-                text = resp.text.lower()
-                hits = re.findall(r"\b[a-z][a-z0-9&\-\.\s]{2,60}\b", text)
-                company_names = [h.strip() for h in hits if len(h.strip().split()) <= 6]
-            except Exception:
-                company_names = []
+        if not company_names and existing_valid:
+            # Network failure but we have a clean cache from a previous run —
+            # use it rather than poison the cache with garbage.
+            return existing_valid
 
-        # Deduplicate and cache.
+        if not company_names:
+            # Refuse to write a poisoned cache. Return [] so the fetcher
+            # reports UNCERTAIN cleanly.
+            return []
+
+        # Deduplicate and cache with a source marker so future runs can
+        # detect/reject the legacy poisoned cache.
         deduped = sorted(set(company_names))
         try:
             with open(SBTI_CACHE_FILE, "w", encoding="utf-8") as f:
-                json.dump({"fetched_at": now.isoformat(), "company_names": deduped}, f)
+                json.dump({
+                    "fetched_at": now.isoformat(),
+                    "company_names": deduped,
+                    "source": "sbti-excel",
+                    "source_url": SBTI_PROGRESS_REPORT_URL,
+                    "count": len(deduped),
+                }, f)
         except Exception:
             pass
         return deduped
@@ -1313,6 +1348,9 @@ def evaluate_real_compliance(
         "GHG Protocol Corporate Standard": "Global",
         "GRI Sustainability Reporting Standards": "Global",
         "FTC Green Guides": "US",
+        "CSRD / EU ESEF Filing": "EU",
+        "SEBI BRSR (India)": "India",
+        "NSE/BSE Listed Equity": "India",
     }
 
     for raw in raw_results:
