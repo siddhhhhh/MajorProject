@@ -6,10 +6,10 @@ import { PageWrapper } from "@/components/layout/PageWrapper";
 import { ScoreHemisphere } from "@/components/three/ScoreHemisphere";
 import { ArcGauge } from "@/components/charts/ArcGauge";
 import { RiskBadge } from "@/components/cards/RiskBadge";
-import { REPORTS, SHELL_REPORT, ReportData } from "@/data/demo";
+import type { ReportData } from "@/types/report";
 import { ExportMenu } from "@/components/report/ExportMenu";
 import { useAnalysisStore } from "@/stores/analysisStore";
-import { getReport } from "@/lib/api";
+import { getReport, getReportArtifacts } from "@/lib/api";
 import type { ESGReport } from "@/lib/api";
 import {
   RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer,
@@ -17,7 +17,7 @@ import {
   ScatterChart, Scatter, ZAxis, BarChart, Bar, Cell,
 } from "recharts";
 
-const TABS = ["Overview", "Carbon", "Greenwashing", "Contradictions", "Regulatory", "Peers", "Explainability", "Evidence", "Raw Data"];
+const TABS = ["Overview", "Audit Report", "Carbon", "Greenwashing", "Contradictions", "Regulatory", "Peers", "Explainability", "Evidence", "Raw Data"];
 
 const PATHWAY = Array.from({ length: 31 }, (_, i) => {
   const year = 2020 + i;
@@ -46,6 +46,42 @@ const DECEPTION = [
   { axis: "Tunnel Vision", v: 65 },
   { axis: "Linguistic Risk", v: 58 },
 ];
+
+function parseAuditSections(text?: string | null): { title: string; body: string }[] {
+  if (!text) return [];
+  const lines = text.split(/\r?\n/);
+  const sections: { title: string; body: string[] }[] = [];
+  let current: { title: string; body: string[] } | null = null;
+
+  const isRule = (line: string) => {
+    const trimmed = line.trim();
+    return trimmed.length >= 20 && /^[=\-─]+$/.test(trimmed);
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const isTitle =
+      trimmed === "REPORT HEADER" ||
+      trimmed === "VERDICT" ||
+      trimmed.startsWith("SECTION ") ||
+      trimmed.startsWith("APPENDIX ");
+
+    if (isTitle) {
+      if (current) sections.push(current);
+      current = { title: trimmed, body: [] };
+      continue;
+    }
+    if (!current) {
+      current = { title: "Full Report", body: [] };
+    }
+    if (!isRule(line)) current.body.push(line);
+  }
+
+  if (current) sections.push(current);
+  return sections
+    .map((s) => ({ title: s.title, body: s.body.join("\n").trim() }))
+    .filter((s) => s.body || s.title);
+}
 
 /** Map an API ESGReport into the existing ReportData shape used by the UI */
 function apiToReportData(api: ESGReport): ReportData {
@@ -133,9 +169,20 @@ function apiToReportData(api: ESGReport): ReportData {
   };
 }
 
+function withArtifacts(base: ReportData, artifacts: Awaited<ReturnType<typeof getReportArtifacts>>): ReportData {
+  const auditText = artifacts.txt || undefined;
+  return {
+    ...base,
+    auditText,
+    auditSections: parseAuditSections(auditText),
+    auditBrief: artifacts.brief || null,
+    rawReport: artifacts.full_json || null,
+  };
+}
+
 export default function Report() {
   const [params] = useSearchParams();
-  const id = params.get("id") || "shel";
+  const id = params.get("id") || "";
   const storeReport = useAnalysisStore((s) => s.currentReport);
   const [apiReport, setApiReport] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -144,33 +191,31 @@ export default function Report() {
   const [evFilter, setEvFilter] = useState<string>("All");
   const [flagged, setFlagged] = useState<Record<number, boolean>>({});
 
-  // Real-data-first: try the live API for any non-demo id. Demo IDs ("shel",
-  // "jpm" etc.) load from local REPORTS[]. If the API call fails for a REAL
-  // id we surface the error instead of silently falling back to demo data
-  // (which would otherwise display Shell's numbers under another company's name).
-  const isDemoId = id in REPORTS;
   useEffect(() => {
-    if (storeReport) {
+    // Seed from store for instant paint, but still hydrate from backend when URL id exists.
+    if (storeReport && (!id || storeReport.id === id)) {
       setApiReport(apiToReportData(storeReport));
-      return;
     }
-    if (id && !isDemoId) {
+
+    if (id) {
       setLoading(true);
       setApiError(null);
-      getReport(id)
-        .then((data) => setApiReport(apiToReportData(data)))
+      Promise.all([getReport(id), getReportArtifacts(id).catch(() => null)])
+        .then(([data, artifacts]) => {
+          const mapped = apiToReportData(data);
+          setApiReport(artifacts ? withArtifacts(mapped, artifacts) : mapped);
+        })
         .catch((err) => {
           setApiError(err?.message || "Failed to load report from API");
           if (typeof console !== "undefined") {
-            console.warn(`[Report] live API fetch failed for id=${id}; no demo fallback`, err);
+            console.warn(`[Report] live API fetch failed for id=${id}`, err);
           }
         })
         .finally(() => setLoading(false));
     }
-  }, [id, storeReport, isDemoId]);
+  }, [id, storeReport]);
 
-  // Real data first: live store > API response > demo fallback (only for demo ids)
-  const R = apiReport || (isDemoId ? (REPORTS[id] || SHELL_REPORT) : null);
+  const R = apiReport;
 
   if (loading) {
     return (
@@ -185,10 +230,7 @@ export default function Report() {
     );
   }
 
-  // Real-data failure path: the requested id isn't a demo id and the live API
-  // call failed. Surface that explicitly instead of silently rendering Shell's
-  // numbers under another company's name — the user explicitly asked for real
-  // values rather than hardcoded demo fallbacks.
+  // Real-data failure path: the requested id could not be resolved from the live backend.
   if (!R) {
     return (
       <PageWrapper>
@@ -206,8 +248,7 @@ export default function Report() {
               </div>
             )}
             <div className="text-text-secondary text-xs">
-              Run a fresh analysis from the New Analysis page, or open one of the demo reports
-              (?id=shel, ?id=jpm) to explore the UI.
+              Run a fresh analysis from the New Analysis page, or open a report from the library.
             </div>
           </div>
         </div>
@@ -342,6 +383,59 @@ export default function Report() {
               ))}
             </div>
           </>
+        )}
+
+        {tab === "Audit Report" && (
+          <div className="space-y-5">
+            {R.auditBrief && (
+              <div className="rounded-xl bg-bg-surface border border-bg-border p-6">
+                <div className="label-eyebrow mb-4">BACKEND BRIEF</div>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  {[
+                    ["GW Risk", (R.auditBrief as any).headline?.greenwashing_risk_score],
+                    ["ESG Score", (R.auditBrief as any).headline?.esg_score],
+                    ["Risk Band", (R.auditBrief as any).headline?.risk_band],
+                    ["Confidence", (R.auditBrief as any).headline?.confidence_pct ? `${(R.auditBrief as any).headline.confidence_pct}%` : undefined],
+                  ].map(([label, value]) => (
+                    <div key={label} className="border border-bg-border bg-bg-elevated/40 rounded-lg p-4">
+                      <div className="label-eyebrow mb-1">{label}</div>
+                      <div className="font-display text-2xl text-teal-bright">{value ?? "N/A"}</div>
+                    </div>
+                  ))}
+                </div>
+                {Array.isArray((R.auditBrief as any).due_diligence_questions) && (
+                  <div className="mt-5">
+                    <div className="label-eyebrow mb-2">DUE DILIGENCE QUESTIONS</div>
+                    <div className="space-y-2">
+                      {((R.auditBrief as any).due_diligence_questions as string[]).map((q, i) => (
+                        <div key={i} className="text-sm text-text-primary border-l-2 border-teal-dim pl-3">{q}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {(R.auditSections && R.auditSections.length > 0) ? (
+              R.auditSections.map((section) => (
+                <section key={section.title} className="rounded-xl bg-bg-surface border border-bg-border overflow-hidden">
+                  <div className="px-6 py-4 border-b border-bg-border bg-bg-elevated/40">
+                    <h2 className="font-display text-2xl text-teal-bright">{section.title}</h2>
+                  </div>
+                  <pre className="p-6 whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-text-primary overflow-x-auto">
+                    {section.body}
+                  </pre>
+                </section>
+              ))
+            ) : (
+              <div className="rounded-xl bg-bg-surface border border-bg-border p-6">
+                <div className="label-eyebrow mb-3">BACKEND AUDIT REPORT</div>
+                <div className="text-sm text-text-secondary">
+                  No TXT artifact was found for this report. The structured API data is still available under Raw Data.
+                </div>
+              </div>
+            )}
+          </div>
         )}
 
         {tab === "Carbon" && (
@@ -620,9 +714,9 @@ export default function Report() {
 
         {tab === "Raw Data" && (
           <div className="rounded-xl bg-bg-void border border-bg-border p-6">
-            <div className="label-eyebrow mb-3">REPORT JSON</div>
+            <div className="label-eyebrow mb-3">BACKEND REPORT JSON</div>
             <pre className="font-mono text-xs text-teal-bright overflow-x-auto max-h-[600px] overflow-y-auto scrollbar-thin">
-{JSON.stringify(R, null, 2)}
+{JSON.stringify(R.rawReport || R, null, 2)}
             </pre>
           </div>
         )}

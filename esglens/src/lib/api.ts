@@ -4,13 +4,13 @@
  * Unified API client for the ESGLens frontend.
  * All URLs come from import.meta.env — no hardcoded localhost:PORT in components.
  *
- * Backend (ESGLens API):  http://localhost:8000   (proxied via Vite as /api)
- * Chatbot:                http://localhost:8000   (proxied via Vite as /chatbot)
+ * Backend API is served through the app's proxy or configured origin.
+ * Chatbot uses the same proxy pattern.
  */
 
-const BASE_URL = "/api"; // proxied by Vite → http://localhost:8000/api
-const CHATBOT_URL = "/chatbot"; // proxied by Vite → http://localhost:8000/chatbot
-const WS_BASE = import.meta.env.VITE_WS_URL ?? "ws://localhost:8000";
+const BASE_URL = "/api"; // proxied by the app to the backend API
+const CHATBOT_URL = "/chatbot"; // proxied by the app to the chatbot API
+const WS_BASE = import.meta.env.VITE_WS_URL ?? "";
 
 // ── Analysis ─────────────────────────────────────────────────────────────────
 
@@ -47,6 +47,12 @@ export async function getAllReports(): Promise<HistoryEntry[]> {
 export async function getReport(id: string): Promise<ESGReport> {
   const res = await fetch(`${BASE_URL}/reports/${id}`);
   if (!res.ok) throw new Error(`Failed to fetch report ${id}`);
+  return res.json();
+}
+
+export async function getReportArtifacts(id: string): Promise<ReportArtifacts> {
+  const res = await fetch(`${BASE_URL}/reports/${id}/artifacts`);
+  if (!res.ok) throw new Error(`Failed to fetch report artifacts ${id}`);
   return res.json();
 }
 
@@ -105,6 +111,8 @@ export async function sendChatMessage(payload: {
   session_id: string;
   question: string;
   provider?: string;
+  report_id?: string;
+  company?: string;
 }): Promise<ChatbotResponse> {
   const res = await fetch(`${CHATBOT_URL}/chat`, {
     method: "POST",
@@ -119,6 +127,8 @@ export async function sendChatStream(payload: {
   session_id: string;
   question: string;
   provider?: string;
+  report_id?: string;
+  company?: string;
 }): Promise<Response> {
   return fetch(`${CHATBOT_URL}/chat/stream`, {
     method: "POST",
@@ -293,6 +303,17 @@ export interface ESGReport {
   };
   // Per-retriever yield tally — names silent-failure retrievers.
   retriever_tally?: Record<string, number>;
+}
+
+export interface ReportArtifacts {
+  txt?: string | null;
+  brief?: Record<string, unknown> | null;
+  full_json?: Record<string, unknown> | null;
+  files?: {
+    txt?: string | null;
+    brief?: string | null;
+    json?: string | null;
+  };
 }
 
 export interface HistoryEntry {

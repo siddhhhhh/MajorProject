@@ -1363,10 +1363,11 @@ class ReportParserService:
 
         # Tiny self-contained script that runs Camelot and prints result
         script = f'''
-import sys, json
+import sys, json, os, contextlib
 try:
     import camelot
-    tables = camelot.read_pdf({repr(local_path)}, pages={repr(str(page_number))}, flavor="lattice", suppress_stdout=True)
+    with open(os.devnull, "w", encoding="utf-8") as _null, contextlib.redirect_stderr(_null):
+        tables = camelot.read_pdf({repr(local_path)}, pages={repr(str(page_number))}, flavor="lattice", suppress_stdout=True)
     md_parts = []
     for i, t in enumerate(tables):
         try:
@@ -1492,7 +1493,11 @@ except Exception as e:
             import camelot
 
             print(f"         Camelot extraction on page(s) {pages}...")
-            tables = camelot.read_pdf(local_path, pages=pages, flavor='lattice', suppress_stdout=True)
+            import io
+            import contextlib
+
+            with open(os.devnull, "w", encoding="utf-8") as _null, contextlib.redirect_stderr(_null), contextlib.redirect_stdout(io.StringIO()):
+                tables = camelot.read_pdf(local_path, pages=pages, flavor='lattice', suppress_stdout=True)
             for i, table in enumerate(tables):
                 markdown = self._camelot_table_to_markdown(table)
                 if markdown:

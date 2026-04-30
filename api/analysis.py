@@ -192,6 +192,7 @@ def _run_pipeline_subprocess(
                  if company_key in p.stem.lower()
                  and "lineage" not in p.stem
                  and "FULL" not in p.stem
+                 and "_brief" not in p.stem.lower()
                  and "research_runs" not in p.stem],
                 key=lambda f: f.stat().st_mtime,
                 reverse=True,
@@ -214,9 +215,11 @@ def _run_pipeline_subprocess(
         api_report = map_report_to_schema(raw_report, report_id)
         api_report.pipeline_duration_seconds = elapsed
 
+        # CRITICAL: Set result BEFORE changing status to avoid race condition
+        # where WebSocket reads "completed" status but result is still None
+        store["result"] = api_report.model_dump()
         store["status"] = "completed"
         store["progress"] = 100
-        store["result"] = api_report.model_dump()
         add_log("Report mapped and ready", "ok")
 
     except Exception as e:

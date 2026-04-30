@@ -109,6 +109,8 @@ class ESGChatService:
         session_id: str,
         question: str,
         provider: str | None = None,
+        report_id: str | None = None,
+        company: str | None = None,
     ) -> tuple[dict[str, Any], str]:
         # 1. Guard: out-of-scope
         if not is_esg_scope(question):
@@ -121,9 +123,9 @@ class ESGChatService:
             }, "guardrail"
 
         # 2. Load structured context (ONE function, no duplication)
-        ctx = get_esg_context(self.settings.reports_dir)
+        ctx = get_esg_context(self.settings.reports_dir, company=company, report_id=report_id)
         if ctx is None:
-            raise ValueError("No report found. Run /run-analysis first.")
+            raise ValueError("No matching report found. Choose a report or run /run-analysis first.")
 
         # 3. Detect intents
         intents = detect_intents(question)

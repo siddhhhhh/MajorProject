@@ -62,6 +62,8 @@ def chat(payload: ChatRequest) -> ChatResponse:
             session_id=payload.session_id,
             question=payload.question,
             provider=payload.provider,
+            report_id=payload.report_id,
+            company=payload.company,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -83,6 +85,8 @@ def chat_stream(payload: StreamChatRequest):
             session_id=payload.session_id,
             question=payload.question,
             provider=payload.provider,
+            report_id=payload.report_id,
+            company=payload.company,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

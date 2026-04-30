@@ -25,6 +25,8 @@ class ChatRequest(BaseModel):
     session_id: str = Field(min_length=3)
     question: str = Field(min_length=3)
     provider: str | None = None
+    report_id: str | None = None
+    company: str | None = None
 
 
 class ChatAnswer(BaseModel):

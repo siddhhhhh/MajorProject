@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
@@ -23,37 +24,152 @@ router = APIRouter(prefix="/api")
 REPORTS_DIR = Path(os.getenv("ESG_REPORTS_DIR", "reports"))
 
 
+def _parse_report_dt(raw: dict, path: Path) -> datetime:
+    for key in ("analysis_date", "generated_at_utc", "generated_utc"):
+        value = raw.get(key)
+        if not value:
+            continue
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00")).replace(tzinfo=None)
+        except Exception:
+            pass
+    return datetime.fromtimestamp(path.stat().st_mtime)
+
+
+def _report_preference(path: Path) -> tuple[int, float]:
+    """Prefer canonical ESG_Report files because they have TXT/brief companions."""
+    has_txt = path.with_suffix(".txt").exists()
+    is_named_artifact = path.stem.startswith("ESG_Report_")
+    return (1 if has_txt else 0) + (1 if is_named_artifact else 0), path.stat().st_mtime
+
+
+def _dedupe_key(raw: dict, path: Path) -> tuple[str, str, str, int]:
+    """Group duplicate writes from the same analysis run."""
+    report_id = str(raw.get("report_id") or "").strip()
+    if report_id:
+        return ("report_id", report_id, "", 0)
+
+    company = str(raw.get("company") or "").strip().lower()
+    claim = str(raw.get("claim_analyzed") or raw.get("claim") or "").strip().lower()
+    dt = _parse_report_dt(raw, path)
+    # Same company/claim writes inside a two-second bucket are one run.
+    return ("run_window", company, claim, int(dt.timestamp()) // 2)
+
+
 def _iter_report_jsons():
     """Yield (report_id, parsed_dict) for every valid JSON report on disk."""
     if not REPORTS_DIR.exists():
         return
+    chosen: dict[tuple[str, str, str, int], tuple[Path, dict]] = {}
+
     for p in sorted(REPORTS_DIR.glob("*.json"), key=lambda f: f.stat().st_mtime, reverse=True):
         # Skip lineage / debug files
         if "lineage" in p.stem or "FULL" in p.stem or "research_runs" in p.stem:
             continue
+        if p.stem.lower().endswith("_brief"):
+            continue
         try:
             with open(p, encoding="utf-8") as f:
                 data = json.load(f)
-            if isinstance(data, dict) and "scores" in data:
-                yield _short_id(str(p)), data
+            if not (isinstance(data, dict) and "scores" in data):
+                continue
+
+            key = _dedupe_key(data, p)
+            existing = chosen.get(key)
+            if existing is None or _report_preference(p) > _report_preference(existing[0]):
+                chosen[key] = (p, data)
         except Exception:
             continue
+
+    # A run may have been written once under report_id and again under the
+    # display artifact name. Collapse those too by near-identical company,
+    # claim, and analysis timestamp, keeping the richer companion artifact.
+    by_window: list[tuple[Path, dict]] = []
+    for p, data in chosen.values():
+        dt = _parse_report_dt(data, p)
+        company = str(data.get("company") or "").strip().lower()
+        claim = str(data.get("claim_analyzed") or data.get("claim") or "").strip().lower()
+        duplicate_index = None
+        for idx, (existing_path, existing_data) in enumerate(by_window):
+            existing_dt = _parse_report_dt(existing_data, existing_path)
+            existing_company = str(existing_data.get("company") or "").strip().lower()
+            existing_claim = str(existing_data.get("claim_analyzed") or existing_data.get("claim") or "").strip().lower()
+            if company == existing_company and claim == existing_claim and abs((dt - existing_dt).total_seconds()) <= 5:
+                duplicate_index = idx
+                break
+
+        if duplicate_index is None:
+            by_window.append((p, data))
+        elif _report_preference(p) > _report_preference(by_window[duplicate_index][0]):
+            by_window[duplicate_index] = (p, data)
+
+    for p, data in sorted(by_window, key=lambda item: item[0].stat().st_mtime, reverse=True):
+        yield _short_id(str(p)), data
 
 
 def _find_raw(report_id: str):
     """Return (raw_dict, path) for a given report_id, or raise 404."""
     if not REPORTS_DIR.exists():
         raise HTTPException(status_code=404, detail="No reports directory found")
-    for p in REPORTS_DIR.glob("*.json"):
+
+    # Some legacy links/store entries may carry a `_brief` report id.
+    # Resolve it to the full report first when both files exist.
+    if report_id.endswith("_brief"):
+        canonical_id = report_id[:-6]
+    else:
+        canonical_id = report_id
+
+    candidates = sorted(
+        REPORTS_DIR.glob("*.json"),
+        key=lambda f: _report_preference(f),
+        reverse=True,
+    )
+    for p in candidates:
         if "lineage" in p.stem or "FULL" in p.stem or "research_runs" in p.stem:
             continue
-        if _short_id(str(p)) == report_id or p.stem == report_id:
+        if p.stem.lower().endswith("_brief"):
+            continue
+        if _short_id(str(p)) == canonical_id or p.stem == canonical_id:
             try:
                 with open(p, encoding="utf-8") as f:
                     return json.load(f), p
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to parse report: {e}")
     raise HTTPException(status_code=404, detail=f"Report '{report_id}' not found")
+
+
+def _read_companion_artifacts(report_path: Path) -> dict:
+    """Read TXT / brief JSON files produced next to the full report JSON."""
+    stem = report_path.stem
+    txt_path = report_path.with_suffix(".txt")
+    brief_path = report_path.with_name(f"{stem}_brief.json")
+
+    artifacts: dict = {
+        "txt": None,
+        "brief": None,
+        "full_json": None,
+        "files": {
+            "txt": txt_path.name if txt_path.exists() else None,
+            "brief": brief_path.name if brief_path.exists() else None,
+            "json": report_path.name,
+        },
+    }
+
+    if txt_path.exists():
+        artifacts["txt"] = txt_path.read_text(encoding="utf-8", errors="replace")
+
+    if brief_path.exists():
+        try:
+            artifacts["brief"] = json.loads(brief_path.read_text(encoding="utf-8"))
+        except Exception:
+            artifacts["brief"] = None
+
+    try:
+        artifacts["full_json"] = json.loads(report_path.read_text(encoding="utf-8"))
+    except Exception:
+        artifacts["full_json"] = None
+
+    return artifacts
 
 
 @router.get("/reports", response_model=List[HistoryEntry])
@@ -75,10 +191,18 @@ def get_report(report_id: str):
     return map_report_to_schema(raw, report_id)
 
 
+@router.get("/reports/{report_id}/artifacts")
+def get_report_artifacts(report_id: str):
+    """Return the exact backend report artifacts used for audit display/export."""
+    _, path = _find_raw(report_id)
+    return _read_companion_artifacts(path)
+
+
 @router.get("/reports/{report_id}/pdf")
 def get_report_pdf(report_id: str):
     """Generate and return an audit-ready PDF for the given report ID."""
-    raw, _ = _find_raw(report_id)
+    raw, path = _find_raw(report_id)
+    artifacts = _read_companion_artifacts(path)
     try:
         report_schema = map_report_to_schema(raw, report_id)
         report_dict = report_schema.model_dump()
@@ -86,8 +210,11 @@ def get_report_pdf(report_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to build report model: {e}")
 
     try:
-        from api.pdf_generator import build_pdf
-        pdf_bytes = build_pdf(report_dict, raw)
+        from api.pdf_generator import build_pdf, build_pdf_from_text
+        if artifacts.get("txt"):
+            pdf_bytes = build_pdf_from_text(artifacts["txt"], report_dict)
+        else:
+            pdf_bytes = build_pdf(report_dict, raw)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}")
 

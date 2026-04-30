@@ -63,6 +63,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const res = await api.sendChatMessage({
         session_id: get().sessionId,
         question: text,
+        report_id: get().activeAnalysisId ?? undefined,
+        company: get().activeCompany ?? undefined,
       });
 
       const answer = res.answer;

@@ -1,6 +1,8 @@
 """api/pdf_generator.py — Audit-ready PDF matching TXT report structure."""
 from __future__ import annotations
+import html
 import io, json
+from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -12,6 +14,8 @@ from reportlab.platypus import (
     BaseDocTemplate, PageTemplate, Frame, Paragraph, Spacer,
     Table, TableStyle, HRFlowable, PageBreak,
 )
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.graphics.shapes import Drawing, Rect, String
 from reportlab.graphics.charts.barcharts import HorizontalBarChart
 
@@ -38,6 +42,15 @@ BD = ParagraphStyle("bd", fontName="Helvetica", fontSize=8.5, textColor=NAVY, sp
 WN = ParagraphStyle("wn", fontName="Helvetica-Bold", fontSize=8, textColor=AMBER, spaceAfter=3)
 MN = ParagraphStyle("mn", fontName="Courier", fontSize=7.5, textColor=NAVY, spaceAfter=2)
 SP = Spacer(1, 3*mm)
+
+_MONO_FONT = "Courier"
+try:
+    _cascadia = Path(r"C:\Windows\Fonts\CascadiaMono.ttf")
+    if _cascadia.exists():
+        pdfmetrics.registerFont(TTFont("CascadiaMono", str(_cascadia)))
+        _MONO_FONT = "CascadiaMono"
+except Exception:
+    _MONO_FONT = "Courier"
 
 def _tbl(headers, rows, cw=None):
     aw = W - 2*M
@@ -112,6 +125,79 @@ def _on_page(c, doc):
     c.drawString(M,4*mm, f"CONFIDENTIAL | ESGLens v4.0 | {getattr(doc,'_date','')}")
     c.drawRightString(W-M,4*mm, f"Page {c.getPageNumber()}")
     c.restoreState()
+
+
+def build_pdf_from_text(report_text: str, report: Dict[str, Any] | None = None) -> bytes:
+    """Render the canonical TXT artifact into an audit-ready PDF."""
+    report = report or {}
+    buf = io.BytesIO()
+    co = report.get("company", "Unknown")
+    rid = report.get("id", "N/A")
+    gd = datetime.utcnow().strftime("%d %B %Y")
+
+    doc = BaseDocTemplate(buf, pagesize=A4, leftMargin=M, rightMargin=M, topMargin=18*mm, bottomMargin=13*mm)
+    doc._company = co
+    doc._rid = rid
+    doc._date = gd
+    frame = Frame(M, 12*mm, W-2*M, H-30*mm, id="main")
+    doc.addPageTemplates([PageTemplate(id="main", frames=[frame], onPage=_on_page)])
+
+    mono = ParagraphStyle(
+        "audit_mono",
+        fontName=_MONO_FONT,
+        fontSize=6.7,
+        leading=8.5,
+        textColor=NAVY,
+        splitLongWords=True,
+        wordWrap="CJK",
+        spaceAfter=1,
+    )
+    heading = ParagraphStyle(
+        "audit_heading",
+        fontName="Helvetica-Bold",
+        fontSize=10,
+        leading=13,
+        textColor=TEAL,
+        spaceBefore=5,
+        spaceAfter=3,
+    )
+    title = ParagraphStyle(
+        "audit_title",
+        parent=H1,
+        fontSize=20,
+        leading=24,
+        spaceAfter=6,
+    )
+    meta = ParagraphStyle(
+        "audit_meta",
+        parent=BD,
+        fontSize=8,
+        leading=11,
+        spaceAfter=5,
+    )
+
+    story = [
+        Paragraph("Audit-Ready Backend Report", title),
+        Paragraph(f"{co} | Report ID: {rid} | Generated: {gd}", meta),
+        HRFlowable(width="100%", thickness=0.7, color=TEAL, spaceBefore=2, spaceAfter=6),
+    ]
+
+    for raw_line in report_text.splitlines():
+        line = raw_line.rstrip()
+        if not line:
+            story.append(Spacer(1, 2.2 * mm))
+            continue
+        stripped = line.strip()
+        if stripped.startswith("SECTION ") or stripped in {"VERDICT", "REPORT HEADER"} or stripped.startswith("APPENDIX "):
+            story.append(Paragraph(html.escape(stripped), heading))
+            continue
+        if set(stripped) <= {"=", "-", "_", "─"}:
+            story.append(HRFlowable(width="100%", thickness=0.3, color=colors.HexColor("#CBD5E1"), spaceAfter=2))
+            continue
+        story.append(Paragraph(html.escape(line).replace(" ", "&nbsp;"), mono))
+
+    doc.build(story)
+    return buf.getvalue()
 
 def _get_agent(raw, name):
     for a in (raw.get("agent_results") or []):

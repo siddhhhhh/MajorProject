@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown, Download, RotateCw, GitCompare, ArrowRight, Search } from "lucide-react";
 import { PageWrapper } from "@/components/layout/PageWrapper";
 import { ArcGauge } from "@/components/charts/ArcGauge";
 import { RiskBadge } from "@/components/cards/RiskBadge";
-import { REPORT_LIST as DEMO_REPORT_LIST, ReportData } from "@/data/demo";
+import type { ReportData } from "@/types/report";
 import { getAllReports, HistoryEntry } from "@/lib/api";
 
 function apiHistoryToReportData(api: HistoryEntry): ReportData {
@@ -299,20 +299,21 @@ export default function History() {
   const [view, setView] = useState<"list" | "grid">("list");
   const [compareMap, setCompareMap] = useState<Record<string, string | null>>({});
   const [historyList, setHistoryList] = useState<ReportData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useMemo(() => {
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
     getAllReports()
       .then((data) => {
-        if (data && data.length > 0) {
-          setHistoryList(data.map(apiHistoryToReportData));
-        } else {
-          setHistoryList(DEMO_REPORT_LIST);
-        }
+        setHistoryList(data.map(apiHistoryToReportData));
       })
       .catch((err) => {
-        console.error(err);
-        setHistoryList(DEMO_REPORT_LIST);
-      });
+        setError(err?.message || "Failed to load history from API");
+        setHistoryList([]);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   const sectors = useMemo(() => ["All", ...Array.from(new Set(historyList.map((r) => r.sector)))], [historyList]);
@@ -342,6 +343,16 @@ export default function History() {
           <h1 className="font-display text-5xl text-navy-deep leading-tight">Analysis History</h1>
           <p className="text-text-secondary mt-3 max-w-xl">All previous pipeline runs — click any entry to view the full report.</p>
         </div>
+
+        {error && (
+          <div className="mb-8 rounded-lg border border-risk-high/30 bg-risk-high/10 px-4 py-3 text-sm text-risk-high">
+            {error}
+          </div>
+        )}
+
+        {loading && (
+          <div className="mb-8 text-sm font-mono text-text-secondary">Loading history from backend…</div>
+        )}
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
@@ -413,7 +424,7 @@ export default function History() {
             {filtered.map((r) => (
               <button
                 key={r.id}
-                onClick={() => nav(`/report?id=${r.id.split("-")[0]}`)}
+                onClick={() => nav(`/report?id=${r.id}`)}
                 className={`text-left rounded-xl bg-bg-surface border border-bg-border border-l-4 ${borderColor(r.riskLevel)} shadow-card hover:shadow-card-hover p-5 transition`}
               >
                 <div className="flex items-start justify-between mb-3">

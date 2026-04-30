@@ -19,6 +19,9 @@ from __future__ import annotations
 
 import logging
 import re
+import io
+import contextlib
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -64,11 +67,37 @@ _UNIT_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _YEAR_PATTERN = re.compile(r"\b(20[12]\d)\b")
+_PDF_NOISE_LOCK = threading.Lock()
 
 
 # ===================================================================
 # Private helpers
 # ===================================================================
+
+@contextlib.contextmanager
+def _suppress_native_pdf_noise():
+    """Silence native Ghostscript/Camelot output emitted below Python stderr."""
+    devnull = None
+    saved_stdout = None
+    saved_stderr = None
+    with _PDF_NOISE_LOCK:
+        try:
+            devnull = os.open(os.devnull, os.O_WRONLY)
+            saved_stdout = os.dup(1)
+            saved_stderr = os.dup(2)
+            os.dup2(devnull, 1)
+            os.dup2(devnull, 2)
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                yield
+        finally:
+            if saved_stdout is not None:
+                os.dup2(saved_stdout, 1)
+                os.close(saved_stdout)
+            if saved_stderr is not None:
+                os.dup2(saved_stderr, 2)
+                os.close(saved_stderr)
+            if devnull is not None:
+                os.close(devnull)
 
 def _find_carbon_pages(pdf_path: str) -> list[int]:
     """Fast-scan PDF pages with PyMuPDF and return 1-indexed page numbers
@@ -128,23 +157,73 @@ def _table_has_carbon_data(table: Any) -> bool:
         return False
 
 def _sanitize_pdf_for_extraction(pdf_path: str) -> str:
-    """Removes malformed widget annotations that break Ghostscript and PyPDF."""
+    """Remove form/widget annotations that make Ghostscript noisy or brittle."""
+    doc = None
     try:
         doc = fitz.open(pdf_path)
+        removed = 0
+
         for page in doc:
-            for annot in page.annots():
-                page.delete_annot(annot)
-        
+            for widget in list(page.widgets() or []):
+                try:
+                    page.delete_widget(widget)
+                    removed += 1
+                except Exception:
+                    logger.debug(
+                        "Could not delete PDF widget xref=%s on page %s",
+                        getattr(widget, "xref", "?"),
+                        page.number + 1,
+                        exc_info=True,
+                    )
+
+            for annot in list(page.annots() or []):
+                try:
+                    page.delete_annot(annot)
+                    removed += 1
+                except Exception:
+                    logger.debug(
+                        "Could not delete PDF annotation xref=%s on page %s",
+                        getattr(annot, "xref", "?"),
+                        page.number + 1,
+                        exc_info=True,
+                    )
+
+            # Some malformed PDFs expose broken widgets only through the raw
+            # page dictionary. Removing /Annots prevents Ghostscript from
+            # traversing stale widget references.
+            try:
+                doc.xref_set_key(page.xref, "Annots", "null")
+            except Exception:
+                logger.debug(
+                    "Could not clear /Annots for page %s", page.number + 1,
+                    exc_info=True,
+                )
+
+        try:
+            catalog_xref = doc.pdf_catalog()
+            if catalog_xref:
+                doc.xref_set_key(catalog_xref, "AcroForm", "null")
+        except Exception:
+            logger.debug("Could not clear PDF /AcroForm catalog entry", exc_info=True)
+
         fd, temp_path = tempfile.mkstemp(suffix=".pdf", prefix="sanitized_")
         os.close(fd)
-        
-        # garbage=3 and clean=True rewrites the cross-reference tables fixing pointers
-        doc.save(temp_path, garbage=3, clean=True)
+
+        # garbage=4 and clean=True rewrite cross-reference tables and drop
+        # unreferenced widget objects left behind by the source PDF.
+        doc.save(temp_path, garbage=4, clean=True, deflate=True)
         doc.close()
+        logger.debug("Sanitized %s for table extraction; removed %d annotations/widgets.", pdf_path, removed)
         return temp_path
     except Exception as e:
         logger.warning("PDF sanitization failed, proceeding with original: %s", e)
         return pdf_path
+    finally:
+        if doc is not None:
+            try:
+                doc.close()
+            except Exception:
+                pass
 
 
 # ===================================================================
@@ -198,11 +277,13 @@ def extract_carbon_tables(pdf_path: str) -> list[dict]:
 
         # --- Attempt 1: lattice ---
         try:
-            tables = camelot.read_pdf(
-                pdf_path_str,
-                pages=page_str,
-                flavor="lattice",
-            )
+            with _suppress_native_pdf_noise():
+                tables = camelot.read_pdf(
+                    pdf_path_str,
+                    pages=page_str,
+                    flavor="lattice",
+                    suppress_stdout=True,
+                )
             for tbl in tables:
                 if _table_has_carbon_data(tbl):
                     raw = " ".join(
@@ -242,11 +323,13 @@ def extract_carbon_tables(pdf_path: str) -> list[dict]:
 
         # --- Attempt 2: stream fallback ---
         try:
-            tables = camelot.read_pdf(
-                pdf_path_str,
-                pages=page_str,
-                flavor="stream",
-            )
+            with _suppress_native_pdf_noise():
+                tables = camelot.read_pdf(
+                    pdf_path_str,
+                    pages=page_str,
+                    flavor="stream",
+                    suppress_stdout=True,
+                )
             for tbl in tables:
                 if _table_has_carbon_data(tbl):
                     raw = " ".join(

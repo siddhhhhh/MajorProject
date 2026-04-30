@@ -84,12 +84,14 @@ async def pipeline_websocket(websocket: WebSocket, analysis_id: str):
             # ── Completed ─────────────────────────────────────────────
             if status == "completed":
                 result = entry.get("result")
-                await _send(websocket, {
-                    "type": "complete",
-                    "analysis_id": analysis_id,
-                    "report": result,
-                })
-                break
+                # Safety check: ensure result is not None/empty before sending
+                if result:
+                    await _send(websocket, {
+                        "type": "complete",
+                        "analysis_id": analysis_id,
+                        "report": result,
+                    })
+                    break
 
             # ── Error ─────────────────────────────────────────────────
             if status == "error":

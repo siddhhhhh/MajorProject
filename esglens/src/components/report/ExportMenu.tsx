@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Download, FileText, FileJson, FileType2, Package, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ReportData } from "@/data/demo";
+import type { ReportData } from "@/types/report";
 
 export function ExportMenu({ report: R, reportId }: { report: ReportData; reportId?: string }) {
 
@@ -16,6 +16,7 @@ function downloadBlob(content: string, filename: string, type: string) {
 }
 
   function buildReportText() {
+    if (R.auditText) return R.auditText;
     return [
       `ESGLENS REPORT — ${R.company} (${R.ticker})`,
       `Sector: ${R.sector} · Jurisdiction: ${R.jurisdiction}`,
@@ -81,8 +82,8 @@ function downloadBlob(content: string, filename: string, type: string) {
       run: () => downloadAuditPDF(),
       disabled: !reportId,
     },
-    { icon: FileText,  label: "Plain Text (TXT)",      size: "~20 KB",  badge: "", run: () => downloadBlob(buildReportText(), `ESGLens_${R.ticker}.txt`, "text/plain"), disabled: false },
-    { icon: FileJson,  label: "Raw Data (JSON)",        size: "~12 KB",  badge: "", run: () => downloadBlob(JSON.stringify(R, null, 2), `ESGLens_${R.ticker}.json`, "application/json"), disabled: false },
+    { icon: FileText,  label: "Plain Text (TXT)",      size: R.auditText ? "~full" : "~20 KB",  badge: "", run: () => downloadBlob(buildReportText(), `ESGLens_${R.ticker}.txt`, "text/plain"), disabled: false },
+    { icon: FileJson,  label: "Raw Data (JSON)",        size: R.rawReport ? "~full" : "~12 KB",  badge: "", run: () => downloadBlob(JSON.stringify(R.rawReport || R, null, 2), `ESGLens_${R.ticker}.json`, "application/json"), disabled: false },
     { icon: Package,   label: "Evidence Pack (JSON)",   size: "~6 KB",   badge: "", run: () => downloadBlob(JSON.stringify(R.evidence, null, 2), `ESGLens_${R.ticker}_evidence.json`, "application/json"), disabled: false },
   ];
   return (

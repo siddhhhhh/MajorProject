@@ -48,9 +48,23 @@ def _company_slug(company: str) -> str:
     return "_".join(company.strip().split()).replace("/", "_")
 
 
+def _matches_report_id(path: Path, report_id: str, json_payload: dict[str, Any] | None = None) -> bool:
+    wanted = report_id.strip().lower()
+    if not wanted:
+        return False
+    if path.stem.lower() == wanted:
+        return True
+    if path.with_suffix(".json").stem.lower() == wanted:
+        return True
+    if json_payload and str(json_payload.get("report_id") or "").lower() == wanted:
+        return True
+    return False
+
+
 def find_latest_report(
     reports_dir: Path,
     company: str | None = None,
+    report_id: str | None = None,
     min_mtime: float | None = None,
 ) -> ReportArtifacts | None:
     if not reports_dir.exists():
@@ -61,6 +75,17 @@ def find_latest_report(
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
+    if report_id:
+        matched = []
+        for p in txt_files:
+            payload = _read_json(p.with_suffix(".json"))
+            if _matches_report_id(p, report_id, payload):
+                matched.append(p)
+        if matched:
+            txt_files = matched
+        else:
+            return None
+
     if company:
         slug = _company_slug(company)
         filtered = [p for p in txt_files if slug.lower() in p.name.lower()]
@@ -172,6 +197,7 @@ def _parse_txt_report(txt: str, json_payload: dict[str, Any] | None) -> dict[str
 def get_esg_context(
     reports_dir: Path,
     company: str | None = None,
+    report_id: str | None = None,
 ) -> dict[str, Any] | None:
     """
     Load the latest report JSON and return a structured context dict.
@@ -196,7 +222,7 @@ def get_esg_context(
       "report_timestamp": str,
     }
     """
-    artifacts = find_latest_report(reports_dir, company=company)
+    artifacts = find_latest_report(reports_dir, company=company, report_id=report_id)
     if artifacts is None:
         return None
 

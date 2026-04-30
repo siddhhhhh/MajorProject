@@ -81,7 +81,7 @@ export default function Dashboard() {
         <div className="absolute inset-0 bg-gradient-to-b from-bg-deep/30 via-transparent to-bg-deep" />
         <div className="relative z-10 w-full max-w-4xl px-8 text-center">
           <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8 }}>
-            <div className="label-eyebrow text-green-bright mb-6">UK ESG INTELLIGENCE PLATFORM</div>
+            <div className="label-eyebrow text-green-bright mb-6"> ESG INTELLIGENCE PLATFORM</div>
             <h1 className="font-display text-6xl md:text-7xl leading-[1.05] mb-6 text-navy-deep">
               ESG <span className="italic text-gradient-teal">Intelligence</span>
             </h1>
