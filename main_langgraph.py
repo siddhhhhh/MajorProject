@@ -254,6 +254,18 @@ class ESGGreenwashingDetectorLangGraph:
         with open(json_file, 'w', encoding='utf-8') as f:
             f.write(result["json_export"])
 
+        # One-page investor brief: structured JSON for portfolio/diligence
+        # use cases. Investors won't read 47KB TXT reports — they need a
+        # decision-grade summary they can paste into a model or an IC memo.
+        brief_file = f"{base_name}_brief.json"
+        try:
+            brief = self._build_investor_brief(result, company_name)
+            with open(brief_file, 'w', encoding='utf-8') as f:
+                json.dump(brief, f, indent=2, ensure_ascii=False)
+        except Exception as exc:
+            print(f"⚠️ Investor brief generation failed: {exc}")
+            brief_file = None
+
         # Save full results only when explicitly enabled to avoid large blocking writes.
         full_file = f"{base_name}_FULL.json"
         save_full = os.getenv("ESG_SAVE_FULL_RESULTS", "0").lower() in {"1", "true", "yes"}
@@ -283,8 +295,198 @@ class ESGGreenwashingDetectorLangGraph:
         print(f"\n💾 Reports saved:")
         print(f"   📄 {txt_file}")
         print(f"   📊 {json_file}")
+        if brief_file:
+            print(f"   📋 {brief_file}")
         if save_full:
             print(f"   🔍 {full_file}")
+
+    def _build_investor_brief(self, result: dict, company_name: str) -> dict:
+        """Build a one-page investor brief from the full result.
+
+        Decision-grade snapshot — six sections an analyst can scan in
+        under a minute: header, headline scores, top 3 risks,
+        enforcement Y/N, carbon pathway status, three due-diligence
+        questions to ask management.
+
+        Pulls from json_export first (canonical, post-render values)
+        then falls back to runtime state. Without this the brief showed
+        null scores because the runtime keys differ from the rendered
+        JSON keys.
+        """
+        # Parse the rendered JSON for canonical scores
+        rendered: dict = {}
+        try:
+            if result.get("json_export"):
+                rendered = json.loads(result["json_export"])
+        except Exception:
+            rendered = {}
+        rendered_scores = rendered.get("scores") or {}
+
+        verdict = result.get("verdict") or result.get("final_verdict") or {}
+        carbon = (
+            result.get("carbon_extraction")
+            or rendered.get("carbon_data")
+            or {}
+        )
+        if not carbon:
+            for ao in (result.get("agent_outputs") or []):
+                if isinstance(ao, dict) and ao.get("agent") in ("carbon_extraction", "Carbon Extraction"):
+                    _co = ao.get("output") or {}
+                    if isinstance(_co, dict):
+                        carbon = _co
+                        break
+        emissions = (carbon.get("emissions") or {}) if isinstance(carbon, dict) else {}
+
+        # Headline scores: prefer rendered JSON values (post-calibration,
+        # post-cap) over raw runtime state.
+        gw_score = (
+            rendered_scores.get("greenwashingriskscore")
+            or rendered_scores.get("greenwashing_score_raw")
+            or verdict.get("greenwashing_risk_score")
+            or verdict.get("gw_score")
+            or (result.get("risk_scoring") or {}).get("greenwashing_risk_score")
+        )
+        esg_score = (
+            rendered_scores.get("esg_score")
+            or verdict.get("esg_score")
+            or (result.get("risk_scoring") or {}).get("esg_score")
+        )
+        risk_band = (
+            rendered_scores.get("risk_level")
+            or verdict.get("risk_band")
+            or verdict.get("risk_level")
+            or "UNKNOWN"
+        )
+        confidence_pct = (
+            rendered_scores.get("confidence")
+            or verdict.get("confidence_pct")
+            or verdict.get("confidence")
+        )
+        if isinstance(confidence_pct, float) and confidence_pct < 1.0:
+            # 0.65 → 65.0 — render as percentage
+            confidence_pct = round(confidence_pct * 100, 1)
+
+        # Top 3 risks from key_risk_drivers / findings / decision summary
+        risk_drivers: list = []
+        for source in (
+            verdict.get("key_risk_drivers"),
+            verdict.get("risk_drivers"),
+            (rendered.get("decision") or {}).get("key_risk_drivers"),
+            rendered.get("key_risk_drivers"),
+        ):
+            if isinstance(source, list):
+                for d in source[:3]:
+                    if isinstance(d, dict):
+                        risk_drivers.append({
+                            "title": d.get("title") or d.get("name") or d.get("driver") or "Risk driver",
+                            "impact": d.get("impact"),
+                            "direction": d.get("direction"),
+                        })
+                    elif isinstance(d, str):
+                        risk_drivers.append({"title": d})
+                if risk_drivers:
+                    break
+
+        # Last-resort: pull from contradictions
+        if not risk_drivers:
+            contras = rendered.get("contradictions") or []
+            if isinstance(contras, list):
+                for c in contras[:3]:
+                    if isinstance(c, dict):
+                        risk_drivers.append({
+                            "title": str(c.get("statement") or c.get("description") or "Contradiction")[:140],
+                            "impact": str(c.get("severity") or "MEDIUM"),
+                        })
+
+        # Enforcement detection
+        regulatory = result.get("regulatory_compliance") or {}
+        compliance = regulatory.get("compliance_result") or {}
+        active_litigation_count = 0
+        enforcement_summary = []
+        for fr in (compliance.get("frameworks") or []):
+            if not isinstance(fr, dict):
+                continue
+            if (
+                fr.get("status") == "active_enforcement"
+                or "active enforcement" in str(fr.get("framework", "")).lower()
+            ):
+                active_litigation_count += 1
+                enforcement_summary.append({
+                    "framework": fr.get("framework"),
+                    "violation": (fr.get("specific_violation") or "")[:160],
+                    "url": fr.get("evidence_url"),
+                })
+
+        # Carbon pathway
+        pathway = result.get("carbon_pathway") or {}
+        if not pathway:
+            for ao in (result.get("agent_outputs") or []):
+                if isinstance(ao, dict) and ao.get("agent") in ("carbon_pathway_analysis", "Carbon Pathway Analysis"):
+                    _po = ao.get("output") or {}
+                    if isinstance(_po, dict):
+                        pathway = _po
+                        break
+
+        # Three due-diligence questions tailored to detected gaps
+        dd_questions: list[str] = []
+        if (carbon.get("net_zero_target") or "").lower().startswith(("not declared", "carbon negative")):
+            dd_questions.append(
+                "Has management published interim milestones (5-year + 10-year) tied to "
+                "the headline climate commitment, with binding capital-allocation triggers?"
+            )
+        if active_litigation_count > 0:
+            dd_questions.append(
+                f"What is the current status of the {active_litigation_count} active "
+                f"climate-related enforcement matter(s) and what is the worst-case provision?"
+            )
+        if isinstance(emissions.get("scope3"), dict) and not (emissions["scope3"].get("total") or emissions["scope3"].get("value")):
+            dd_questions.append(
+                "Why is Scope 3 not disclosed at the GHG Protocol 15-category level? "
+                "When will the company close this disclosure gap?"
+            )
+        # Pad to three with generic critical questions
+        generic_dd = [
+            "Has the SBTi-validated near-term target been independently re-verified within the last 18 months?",
+            "What proportion of executive long-term incentive compensation is tied to ESG metrics, and which metrics specifically?",
+            "Which independent third-party assurance provider audits Scope 1, 2, and 3 disclosures?",
+        ]
+        for q in generic_dd:
+            if len(dd_questions) >= 3:
+                break
+            if q not in dd_questions:
+                dd_questions.append(q)
+
+        return {
+            "schema_version": "1.0",
+            "company": company_name,
+            "report_id": rendered.get("report_id") or verdict.get("report_id"),
+            "generated_utc": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            "headline": {
+                "greenwashing_risk_score": gw_score,
+                "esg_score": esg_score,
+                "risk_band": risk_band,
+                "confidence_pct": confidence_pct,
+            },
+            "carbon_snapshot": {
+                "scope1_tco2e": (emissions.get("scope1") or {}).get("value") if isinstance(emissions.get("scope1"), dict) else None,
+                "scope2_tco2e": (emissions.get("scope2") or {}).get("value") if isinstance(emissions.get("scope2"), dict) else None,
+                "scope3_tco2e": (emissions.get("scope3") or {}).get("total") if isinstance(emissions.get("scope3"), dict) else None,
+                "renewable_energy_pct": carbon.get("renewable_energy_percentage"),
+                "net_zero_target": carbon.get("net_zero_target"),
+                "sbti_status": carbon.get("sbti_status"),
+                "pathway_alignment": (pathway or {}).get("alignment_status") or (pathway or {}).get("status"),
+            },
+            "top_risks": risk_drivers[:3],
+            "enforcement": {
+                "active_count": active_litigation_count,
+                "items": enforcement_summary[:5],
+            },
+            "due_diligence_questions": dd_questions[:3],
+            "report_files": {
+                "txt": f"{result.get('_report_basename', 'see_disk')}.txt",
+                "json": f"{result.get('_report_basename', 'see_disk')}.json",
+            },
+        }
 
     def _to_json_safe(self, value, depth: int = 0, max_depth: int = 5, max_items: int = 200):
         """Convert nested runtime objects into bounded JSON-safe structures."""

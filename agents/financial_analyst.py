@@ -340,12 +340,50 @@ class FinancialAnalyst:
             # Calculate derived metrics
             if data["total_equity"] > 0:
                 data["debt_to_equity"] = data["total_debt"] / data["total_equity"]
-            
+
+            # Sanity check: Tesla's Yahoo Finance pull was returning
+            # totalStockholderEquity=0 with debtToEquity=18.7 (impossible
+            # for a $1T market cap company; actual FY24 equity ~$46B).
+            # Flag this so downstream narrative doesn't quote bogus numbers.
+            data["data_quality_flags"] = []
+            if data.get("market_cap") and float(data["market_cap"]) > 100_000_000_000 and (
+                not data.get("total_equity") or float(data.get("total_equity", 0)) < 1_000_000_000
+            ):
+                data["data_quality_flags"].append(
+                    "implausible_equity_value"  # $100B+ market cap with <$1B equity is impossible
+                )
+                # Use D/E as a proxy when raw equity is missing — at least
+                # it's internally consistent.
+                if data.get("total_debt") and data.get("debt_to_equity") and float(data["debt_to_equity"]) > 0:
+                    inferred = float(data["total_debt"]) / float(data["debt_to_equity"]) * 100  # yfinance D/E is %
+                    if inferred > 1_000_000_000:
+                        data["total_equity"] = inferred
+                        data["data_quality_flags"].append(
+                            f"equity_inferred_from_debt_and_de_ratio:{inferred:.0f}"
+                        )
+            # Yahoo's debtToEquity field is a percentage (debt/equity * 100),
+            # not a ratio. Some calls return the ratio directly. Normalize:
+            # if D/E > 10 with a real equity, the value is almost certainly
+            # the percentage form — divide by 100.
+            try:
+                _de = float(data.get("debt_to_equity", 0))
+                _eq = float(data.get("total_equity", 0))
+                _td = float(data.get("total_debt", 0))
+                if _de > 10 and _eq > 0 and _td > 0:
+                    expected = _td / _eq
+                    if abs(_de - expected * 100) < abs(_de - expected):
+                        data["debt_to_equity"] = expected
+                        data["data_quality_flags"].append("debt_to_equity_normalized_from_pct")
+            except (TypeError, ValueError):
+                pass
+
             print(f"\n✅ Yahoo Finance Data Extraction Summary:")
             print(f"   Revenue (TTM): ${data['revenue_ttm']:,.0f}")
             print(f"   Profit Margin: {data['profit_margin']:.1f}%")
             print(f"   Debt/Equity: {data['debt_to_equity']:.2f}")
             print(f"   Beta: {data['beta']:.2f}")
+            if data["data_quality_flags"]:
+                print(f"   Data quality flags: {data['data_quality_flags']}")
             
             # Check if data is valid
             if data['revenue_ttm'] == 0 or data['revenue_ttm'] is None:

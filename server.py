@@ -1,5 +1,5 @@
 """
-server.py
+server.pyuvico
 ---------
 ESGLens FastAPI backend server.
 Runs on port 8000 and exposes:
@@ -8,7 +8,7 @@ Runs on port 8000 and exposes:
   - Health:     /health
 
 Start with:
-  uvicorn server:app --reload --port 8000
+  rn server:app --reload --port 8000
 
 The existing pipeline (main_langgraph.py) is NOT modified.
 """

@@ -66,14 +66,29 @@ KNOWN_GREENWASHING_CASES: List[Dict[str, Any]] = [
         "company": "Shell",
         "industry": "oil_and_gas",
         "claim": "Shell claimed to be investing heavily in renewable energy and transitioning to clean energy",
-        "outcome": "CONFIRMED_GREENWASHING",
-        "regulatory_action": "Hague District Court ruling (May 2021) ordering 45% emissions cut by 2030; Dutch ASA upheld greenwashing complaint (2021)",
-        "source": "Milieudefensie v. Royal Dutch Shell, ECLI:NL:RBDHA:2021:5339",
-        "year": 2021,
-        "expected_gw_range": [70, 95],
-        "expected_esg_range": [25, 45],
-        "severity": "HIGH",
+        # OUTCOME: PARTIALLY OVERTURNED — the 2021 Hague District Court 45%
+        # reduction obligation was OVERTURNED by The Hague Court of Appeal
+        # on Nov 12, 2024 (held: insufficient scientific consensus on a
+        # specific per-company reduction percentage). The Dutch ASA 2021
+        # greenwashing finding stands. We keep this as PARTIALLY_HISTORICAL
+        # so the GW score isn't auto-floored at 70 on the basis of an
+        # appeal-overturned ruling, but the ASA upholding remains a real
+        # signal. Milieudefensie's appeal to the Dutch Supreme Court is
+        # the genuinely active proceeding; track it separately when it
+        # produces a new ruling.
+        "outcome": "PARTIALLY_HISTORICAL",
+        "regulatory_action": "Dutch ASA upheld greenwashing complaint (2021); Hague District Court 2021 ruling ordering 45% emissions cut OVERTURNED by Hague Court of Appeal Nov 12, 2024 (insufficient scientific consensus on per-company target); Milieudefensie appeal to Dutch Supreme Court pending",
+        "source": "Milieudefensie v. Royal Dutch Shell, ECLI:NL:RBDHA:2021:5339 (overturned ECLI:NL:GHDHA:2024:2091)",
+        "year": 2024,
+        # Scores reflect ASA finding + sector benchmark, NOT the
+        # overturned 45% obligation. Range loosened so the appeal
+        # reversal doesn't get stamped as a floor anymore.
+        "expected_gw_range": [50, 80],
+        "expected_esg_range": [25, 50],
+        "severity": "MEDIUM",
         "jurisdiction": "Netherlands",
+        "appeal_overturned": True,
+        "appeal_date": "2024-11-12",
     },
     {
         "case_id": "GW-004",
@@ -380,23 +395,36 @@ def get_known_contradictions(company_name: str, claim_text: str) -> List[Dict[st
         if not (case_company in company_lower or company_lower in case_company):
             continue
 
-        # Only return cases that are CONFIRMED or MIXED greenwashing
+        # Surface CONFIRMED, MIXED, and PARTIALLY_HISTORICAL outcomes.
+        # PARTIALLY_HISTORICAL = the headline finding (e.g. court ruling)
+        # was reversed on appeal but other regulatory signals (e.g. an
+        # ASA upholding) still stand. Including it preserves audit-trail
+        # context without auto-flooring the GW score on overturned rulings.
         outcome = str(case.get("outcome", "")).upper()
-        if outcome not in {"CONFIRMED_GREENWASHING", "MIXED"}:
+        if outcome not in {"CONFIRMED_GREENWASHING", "MIXED", "PARTIALLY_HISTORICAL"}:
             continue
+
+        # Severity downgrade for partially-historical cases — readers
+        # should see them as context, not as a current HIGH-severity
+        # contradiction.
+        severity = case.get("severity", "MEDIUM")
+        if outcome == "PARTIALLY_HISTORICAL" and str(severity).upper() == "HIGH":
+            severity = "MEDIUM"
 
         # Build a contradiction record
         matches.append({
             "case_id": case.get("case_id"),
-            "severity": case.get("severity", "MEDIUM"),
+            "severity": severity,
             "description": case.get("regulatory_action", "Known regulatory case"),
             "contradiction_text": case.get("regulatory_action", ""),
             "source": case.get("source", "Known contradictions database"),
             "source_url": "",
             "year": case.get("year"),
-            "confidence": "HIGH",
+            "confidence": "MEDIUM" if outcome == "PARTIALLY_HISTORICAL" else "HIGH",
             "source_type": "verified_regulatory_case",
             "outcome": outcome,
+            "appeal_overturned": bool(case.get("appeal_overturned")),
+            "appeal_date": case.get("appeal_date"),
         })
 
     return matches

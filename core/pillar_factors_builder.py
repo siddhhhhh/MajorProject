@@ -328,11 +328,25 @@ _STRUCTURED_SCORING_RULES: Dict[str, Dict[str, Any]] = {
             "average": 25.0,
             "below_average": 15.0,
         },
+        # Tightened patterns: the previous set let "5% improvement" or
+        # "5% reduction" leak through and Microsoft's actual board (5 of 12
+        # = 41.7% women) was reported as 5%. Patterns now require explicit
+        # gender-representation framing or an X-of-Y board-composition
+        # phrase. The fraction handler in _extract_best_metric_value
+        # converts X-of-Y to a percentage.
         "metric_patterns": [
-            r"board diversity[^.\n]{0,50}?(\d{1,3}(?:\.\d+)?)\s*%",
-            r"(\d{1,3}(?:\.\d+)?)\s*%[^.\n]{0,60}board diversity",
-            r"(\d{1,3}(?:\.\d+)?)\s*%[^.\n]{0,60}(?:women|female|diverse)[^.\n]{0,40}board",
-            r"(\d{1,2})\s+of\s+(\d{1,2})\s+(?:directors|board members)[^.\n]{0,40}(?:women|female|diverse)",
+            # "X of Y directors/board members are women/female/diverse"
+            r"(\d{1,2})\s+of\s+(\d{1,2})\s+(?:directors|board\s+members|nominees|board\s+seats|trustees)[^.\n]{0,60}(?:women|female|diverse)",
+            # "women directors: X of Y"
+            r"(?:women|female)\s+directors?[^.\n]{0,30}?(\d{1,2})\s+of\s+(\d{1,2})",
+            # "41.7% of board ... women"
+            r"(\d{1,3}(?:\.\d+)?)\s*%[^.\n]{0,40}(?:of\s+(?:our\s+|the\s+)?(?:board|directors|nominees|board\s+members))[^.\n]{0,40}(?:women|female|diverse|underrepresented)",
+            # "women / female / gender representation on board: X%"
+            r"(?:women|female|gender)\s+(?:directors?|representation|composition)[^.\n]{0,50}?(\d{1,3}(?:\.\d+)?)\s*%",
+            # "Board gender diversity: 41.7%"  (explicit metric label)
+            r"board\s+gender\s+(?:diversity|representation|composition)[^.\n]{0,30}?(\d{1,3}(?:\.\d+)?)\s*%",
+            # "X% women/female on (our/the) board"
+            r"(\d{1,3}(?:\.\d+)?)\s*%\s+(?:women|female)[^.\n]{0,30}(?:directors?|on\s+(?:our\s+|the\s+)?board|board\s+members)",
         ],
         "claim_keywords": ["board diversity", "women directors", "female directors", "diverse directors"],
         "policy_keywords": ["nominating committee", "board composition", "director nominee", "proxy statement"],
@@ -471,11 +485,25 @@ _STRUCTURED_SCORING_RULES: Dict[str, Dict[str, Any]] = {
             "average": 25.0,
             "below_average": 15.0,
         },
+        # Tightened patterns: the previous set let "5% improvement" or
+        # "5% reduction" leak through and Microsoft's actual board (5 of 12
+        # = 41.7% women) was reported as 5%. Patterns now require explicit
+        # gender-representation framing or an X-of-Y board-composition
+        # phrase. The fraction handler in _extract_best_metric_value
+        # converts X-of-Y to a percentage.
         "metric_patterns": [
-            r"board diversity[^.\n]{0,50}?(\d{1,3}(?:\.\d+)?)\s*%",
-            r"(\d{1,3}(?:\.\d+)?)\s*%[^.\n]{0,60}board diversity",
-            r"(\d{1,3}(?:\.\d+)?)\s*%[^.\n]{0,60}(?:women|female|diverse)[^.\n]{0,40}board",
-            r"(\d{1,2})\s+of\s+(\d{1,2})\s+(?:directors|board members)[^.\n]{0,40}(?:women|female|diverse)",
+            # "X of Y directors/board members are women/female/diverse"
+            r"(\d{1,2})\s+of\s+(\d{1,2})\s+(?:directors|board\s+members|nominees|board\s+seats|trustees)[^.\n]{0,60}(?:women|female|diverse)",
+            # "women directors: X of Y"
+            r"(?:women|female)\s+directors?[^.\n]{0,30}?(\d{1,2})\s+of\s+(\d{1,2})",
+            # "41.7% of board ... women"
+            r"(\d{1,3}(?:\.\d+)?)\s*%[^.\n]{0,40}(?:of\s+(?:our\s+|the\s+)?(?:board|directors|nominees|board\s+members))[^.\n]{0,40}(?:women|female|diverse|underrepresented)",
+            # "women / female / gender representation on board: X%"
+            r"(?:women|female|gender)\s+(?:directors?|representation|composition)[^.\n]{0,50}?(\d{1,3}(?:\.\d+)?)\s*%",
+            # "Board gender diversity: 41.7%"  (explicit metric label)
+            r"board\s+gender\s+(?:diversity|representation|composition)[^.\n]{0,30}?(\d{1,3}(?:\.\d+)?)\s*%",
+            # "X% women/female on (our/the) board"
+            r"(\d{1,3}(?:\.\d+)?)\s*%\s+(?:women|female)[^.\n]{0,30}(?:directors?|on\s+(?:our\s+|the\s+)?board|board\s+members)",
         ],
         "claim_keywords": ["board diversity", "women directors", "female directors", "diverse directors"],
         "policy_keywords": ["nominating committee", "board composition", "director nominee", "proxy statement"],
@@ -1141,13 +1169,15 @@ def _score_structured_indicator(
         fallback_source = best_policy_source or "Unverified narrative claim"
         verified = False
     else:
-        fallback_score = 0.0
-        # Distinguish "data wasn't retrieved" (no evidence sources reached
-        # the analyzer) from "actually not disclosed" (evidence exists but
-        # has no relevant content). The former is a system limitation, the
-        # latter is a real disclosure gap — conflating them mislabels VW's
-        # board composition (which IS in the annual report we just didn't
-        # retrieve a row from) as "No relevant disclosure".
+        # No quantitative metric AND no policy/claim mention — return None so
+        # the indicator is excluded from the coverage-adjusted weighted
+        # average rather than dragging the pillar score toward zero. A
+        # large NYSE-listed company always has board-independence policies,
+        # ethics hotlines, and pay-ratio disclosures (mandated by Dodd-Frank
+        # / NYSE listing standards); a 0/100 here represents an extraction
+        # gap, not a real governance failure. The "Limited Disclosure" tag
+        # in the report still flags it for the reader.
+        fallback_score = None
         if not evidence_sources:
             fallback_source = "Data not retrieved (evidence pool empty for this factor)"
         else:
@@ -1222,7 +1252,7 @@ def _score_structured_indicator(
         "data_tier": best_policy_tier if best_policy_tier <= 4 else 4,
         "methodology": (
             f"Structured threshold scoring with fallback. Primary metric: {rule.get('primary_metric')}. "
-            f"Fallback applied: verified policy=40, unverified claim=20, no mention=0."
+            f"Fallback applied: verified policy=40, unverified claim=20, no mention=excluded."
         ),
         "raw_value": None,
         "unit": rule.get("metric_unit"),
@@ -1231,7 +1261,7 @@ def _score_structured_indicator(
         "metric_source_hint": rule.get("source_hint"),
         "gri_alignment": rule.get("gri_alignment", []),
         "sasb_alignment": rule.get("sasb_alignment", []),
-        "fallback_rule": "verified policy=40, unverified claim=20, no mention=0",
+        "fallback_rule": "verified policy=40, unverified claim=20, no mention=excluded",
         "scoring_model": "structured_threshold_v1",
     }
 

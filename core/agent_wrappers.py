@@ -2347,6 +2347,12 @@ def _enrich_external_esg_benchmarks(state: ESGState) -> Dict[str, Any]:
                             sec_metrics["board_independence_pct"] = parsed["board_independence_pct"]
                         if parsed.get("ceo_worker_pay_ratio") is not None and not sec_metrics.get("pay_ratio"):
                             sec_metrics["pay_ratio"] = parsed["ceo_worker_pay_ratio"]
+                        if parsed.get("board_gender_pct") is not None and not sec_metrics.get("board_diversity_pct"):
+                            sec_metrics["board_diversity_pct"] = parsed["board_gender_pct"]
+                        if parsed.get("whistleblower_hotline") and not sec_metrics.get("whistleblower_hotline"):
+                            sec_metrics["whistleblower_hotline"] = True
+                        if parsed.get("has_anti_corruption_policy") and not sec_metrics.get("has_anti_corruption_policy"):
+                            sec_metrics["has_anti_corruption_policy"] = True
         # --- END FIX B2 ---
 
         print("SEC metrics keys:", list(sec_metrics.keys()))

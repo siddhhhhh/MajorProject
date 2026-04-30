@@ -526,8 +526,19 @@ class RiskScorer:
             triggers.append("Report tier is preliminary.")
         if confidence < 0.67:
             triggers.append("Confidence is below decision-grade threshold.")
-        if evidence_count < 4:
-            triggers.append("Too few evidence sources were retrieved.")
+        # Tightened evidence floors. The previous <4 threshold let Tesla
+        # produce numeric pillar scores from 2 sources; for credibility
+        # we require ≥5 to even emit ABSTAIN-able numbers and ≥10 for
+        # decision-grade scoring. Sources below 5 are HARD ABSTAIN; 5-9
+        # is DIRECTIONAL_ONLY (numbers shown but tagged).
+        if evidence_count < 5:
+            triggers.append(
+                f"Critically thin evidence base ({evidence_count} sources, decision floor is 5)."
+            )
+        elif evidence_count < 10:
+            triggers.append(
+                f"Thin evidence base ({evidence_count} sources, decision-grade floor is 10) — directional only."
+            )
         if used_baseline or carbon_status in {"insufficient_data", "estimated_baseline"}:
             triggers.append("Carbon data is estimated or insufficiently verified.")
         if not sg_ready:
@@ -541,12 +552,22 @@ class RiskScorer:
         if archive_snapshot_count > 0 and archive_confidence < 55:
             triggers.append("Historical snapshot quality is weak or inconsistent across archives.")
 
-        abstain = len(triggers) >= 2
+        # HARD ABSTAIN when evidence < 5 OR ≥2 other triggers fired.
+        # DIRECTIONAL_ONLY decision when evidence is 5-9 (no full ABSTAIN
+        # but the report needs a visible tier downgrade).
+        critically_thin = evidence_count < 5
+        directional_only = 5 <= evidence_count < 10
+        abstain = critically_thin or len(triggers) >= 2
+        decision_status = "ABSTAIN_RECOMMENDED" if abstain else (
+            "DIRECTIONAL_ONLY" if directional_only else "SCORED"
+        )
         return {
             "abstain_recommended": abstain,
-            "decision_status": "ABSTAIN_RECOMMENDED" if abstain else "SCORED",
+            "decision_status": decision_status,
             "reason": " ".join(triggers[:3]) if triggers else "",
             "triggers": triggers,
+            "evidence_count": evidence_count,
+            "directional_only": directional_only,
         }
 
     @staticmethod

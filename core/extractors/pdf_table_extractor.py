@@ -332,6 +332,27 @@ def extract_emissions_values(pdf_path: str) -> dict:
         "raw_matches": [],
     }
 
+    # Page-count guard: Camelot iterates per-page with lattice + stream
+    # flavors; large PDFs (Reliance's 146-page sustainability report) can
+    # OOM-kill the Python process at the C extension level — no Python
+    # exception, just a vanishing process. We skip any PDF with more than
+    # 100 pages to keep the pipeline durable. The chunk-based extractor
+    # still gets to scan the full document.
+    try:
+        import fitz  # PyMuPDF
+        with fitz.open(pdf_path) as _doc:
+            _page_count = _doc.page_count
+        if _page_count > 100:
+            logger.info(
+                "Skipping Camelot extraction for %s: %d pages exceeds 100-page guard.",
+                pdf_path, _page_count,
+            )
+            return result
+    except Exception:
+        # If page-count check fails we still attempt extraction — better
+        # to risk a crash than silently skip every PDF.
+        pass
+
     try:
         tables = extract_carbon_tables(pdf_path)
     except Exception:

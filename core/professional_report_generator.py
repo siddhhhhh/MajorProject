@@ -1986,9 +1986,45 @@ class ProfessionalReportGenerator:
             section4.append("This reflects available evidence coverage, not confirmation that the claim is accurate.")
         else:
             for c in curated_contradictions:
-                section4.append(self._indent_wrapped(f"[{c['severity']}] {c['statement']}", width=86, indent="  "))
+                # Three-tier provenance — readers must see at-a-glance
+                # whether a finding is court/registry-verified vs a
+                # news signal vs an LLM interpretation. Color-coded badges
+                # match the pattern used by financial regulators in their
+                # own enforcement bulletins.
+                _src = str(c.get("source") or "").lower()
+                _conf = str(c.get("confidence") or "").upper()
+                if any(t in _src for t in ("llm evidence synthesis", "llm synthesis", "claim_decomposition")):
+                    _provenance_tag = "⚪ [TIER-3 LLM-INFERRED]"
+                    _tier_caveat = "Interpretive finding — verify against primary sources before relying."
+                elif (
+                    "case_id" in c
+                    or "verified_regulatory_case" in _src
+                    or "ecli:" in _src
+                    or any(t in _src for t in ("sec ", "sec.gov", "ftc.", "doj", "epa.gov", "court", "ruling", "settlement", "consent decree"))
+                ):
+                    _provenance_tag = "🔴 [TIER-1 VERIFIED ENFORCEMENT]"
+                    _tier_caveat = None
+                elif any(t in _src for t in ("reuters", "bloomberg", "ap news", "ft.com", "wsj", "news", "client earth", "clientearth", "as you sow", "asyousow", "media", "press")):
+                    _provenance_tag = "🟡 [TIER-2 NEWS SIGNAL]"
+                    _tier_caveat = "Reported by media — has not been adjudicated by a regulator or court."
+                else:
+                    _provenance_tag = "🟡 [TIER-2 EVIDENCE]"
+                    _tier_caveat = None
+                section4.append(self._indent_wrapped(
+                    f"[{c['severity']}] {_provenance_tag} {c['statement']}",
+                    width=86, indent="  ",
+                ))
                 section4.append(f"      Source: {c['source']} | Year: {c['year']} | Confidence: {c['confidence']}")
+                if _tier_caveat:
+                    if "TIER-3" in _provenance_tag and _conf == "LOW":
+                        section4.append(f"      ⚠ {_tier_caveat}")
+                    else:
+                        section4.append(f"      ℹ {_tier_caveat}")
                 section4.append("")
+            # Tier legend so readers understand the badges
+            section4.append("  Tier legend: 🔴 TIER-1 = court ruling / regulatory action verified against primary source.")
+            section4.append("               🟡 TIER-2 = reported by tier-1 media; not yet adjudicated.")
+            section4.append("               ⚪ TIER-3 = LLM-inferred interpretation; treat as a hypothesis to verify.")
         frameworks = len(v["regulatory"].get("applicable_regulations", []) or [])
         section4.append(f"REGULATORY COMPLIANCE GAPS  ({len(curated_reg_gaps)} shown; {len(v['reg_gaps'])} raw gap rows across {frameworks} frameworks)")
         section4.append("-" * 61)
@@ -2417,8 +2453,17 @@ class ProfessionalReportGenerator:
         scope3_boundary = scope3.get("boundary") if isinstance(scope3, dict) else None
         if isinstance(scope3_boundary, dict) and scope3_boundary.get("boundary"):
             _b = scope3_boundary["boundary"]
+            # Label "FULL" honestly: when classification is magnitude-only
+            # (no per-category breakdown was parsed), say so. Otherwise
+            # readers see "FULL (15-category coverage)" alongside "Coverage
+            # 0/15 detected" and the report contradicts itself.
+            _full_label = (
+                "FULL (magnitude consistent with 15-category coverage; per-category breakdown not parsed)"
+                if scope3_boundary.get("magnitude_only")
+                else "FULL (15-category coverage)"
+            )
             _b_label = {
-                "FULL": "FULL (15-category coverage)",
+                "FULL": _full_label,
                 "NARROW": "NARROW (likely excludes major categories)",
                 "PARTIAL_SCOPE3": "PARTIAL — major categories disclosed outside Scope 3 total",
                 "UNKNOWN": "UNKNOWN",
@@ -3382,15 +3427,19 @@ class ProfessionalReportGenerator:
             _status_rank = {
                 "GAP": 0,
                 "ACTIVE_ENFORCEMENT": 0,
-                "UNCERTAIN": 1,
-                "COMPLIANT": 2,
-                "NOT_EVALUATED": 3,
-                "NOT EVALUATED": 3,
+                "PARTIAL_COMPLIANT": 1,
+                "UNCERTAIN": 2,
+                "COMPLIANT": 3,
+                "NOT_EVALUATED": 4,
+                "NOT EVALUATED": 4,
+                "NOT_APPLICABLE": 4,
             }
             _status_label = {
                 "ACTIVE_ENFORCEMENT": "ACTIVE_ENF",
+                "PARTIAL_COMPLIANT": "PARTIAL",
                 "NOT_EVALUATED": "NOT_TESTED",
                 "NOT EVALUATED": "NOT_TESTED",
+                "NOT_APPLICABLE": "NOT_APPLIC",
             }
             _order.sort(key=lambda k: (_status_rank.get(k[2], 4), k[0], k[1]))
             for key in _order:
@@ -3642,7 +3691,13 @@ class ProfessionalReportGenerator:
                         "regulatory_scanner": "[REGULATORY]",
                         "governance_search": "[NEWS/SEARCH]",
                     }.get(origin, f"[{origin.upper()}]")
-                    enforcement_lines.append(f"    • {origin_tag} {title}")
+                    # Published-year prefix so readers can tell historical
+                    # records apart from active ones (the governance_agent
+                    # already drops anything >10 years old, but the year
+                    # context still matters for the records that remain).
+                    pub_year = _src.get("published_year")
+                    year_prefix = f"({pub_year}) " if pub_year else ""
+                    enforcement_lines.append(f"    • {origin_tag} {year_prefix}{title}")
                     if url:
                         enforcement_lines.append(f"      {url}")
                 enforcement_lines.append("")
@@ -3740,6 +3795,21 @@ class ProfessionalReportGenerator:
                 "VERDICT",
                 major,
                 "",
+                # Top-of-verdict tier banner so the reader sees the
+                # decision-grade gate before they look at any number.
+                # ABSTAIN_RECOMMENDED → numbers suppressed elsewhere;
+                # DIRECTIONAL_ONLY → numbers shown but flagged as below
+                # the 10-source decision floor; SCORED → no banner.
+                *([
+                    "  ⚠⚠⚠  ABSTAIN_RECOMMENDED — evidence base is below the 5-source decision floor.",
+                    "  Numeric scores below are NOT decision-grade. Treat as weak directional signals only.",
+                    "",
+                ] if decision_status == "ABSTAIN_RECOMMENDED" else
+                [
+                    "  ⚠  DIRECTIONAL_ONLY — evidence base is below the 10-source decision-grade floor.",
+                    "  Scores are produced for triage but should not be used for decision-grade reliance.",
+                    "",
+                ] if decision_status == "DIRECTIONAL_ONLY" else []),
                 f"  Greenwashing Risk Score:  {gw_score_disp}",
                 f"  ESG Score:                {esg_score_disp}",
                 f"  ESG Rating:               {v['rating']}",
@@ -5900,6 +5970,22 @@ class ProfessionalReportGenerator:
         context_sources = context.get("citations", []) if isinstance(context.get("citations"), list) else []
         agent_sources = evidence_out.get("citations", []) or evidence_out.get("evidence", []) or []
         total_sources = len(context_sources) or len(agent_sources or [])
+        # Min-source floor: when fewer than 5 sources reached the analyzer,
+        # the pipeline is producing scores from a critically thin base.
+        # Surface this as a HIGH-severity finding so readers don't take the
+        # numeric scores at face value (Tesla scored from 2 sources was
+        # the trigger). Matches the existing 70% confidence-ceiling treatment.
+        if total_sources < 5:
+            findings.append(
+                f"[!] HIGH - Critically low evidence base ({total_sources} sources) — "
+                f"scores below should be treated as DIRECTIONAL only; the pipeline "
+                f"could not reach decision-grade source coverage for this run"
+            )
+        elif total_sources < 10:
+            findings.append(
+                f"[~] MEDIUM - Thin evidence base ({total_sources} sources) — "
+                f"calibration sample insufficient for high-trust decisions"
+            )
         findings.append(f"[i] INFO - {total_sources} sources analyzed")
 
         if not any("regulatory" in f.lower() for f in findings):
@@ -7852,13 +7938,42 @@ Industry Baseline Adjustment: {industry_adj:+.1f} points
         offset_status = str(pillar_scores.get("offset_transparency_status", "unknown")).lower()
         offset_penalty = float(pillar_scores.get("offset_penalty", 0) or 0)
 
+        # Fallback: pull directly from carbon_extraction agent output. The
+        # risk_scoring pillar_scores rarely carries offset_transparency_status,
+        # so without this every report defaulted to "unknown" → "weak".
+        if offset_status in ("unknown", ""):
+            for output in agent_outputs:
+                if not isinstance(output, dict):
+                    continue
+                if output.get("agent") in ("carbon_extraction", "Carbon Extraction"):
+                    _carbon_out = output.get("output") or {}
+                    _ot = _carbon_out.get("offset_transparency") if isinstance(_carbon_out, dict) else None
+                    if isinstance(_ot, dict) and _ot.get("status"):
+                        offset_status = str(_ot.get("status")).lower()
+                        if not offset_penalty:
+                            offset_penalty = float(_ot.get("risk_penalty_points") or 0)
+                        break
+
+        # The audit (carbon_extractor._audit_offset_transparency) returns
+        # statuses like "balanced_or_removal_weighted",
+        # "moderate_avoidance_reliance", "high_avoidance_reliance",
+        # "offset_disclosure_uncategorized", "no_offset_disclosure". The
+        # previous mapping only matched legacy labels (transparent/mixed/
+        # opaque) so every report came back as "weak (unknown)". The
+        # extended mapping below covers the actual statuses produced.
         offset_integrity = "unknown"
-        if offset_status in {"transparent", "credible"}:
+        if offset_status in {"transparent", "credible", "balanced_or_removal_weighted"}:
             offset_integrity = "strong"
-        elif offset_status in {"mixed", "partial"}:
+        elif offset_status in {"mixed", "partial", "moderate_avoidance_reliance", "offset_disclosure_uncategorized"}:
             offset_integrity = "moderate"
-        elif offset_status in {"opaque_avoidance_heavy", "opaque", "unknown", "not_disclosed"}:
+        elif offset_status in {"opaque_avoidance_heavy", "opaque", "high_avoidance_reliance"}:
             offset_integrity = "weak"
+        elif offset_status in {"no_offset_disclosure", "not_disclosed"}:
+            # Distinguish "not disclosed" from "weak" — a company that
+            # doesn't use offsets isn't running a weak offset programme.
+            offset_integrity = "not_applicable"
+        elif offset_status == "unknown":
+            offset_integrity = "unknown"
 
         has_target = bool(dei_progress.get("has_target", False))
         has_actual = bool(dei_progress.get("has_actual", False))

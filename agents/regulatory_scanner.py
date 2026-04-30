@@ -1356,12 +1356,19 @@ def evaluate_real_compliance(
     for raw in raw_results:
         framework = raw.get("framework", "")
         verified = raw.get("verified")
+        partial = bool(raw.get("partial_compliant"))
         applicable = raw.get("applicable", True)
 
         if not applicable:
             status = "not_applicable"
             penalty = 0
             material = False
+        elif verified is True and partial:
+            # SBTi partial — at least one track active, at least one
+            # removed. Material for net-zero claim evaluations.
+            status = "partial_compliant"
+            penalty = 8
+            material = True
         elif verified is True:
             status = "compliant"
             penalty = 0
@@ -1387,6 +1394,8 @@ def evaluate_real_compliance(
             "material_misstatement_risk": material,
             "real_data": True,
             "applicable": applicable,
+            "partial_compliant": partial,
+            "removed_tracks": raw.get("removed_tracks", []),
         })
 
     summary = {

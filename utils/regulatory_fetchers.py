@@ -786,12 +786,18 @@ def fetch_cdp_disclosure(company: str, country: str = "") -> Dict[str, Any]:
             "applicable": True,
             "score_grade": "A",
         }
+    # NOT on A-List ≠ non-disclosure. Companies graded A-/B/C/D still
+    # disclose to CDP — we just can't see their specific grade without an
+    # account. Returning UNCERTAIN (verified=None) avoids penalising every
+    # non-A-list company as a regulatory "gap" when they may be disclosing
+    # at lower grades.
     return {
         "framework": framework,
-        "verified": False,
+        "verified": None,
         "evidence": (
-            f"Not on CDP's public Climate A-List. May still disclose at lower grades "
-            f"(A-, B, C, D) — CDP per-company scores require account access."
+            f"Not on CDP's public Climate A-List ({len(a_list)} companies). "
+            f"This does NOT confirm non-disclosure — companies graded A-/B/C/D "
+            f"still disclose to CDP but per-company scores require account access."
         ),
         "url": _CDP_A_LIST_URLS[0],
         "fetched_at": _today(),
@@ -1079,16 +1085,83 @@ def fetch_sbti_status(company: str, country: str = "") -> Dict[str, Any]:
                 return True
         return False
 
+    def _format_sbti_statuses(rec: Dict[str, Any]) -> str:
+        """Render the three SBTi tracks as a human-readable string.
+
+        Filters NaN/empty/None, prefixes each track with its label, and
+        returns "—" when nothing useful is left. Without this we produced
+        confusing strings like "Targets set / nan / Commitment removed"
+        where the middle "nan" was a pandas missing-value marker.
+        """
+        parts: List[str] = []
+        for label, key in (
+            ("near-term", "near_term_status"),
+            ("long-term", "long_term_status"),
+            ("net-zero", "net_zero_status"),
+        ):
+            v = str(rec.get(key, "") or "").strip()
+            if not v or v.lower() in ("nan", "none", "n/a", "na"):
+                continue
+            parts.append(f"{label}: {v}")
+        return " | ".join(parts) if parts else "no track status reported"
+
+    def _has_removed_track(rec: Dict[str, Any]) -> bool:
+        """True if any individual track is marked Commitment removed / Expired.
+
+        Used to flag PARTIAL compliance — Microsoft's net-zero commitment
+        was removed by SBTi in March 2024 (along with 239 others) for
+        missing the 24-month submission window, even though the near-term
+        target remains validated. Labelling that as a clean COMPLIANT
+        misleads readers evaluating a net-zero claim.
+        """
+        for k in ("near_term_status", "long_term_status", "net_zero_status"):
+            s = str(rec.get(k, "") or "").lower().strip()
+            if not s or s == "nan":
+                continue
+            if s in _SBTI_INVALID_STATUSES:
+                return True
+        return False
+
     active_matches = [r for r in matches if _is_active(r)]
     if active_matches:
         best = active_matches[0]
-        statuses = " / ".join(filter(None, [
-            best.get("near_term_status"), best.get("long_term_status"),
-            best.get("net_zero_status"),
-        ]))
+        statuses = _format_sbti_statuses(best)
+        partial = _has_removed_track(best)
+        if partial:
+            # Identify which specific track(s) lapsed so the report names them.
+            removed_tracks = []
+            for label, key in (
+                ("near-term", "near_term_status"),
+                ("long-term", "long_term_status"),
+                ("net-zero", "net_zero_status"),
+            ):
+                s = str(best.get(key, "") or "").lower().strip()
+                if s and s != "nan" and s in _SBTI_INVALID_STATUSES:
+                    removed_tracks.append(label)
+            removed_str = ", ".join(removed_tracks) if removed_tracks else "one or more tracks"
+            return {
+                "framework": framework,
+                # verified=True keeps the company "on the registry" but the
+                # partial_compliant flag signals to scoring that this is
+                # NOT a clean pass — net-zero/long-term lapses materially
+                # weaken any net-zero claim.
+                "verified": True,
+                "partial_compliant": True,
+                "removed_tracks": removed_tracks,
+                "evidence": (
+                    f"PARTIAL SBTi commitment for '{best.get('name_original', best.get('name'))}' — "
+                    f"status: {statuses}. ⚠ {removed_str.upper()} commitment removed by SBTi (likely missed 24-month "
+                    f"submission deadline). Other tracks remain validated. (Registry size: {len(records):,})"
+                ),
+                "url": _SBTI_EXCEL_URL,
+                "fetched_at": _today(),
+                "source_name": "SBTi",
+                "applicable": True,
+            }
         return {
             "framework": framework,
             "verified": True,
+            "partial_compliant": False,
             "evidence": (
                 f"Active SBTi commitment for '{best.get('name_original', best.get('name'))}' — "
                 f"status: {statuses}. (Registry size: {len(records):,})"
@@ -1100,10 +1173,7 @@ def fetch_sbti_status(company: str, country: str = "") -> Dict[str, Any]:
         }
     # All matches inactive — name IS in registry but commitment removed/expired
     inactive = matches[0]
-    statuses = " / ".join(filter(None, [
-        inactive.get("near_term_status"), inactive.get("long_term_status"),
-        inactive.get("net_zero_status"),
-    ])) or "no active status"
+    statuses = _format_sbti_statuses(inactive)
     reason = inactive.get("name_original", "")
     return {
         "framework": framework,
@@ -1144,7 +1214,11 @@ def fetch_ghg_protocol_alignment(
             "applicable": True,
         }
     full_text_parts: List[str] = []
-    for chunk in report_chunks[:600]:  # bound the scan
+    # Scan up to 1500 chunks: Shell / Reliance reports run 1000+ chunks
+    # and the Scope 2 dual-methodology table is typically deep in the
+    # data appendix. The previous 600-chunk cap silently dropped that
+    # disclosure and produced a false-positive GAP.
+    for chunk in report_chunks[:1500]:
         if not isinstance(chunk, dict):
             continue
         t = chunk.get("text") or chunk.get("page_content") or ""
@@ -1168,12 +1242,31 @@ def fetch_ghg_protocol_alignment(
         r"greenhouse\s+gas\s+protocol",
         r"wri\s*/\s*wbcsd",
         r"world\s+resources\s+institute.*world\s+business\s+council",
+        # SBTi / CDP guidance also explicitly anchors to GHG Protocol — both
+        # require reporting "in line with" / "aligned with" GHG Protocol.
+        r"in\s+(?:line|accordance|alignment)\s+with\s+(?:the\s+)?(?:ghg|greenhouse\s+gas)\s+protocol",
     ]
     has_citation = any(re.search(p, text) for p in citation_patterns)
 
-    # Scope 2 dual reporting (Scope 2 Guidance, Section 5)
-    has_market_based = bool(re.search(r"market[-\s]+based", text))
-    has_location_based = bool(re.search(r"location[-\s]+based", text))
+    # Scope 2 dual reporting (Scope 2 Guidance, Section 5).
+    # Permissive patterns: the previous "market[-\s]+based" missed table
+    # forms like "Scope 2 (market) | 8 MtCO2e | Scope 2 (location) | 7
+    # MtCO2e" where the word "based" is implied by the column header.
+    market_patterns = [
+        r"market[-\s]?based",
+        r"scope\s*2\s*\(?\s*market\b",
+        r"market\s+method(?:olog)?",
+        r"\(market[-\s]?based\)",
+    ]
+    location_patterns = [
+        r"location[-\s]?based",
+        r"scope\s*2\s*\(?\s*location\b",
+        r"location\s+method(?:olog)?",
+        r"\(location[-\s]?based\)",
+        r"grid\s+average",
+    ]
+    has_market_based = any(re.search(p, text) for p in market_patterns)
+    has_location_based = any(re.search(p, text) for p in location_patterns)
     dual_s2 = has_market_based and has_location_based
 
     # Operational vs financial control boundary
@@ -1223,12 +1316,17 @@ def fetch_ghg_protocol_alignment(
             "source_name": "GHG Protocol (in-disclosure)",
             "applicable": True,
         }
+    # Neither citation nor dual reporting detected. We can't conclusively
+    # call this a gap — the parsed chunks may have missed the data
+    # appendix. Return UNCERTAIN so we don't penalise a company whose
+    # disclosure is real but lives outside our parsing window.
     return {
         "framework": framework,
-        "verified": False,
+        "verified": None,
         "evidence": (
             "No explicit GHG Protocol citation and no dual market/location-based Scope 2 "
-            "reporting found in parsed disclosures."
+            "reporting found in parsed disclosures (this can also reflect a parse-coverage "
+            "gap; absence of evidence is not evidence of absence)."
         ),
         "url": "https://ghgprotocol.org/corporate-standard",
         "fetched_at": _today(),
@@ -1450,13 +1548,72 @@ def fetch_ftc_green_guides(company: str, country: str = "") -> Dict[str, Any]:
 _ESEF_API_URL = "https://filings.xbrl.org/api/filings"
 
 
-def fetch_csrd_esef_filing(company: str, country: str = "") -> Dict[str, Any]:
-    """Verify EU CSRD / ESEF filing against the public XBRL filings API."""
+def fetch_csrd_esef_filing(
+    company: str, country: str = "", report_chunks: Optional[List[Dict[str, Any]]] = None
+) -> Dict[str, Any]:
+    """Verify EU CSRD / ESEF filing against the public XBRL filings API.
+
+    The XBRL Filings API has thin entity coverage (~200 sampled per call),
+    so a "not in API" result by itself isn't conclusive. When the company's
+    own parsed disclosure attests to CSRD / ESRS compliance (Sustainability
+    Statements section, double materiality assessment, ESRS standards), we
+    treat that as VERIFIED — same approach as the TCFD fetcher.
+    """
     framework = "CSRD / EU ESEF Filing"
     cache_path = _cache_key("csrd_esef", _normalize_company_name(company))
     cached = _cache_get(cache_path, ttl_days=DEFAULT_TTL_DAYS)
     if cached:
         return cached
+
+    # In-disclosure attestation path: scan parsed report chunks for CSRD /
+    # ESRS / Sustainability Statements signals before going to the API.
+    # Shell's 2024 Annual Report has a "Sustainability Statements" section
+    # explicitly aligned to CSRD/ESRS — the API didn't list Shell, so the
+    # previous code returned UNCERTAIN. With this attestation we get
+    # VERIFIED on the strength of the issuer's own disclosure.
+    if report_chunks:
+        text_parts: List[str] = []
+        for chunk in report_chunks[:1500]:
+            if not isinstance(chunk, dict):
+                continue
+            t = chunk.get("text") or chunk.get("page_content") or ""
+            if t:
+                text_parts.append(str(t))
+        text = "\n".join(text_parts).lower()
+        csrd_signals = [
+            ("Corporate Sustainability Reporting Directive citation",
+             r"corporate\s+sustainability\s+reporting\s+directive"),
+            ("CSRD compliance / alignment",
+             r"csrd\s+(?:compliance|aligned|reporting|disclosure)|in\s+(?:line|accordance|compliance|alignment)\s+with\s+(?:the\s+)?csrd"),
+            ("European Sustainability Reporting Standards (ESRS)",
+             r"european\s+sustainability\s+reporting\s+standards|\besrs\s+(?:e[1-5]|s[1-4]|g1|2)\b"),
+            ("CSRD-style Sustainability Statements section",
+             r"sustainability\s+statements"),
+            ("Double materiality assessment",
+             r"double\s+materiality"),
+        ]
+        hit_labels: List[str] = []
+        for label, pattern in csrd_signals:
+            if re.search(pattern, text):
+                hit_labels.append(label)
+        # Require at least 2 distinct signals to reduce false positives
+        # ("CSRD" mentioned in passing isn't compliance).
+        if len(hit_labels) >= 2:
+            result = {
+                "framework": framework,
+                "verified": True,
+                "evidence": (
+                    f"Company's own disclosure attests to CSRD / ESRS alignment "
+                    f"(detected: {'; '.join(hit_labels[:3])}; full disclosure verification "
+                    f"requires ESEF XBRL filing review)."
+                ),
+                "url": _ESEF_API_URL,
+                "fetched_at": _today(),
+                "source_name": "CSRD (in-disclosure attestation)",
+                "applicable": True,
+            }
+            _cache_set(cache_path, result)
+            return result
 
     result: Dict[str, Any]
     try:
@@ -1869,12 +2026,11 @@ def fetch_all_real_compliance(
         fetch_gri_disclosure,
     ]
 
-    # Jurisdiction-specific fetchers
+    # Jurisdiction-specific fetchers (excluding CSRD which now needs
+    # report_chunks and runs through the in-disclosure path below).
     jurisdictional: List[Any] = []
     if juris == "US":
         jurisdictional.extend([fetch_sec_climate_disclosure, fetch_ftc_green_guides])
-    elif juris == "EU":
-        jurisdictional.append(fetch_csrd_esef_filing)
     elif juris == "IN":
         jurisdictional.append(fetch_nse_bse_listing)
     elif juris == "UK":
@@ -1882,12 +2038,11 @@ def fetch_all_real_compliance(
         # is global. The base scanner adds FCA Anti-Greenwashing checks
         # via its keyword rules, which still flow through unified_frameworks.
         pass
-    else:
-        # Run all gated fetchers; they'll self-classify as N/A based on country.
+    elif juris not in {"EU"}:
+        # Other jurisdictions: run gated fetchers (they self-classify as N/A).
         jurisdictional.extend([
             fetch_sec_climate_disclosure,
             fetch_ftc_green_guides,
-            fetch_csrd_esef_filing,
         ])
 
     for fn in global_fetchers + jurisdictional:
@@ -1897,6 +2052,15 @@ def fetch_all_real_compliance(
                 rows.append(row)
         except Exception as exc:
             logger.warning("%s failed for %s: %s", fn.__name__, company, exc)
+
+    # CSRD / ESEF: now accepts report_chunks for the in-disclosure path
+    # (Sustainability Statements + ESRS standards in the issuer's own
+    # report). Run only for EU jurisdictions where CSRD applies.
+    if juris == "EU" or juris == "OTHER":
+        try:
+            rows.append(fetch_csrd_esef_filing(company, country, report_chunks=report_chunks))
+        except Exception as exc:
+            logger.warning("fetch_csrd_esef_filing failed for %s: %s", company, exc)
 
     # TCFD adoption — needs report_chunks for the in-disclosure attestation
     # path that catches companies (e.g. Volkswagen) absent from the

@@ -166,11 +166,18 @@ class GovernanceAgent:
         return " ".join(parts)
 
     def _parse_sec_proxy_filings(self, company: str) -> Dict[str, Any]:
-        filings = self.fetcher.get_sec_filings_realtime(company)
+        # Two-pass strategy:
+        #   1. Direct DEF 14A query against SEC EDGAR (type=DEF+14A) — much
+        #      more reliable than filtering the generic "all filings" feed.
+        #      The previous code was looking through 12 mixed-type results
+        #      and frequently never saw a DEF 14A even for companies that
+        #      file one every year (Microsoft, JPM, Tesla all on EDGAR).
+        #   2. Fall back to the generic feed for non-US-listed companies.
+        filings = self._fetch_def14a_filings_direct(company) or self.fetcher.get_sec_filings_realtime(company)
         proxy_filings = []
         sources: List[Dict[str, Any]] = []
 
-        for row in filings[:12]:
+        for row in (filings or [])[:12]:
             if not isinstance(row, dict):
                 continue
             title = str(row.get("title", ""))
@@ -204,6 +211,112 @@ class GovernanceAgent:
             "sources": sources,
         }
 
+    def _fetch_def14a_filings_direct(self, company: str) -> List[Dict[str, Any]]:
+        """Direct SEC EDGAR query for DEF 14A proxy statements.
+
+        Two-step:
+          1. Resolve CIK via SEC's company_tickers JSON (free, no auth).
+          2. Fetch DEF 14A filings list via the company_facts/submissions API.
+
+        Returns rows compatible with `get_sec_filings_realtime` so the
+        downstream filter loop is unchanged. SEC requires a User-Agent
+        header with a contact email per their fair-use policy.
+        """
+        if not company:
+            return []
+        try:
+            sec_headers = {
+                "User-Agent": "ESGLens Research siddh@esglens.example contact",
+                "Accept-Encoding": "gzip, deflate",
+            }
+            # Step 1: Resolve CIK from company name. Cache the lookup table.
+            if not hasattr(self, "_sec_ticker_cache"):
+                tickers_url = "https://www.sec.gov/files/company_tickers.json"
+                try:
+                    resp = requests.get(tickers_url, headers=sec_headers, timeout=15)
+                    if resp.status_code == 200:
+                        self._sec_ticker_cache = resp.json()
+                    else:
+                        self._sec_ticker_cache = {}
+                except Exception:
+                    self._sec_ticker_cache = {}
+
+            cik_padded: Optional[str] = None
+            company_lower = company.lower().strip()
+            company_tokens = [
+                t for t in re.split(r"[^a-z0-9]+", company_lower)
+                if len(t) >= 4 and t not in {"corp", "inc", "ltd", "plc", "company", "limited"}
+            ]
+            if not company_tokens:
+                short = company_lower.split()[0]
+                if 2 <= len(short) <= 4:
+                    company_tokens = [short]
+            for entry in (self._sec_ticker_cache or {}).values():
+                if not isinstance(entry, dict):
+                    continue
+                title = str(entry.get("title", "")).lower()
+                ticker = str(entry.get("ticker", "")).lower()
+                if not company_tokens:
+                    continue
+                if any(tok in title for tok in company_tokens) or ticker in company_tokens:
+                    cik = entry.get("cik_str")
+                    if cik is not None:
+                        cik_padded = str(int(cik)).zfill(10)
+                        break
+            if not cik_padded:
+                return []
+
+            # Step 2: Fetch recent submissions list and filter for DEF 14A.
+            sub_url = f"https://data.sec.gov/submissions/CIK{cik_padded}.json"
+            sub_resp = requests.get(sub_url, headers=sec_headers, timeout=15)
+            if sub_resp.status_code != 200:
+                return []
+            sub = sub_resp.json()
+            recent = (sub.get("filings") or {}).get("recent") or {}
+            forms = recent.get("form") or []
+            accession_numbers = recent.get("accessionNumber") or []
+            primary_documents = recent.get("primaryDocument") or []
+            filing_dates = recent.get("filingDate") or []
+            # Two-pass: first prioritize DEF 14A (the actual proxy
+            # statement with board composition / pay tables), then
+            # DEFA14A (amendments) as fallback. DEFA14A filings are
+            # typically short supplemental documents that don't carry the
+            # structured tables we need to parse — Microsoft's 5 most
+            # recent DEFA14As all returned null on board-independence.
+            def14a_results: List[Dict[str, Any]] = []
+            defa14a_results: List[Dict[str, Any]] = []
+            for i, form_type in enumerate(forms):
+                form_upper = str(form_type).upper().strip()
+                if form_upper not in {"DEF 14A", "DEFA14A"}:
+                    continue
+                if i >= len(accession_numbers) or i >= len(primary_documents):
+                    continue
+                accession = str(accession_numbers[i]).replace("-", "")
+                doc = primary_documents[i]
+                filed = filing_dates[i] if i < len(filing_dates) else ""
+                url = (
+                    f"https://www.sec.gov/Archives/edgar/data/"
+                    f"{int(cik_padded)}/{accession}/{doc}"
+                )
+                row = {
+                    "source": "SEC EDGAR (data.sec.gov)",
+                    "url": url,
+                    "title": f"{sub.get('name', company)} - {form_type} ({filed})",
+                    "snippet": f"Filed: {filed} | Type: {form_type} | CIK: {cik_padded}",
+                    "date": filed,
+                    "form_type": str(form_type),
+                    "data_source": "SEC EDGAR - submissions API",
+                }
+                if form_upper == "DEF 14A":
+                    def14a_results.append(row)
+                else:
+                    defa14a_results.append(row)
+                if len(def14a_results) >= 3:
+                    break
+            return (def14a_results + defa14a_results)[:5]
+        except Exception:
+            return []
+
     def _extract_proxy_metrics_from_url(self, url: str) -> Dict[str, Optional[float]]:
         if not url:
             return {}
@@ -220,16 +333,24 @@ class GovernanceAgent:
             soup = BeautifulSoup(resp.text[:600000], "html.parser")
             text = soup.get_text(" ", strip=True).lower()
 
-            # Board independence — number AFTER keyword OR number BEFORE keyword
+            # Board independence — % patterns OR X-of-Y fraction. The
+            # X-of-Y form ("11 of our 12 directors are independent") is
+            # how Microsoft/JPM proxies usually phrase it; the previous
+            # regex captured only the numerator and treated it as a raw
+            # percentage (Microsoft scored 11% independent).
             board_independence_pct = (
                 self._first_percent(text, r"(?:board independence|independent directors|independent non-executive directors)[^\d]{0,40}(\d{1,3}(?:\.\d+)?)\s*%")
                 or self._first_percent(text, r"(\d{1,3}(?:\.\d+)?)\s*%\s{0,40}(?:of\s+(?:the\s+)?)?(?:board members|directors)\s{0,40}(?:are\s+)?independent")
-                or self._first_percent(text, r"(\d{1,2})\s+of\s+\d{1,2}\s+(?:directors|board members)\s{0,40}(?:are\s+)?independent")
+                or self._first_fraction_pct(text, r"(\d{1,2})\s+of\s+(?:our\s+|the\s+)?(\d{1,2})\s+(?:director\s+nominees|directors|board\s+members|nominees)\s{0,40}(?:are\s+)?independent")
+                or self._first_fraction_pct(text, r"(\d{1,2})\s+of\s+(?:the\s+)?(\d{1,2})\s+(?:director\s+nominees|directors|board\s+members)\s{0,40}qualify\s+as\s+independent")
+                or self._first_fraction_pct(text, r"of\s+(?:our|the)\s+(\d{1,2})\s+(?:director\s+nominees|directors)[^.\n]{0,80}?(\d{1,2})\s+(?:are\s+)?independent")
             )
-            # Board gender — bidirectional
+            # Board gender — bidirectional + X-of-Y fraction handler
             board_gender_pct = (
-                self._first_percent(text, r"(?:board gender|women on board|female directors|women in the board)[^\d]{0,40}(\d{1,3}(?:\.\d+)?)\s*%")
-                or self._first_percent(text, r"(\d{1,3}(?:\.\d+)?)\s*%\s{0,40}(?:of\s+(?:the\s+)?)?(?:directors|board members)\s{0,40}(?:are\s+)?women")
+                self._first_percent(text, r"(?:board gender|women on board|female directors|women in the board|gender\s+representation)[^\d]{0,40}(\d{1,3}(?:\.\d+)?)\s*%")
+                or self._first_percent(text, r"(\d{1,3}(?:\.\d+)?)\s*%\s{0,40}(?:of\s+(?:the\s+)?)?(?:directors|board members|nominees)\s{0,40}(?:are\s+)?(?:women|female)")
+                or self._first_fraction_pct(text, r"(\d{1,2})\s+of\s+(?:our\s+|the\s+)?(\d{1,2})\s+(?:director\s+nominees|directors|board\s+members|nominees)\s{0,40}(?:are\s+)?(?:women|female)")
+                or self._first_fraction_pct(text, r"of\s+(?:our|the)\s+(\d{1,2})\s+(?:director\s+nominees|directors)[^.\n]{0,80}?(\d{1,2})\s+(?:are\s+)?(?:women|female)")
             )
             # CEO-to-worker pay ratio — NUMBER:1 format, bidirectional
             ceo_worker_pay_ratio = (
@@ -250,6 +371,19 @@ class GovernanceAgent:
             audit_committee_independence = (
                 "audit committee" in text and "100" in text and "independent" in text
             )
+            # Whistleblower / ethics hotline disclosure — NYSE / Nasdaq /
+            # Sarbanes-Oxley §301 require these for listed companies.
+            whistleblower_hotline = any(p in text for p in (
+                "ethics hotline", "ethics helpline", "whistleblower hotline",
+                "speak up line", "speakup line", "speak-up line",
+                "anonymous reporting", "compliance hotline",
+            ))
+            # Anti-corruption / code of conduct disclosure
+            has_anti_corruption_policy = any(p in text for p in (
+                "code of conduct", "anti-corruption", "anti-bribery",
+                "fcpa compliance", "uk bribery act", "anti-money laundering",
+                "ethics training",
+            ))
             return {
                 "board_independence_pct": board_independence_pct,
                 "board_gender_pct": board_gender_pct,
@@ -257,6 +391,8 @@ class GovernanceAgent:
                 "lti_esg_pct": lti_esg_pct,
                 "board_size": board_size,
                 "audit_committee_independence": audit_committee_independence,
+                "whistleblower_hotline": whistleblower_hotline,
+                "has_anti_corruption_policy": has_anti_corruption_policy,
             }
         except Exception:
             return {}
@@ -346,6 +482,27 @@ class GovernanceAgent:
             if 2 <= len(short) <= 4:
                 company_tokens = [short]
 
+        # Stale-record filter: Section 7C was carrying 25-year-old vacated
+        # rulings (e.g. the 2000 Microsoft antitrust split, overturned in
+        # 2001) alongside genuinely active 2026 cases without any date
+        # cue, creating a misleading picture of ongoing legal exposure.
+        # We pull the publication year from the URL or title and either
+        # drop records older than the cutoff or tag them as HISTORICAL so
+        # readers can distinguish current from historical exposure.
+        from datetime import datetime as _dt
+        _current_year = _dt.utcnow().year
+        STALE_CUTOFF_YEARS = 10
+
+        def _detect_year(blob: str) -> Optional[int]:
+            for m in _re.finditer(r"(19[89]\d|20[0-3]\d)", blob):
+                try:
+                    yr = int(m.group(1))
+                    if 1990 <= yr <= _current_year:
+                        return yr
+                except ValueError:
+                    continue
+            return None
+
         for q in queries:
             for item in search_duckduckgo(q, max_results=2):
                 title = str(item.get("title", "") or "")
@@ -359,11 +516,19 @@ class GovernanceAgent:
                 if company_tokens and not any(tok in hay_for_match for tok in company_tokens):
                     continue
 
+                # Extract year. Prefer URL (canonical date paths like
+                # /2024/03/ or -2024-) over title (titles get rewritten).
+                detected_year = _detect_year(url) or _detect_year(title) or _detect_year(snippet)
+                if detected_year is not None and (_current_year - detected_year) > STALE_CUTOFF_YEARS:
+                    # Skip records older than cutoff entirely.
+                    continue
+
                 sources.append(
                     {
                         "title": title,
                         "url": url,
                         "source": "Regulatory/legal search",
+                        "published_year": detected_year,
                     }
                 )
                 hay = f"{title} {snippet}".lower()
@@ -422,6 +587,32 @@ class GovernanceAgent:
             return float(numeric.group(0)) if numeric else None
         except (ValueError, IndexError, AttributeError):
             return None
+
+    def _first_fraction_pct(self, text: str, pattern: str) -> Optional[float]:
+        """Extract first X-of-Y match and return (X/Y)*100.
+
+        Handles both forms: '(X) of (Y)' and '(Y) of ... (X)'. We sort
+        the two captured numbers so the smaller one is X (numerator) and
+        the larger one is Y (denominator) — this works for "11 of 12
+        directors" and "of our 12 directors, 11 are independent".
+        """
+        match = re.search(pattern, text)
+        if not match or not match.lastindex or match.lastindex < 2:
+            return None
+        try:
+            a = float(match.group(1))
+            b = float(match.group(2))
+        except (ValueError, IndexError):
+            return None
+        if a <= 0 or b <= 0:
+            return None
+        # Order so larger is denominator. Sanity: both ≤ 30 (board size cap).
+        if a > 30 or b > 30:
+            return None
+        x, y = (a, b) if a <= b else (b, a)
+        if y == 0:
+            return None
+        return round((x / y) * 100.0, 1)
 
     def _first_number(self, text: str, pattern: str) -> Optional[float]:
         match = re.search(pattern, text)

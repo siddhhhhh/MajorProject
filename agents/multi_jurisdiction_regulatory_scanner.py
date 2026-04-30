@@ -13,6 +13,36 @@ JURISDICTION_MAP = {
     "automotive": ["EU", "US", "California", "China"],
 }
 
+# HQ-country to relevant jurisdictions. When the company's HQ country is
+# known, this NARROWS the industry-driven jurisdiction list — without it
+# Reliance Industries (HQ India) was scored against Netherlands AFM /
+# Dutch courts because the energy-industry default includes Netherlands
+# from Shell. Industry-jurisdiction defaults are kept as a fallback for
+# companies with multinational footprints (Shell, BP, TotalEnergies have
+# real EU/UK/NL exposure even when HQ'd elsewhere).
+HQ_COUNTRY_RELEVANT_JURISDICTIONS = {
+    "US": {"US", "California", "Global"},
+    "USA": {"US", "California", "Global"},
+    "UK": {"UK", "EU", "Global"},
+    "GB": {"UK", "EU", "Global"},
+    "EU": {"EU", "Global"},
+    "NL": {"Netherlands", "EU", "Global"},
+    "Netherlands": {"Netherlands", "EU", "Global"},
+    "DE": {"EU", "Global"},
+    "Germany": {"EU", "Global"},
+    "FR": {"EU", "Global"},
+    "France": {"EU", "Global"},
+    "IN": {"India", "Global"},
+    "India": {"India", "Global"},
+    "CN": {"China", "Global"},
+    "China": {"China", "Global"},
+    "JP": {"Japan", "Global"},
+    "Japan": {"Japan", "Global"},
+    "AU": {"Australia", "Global"},
+    "BR": {"Brazil", "Global"},
+    "ZA": {"SouthAfrica", "Global"},
+}
+
 
 class MultiJurisdictionRegulatoryScanner:
     def __init__(self) -> None:
@@ -26,10 +56,31 @@ class MultiJurisdictionRegulatoryScanner:
         }
 
     def detect_jurisdictions(self, industry: str, hq_country: str = "") -> List[str]:
+        """Pick the relevant regulatory jurisdictions for a company.
+
+        Geography-aware narrowing: when ``hq_country`` is known, we keep
+        only jurisdictions that are plausibly relevant to that HQ (plus
+        Global, which always applies). Without this gate Reliance (HQ
+        India) was scanned by the AFM / Dutch courts because the energy
+        industry default includes Netherlands (real for Shell, irrelevant
+        for an Indian conglomerate).
+        """
         key = (industry or "").lower().replace(" ", "_")
         base = list(JURISDICTION_MAP.get(key, ["UK", "EU"]))
         if hq_country:
             base.append(hq_country)
+        # If we know the HQ country, narrow the industry-default list to
+        # jurisdictions that are plausibly relevant. Industry defaults
+        # remain a catch-all for companies with multinational footprints.
+        relevant: Optional[set] = None
+        if hq_country:
+            relevant = HQ_COUNTRY_RELEVANT_JURISDICTIONS.get(
+                hq_country.strip()
+            ) or HQ_COUNTRY_RELEVANT_JURISDICTIONS.get(
+                hq_country.strip().upper()
+            )
+        if relevant:
+            base = [j for j in base if j in relevant or j == hq_country]
         # Preserve order while deduplicating
         seen = set()
         ordered = []
@@ -38,6 +89,8 @@ class MultiJurisdictionRegulatoryScanner:
                 continue
             seen.add(item)
             ordered.append(item)
+        if not ordered:
+            ordered = ["Global"]
         return ordered
 
     def aggregate_results(
@@ -462,6 +515,15 @@ class MultiJurisdictionRegulatoryScanner:
             "youtube.com",
             "researchgate.net",                   # academic papers ≠ enforcement
             "wikipedia.org",                      # Wikipedia summary articles
+            # Campaign/advocacy landing pages whose underlying lawsuits
+            # have been DISMISSED. The URL is a stable artefact of the
+            # campaign; the page is not updated when the case ends.
+            #   - clientearth.org/redirecting-shell: lawsuit against Shell
+            #     directors dismissed by UK High Court May 2023; appeal
+            #     dismissed Jul 2023. Still indexed by DDG, still cited
+            #     by the scanner as ACTIVE_ENF without this filter.
+            "clientearth.org/redirecting-shell",
+            "clientearth.org/projects/redirecting-shell",
         )
         # Strong enforcement keywords — require something specific, not just "court".
         strong_enforcement_kws = [
@@ -472,6 +534,41 @@ class MultiJurisdictionRegulatoryScanner:
             "court-ordered", "court ordered", "greenwashing case",
             "found liable", "ordered to pay", "agreed to pay",
         ]
+        # Outcome markers — when the lawsuit/case has been disposed of
+        # in favour of the defendant, it's no longer an "active" enforcement
+        # signal. ClientEarth's Shell board case was DISMISSED May 2023
+        # and the dismissal was upheld on appeal July 2023 — pipeline was
+        # still presenting it as ACTIVE_ENF with a 25-point penalty.
+        # Each phrase below indicates the matter has resolved without a
+        # finding against the company (or has been overturned on appeal).
+        dismissed_markers = [
+            "dismissed", "dismissal upheld", "thrown out", "struck out",
+            "struck-out", "rejected by", "denied permission",
+            "ruled in favor of the company", "found in favour of",
+            "found in favor of", "overturned", "vacated", "reversed on appeal",
+            "withdrawn", "settlement reached", "no case to answer",
+            "court rejected", "appeal failed",
+        ]
+
+        # Stale-record cutoff for litigation: if the evidence references a
+        # year more than 10 years old AND no recent year is present, skip.
+        # The Microsoft 2000 antitrust split (overturned 2001) was leaking
+        # through the regulatory section as an "active" enforcement signal.
+        from datetime import datetime as _dt
+        _current_year = _dt.utcnow().year
+        STALE_CUTOFF_YEARS = 10
+
+        def _detect_year(blob: str) -> Optional[int]:
+            best_recent = None
+            for m in re.finditer(r"(19[89]\d|20[0-3]\d)", blob):
+                try:
+                    yr = int(m.group(1))
+                    if 1990 <= yr <= _current_year:
+                        if best_recent is None or yr > best_recent:
+                            best_recent = yr
+                except ValueError:
+                    continue
+            return best_recent
 
         for item in evidence or []:
             if not isinstance(item, dict):
@@ -492,9 +589,25 @@ class MultiJurisdictionRegulatoryScanner:
             if not any(k in text for k in strong_enforcement_kws):
                 continue
 
+            # Filter dismissed / withdrawn / overturned cases — these are
+            # not active enforcement and should not feed the penalty.
+            if any(marker in text for marker in dismissed_markers):
+                continue
+
+            # Filter stale records (most recent year reference > cutoff).
+            # We look at title + snippet + url for any year mention.
+            year_blob = f"{title} {snippet} {url}"
+            most_recent_year = _detect_year(year_blob)
+            if (
+                most_recent_year is not None
+                and (_current_year - most_recent_year) > STALE_CUTOFF_YEARS
+            ):
+                continue
+
             hits.append({
                 "summary": (title or snippet or "Litigation signal")[:200],
                 "url": item.get("url"),
                 "jurisdiction": "Netherlands" if "dutch" in text else "Global",
+                "year": most_recent_year,
             })
         return hits

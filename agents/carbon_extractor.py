@@ -928,6 +928,61 @@ class CarbonExtractor:
         validated_data["scope2"]["value"] = scope2_value
         validated_data["scope3"]["total"] = scope3_value
 
+        # PER-SCOPE CURATED CROSS-CHECK: when curated 2024 disclosure exists
+        # for this company, override individual extracted scopes that look
+        # implausible relative to curated. This catches the "narrow
+        # extraction" failure mode where the parser pulls a sub-figure
+        # (e.g. business-travel only Scope 3 = 2,030 for Microsoft, when
+        # actual is ~14.9M) — _all_rejected wouldn't trigger because
+        # Scope 1/2 came through fine. The 5x band is wide enough that
+        # legitimate year-over-year change won't trip it; reporting boundary
+        # changes (e.g. adding Cat 11) are explicitly preserved by the
+        # boundary tagger downstream.
+        curated_xc = self._curated_emissions_lookup(company)
+        if curated_xc:
+            for _sk, _vk in (("scope1", "value"), ("scope2", "value"), ("scope3", "total")):
+                _curated_v = curated_xc.get(_sk)
+                if _curated_v is None or _curated_v == 0:
+                    continue
+                _scope_obj = validated_data.get(_sk) or {}
+                _ext_v = _scope_obj.get(_vk)
+                # Override when extraction returned None/0 OR the extracted
+                # value is more than 5x off from curated in either direction.
+                if _ext_v is None or _ext_v == 0:
+                    _override = True
+                    _reason = "no extracted value"
+                else:
+                    try:
+                        _ratio = float(_ext_v) / float(_curated_v)
+                        _override = _ratio < 0.2 or _ratio > 5.0
+                        _reason = f"extracted {_ext_v:,.0f} vs curated {_curated_v:,.0f} (ratio {_ratio:.2f}x)"
+                    except (TypeError, ValueError, ZeroDivisionError):
+                        _override = False
+                        _reason = ""
+                if _override:
+                    print(
+                        f"   📚 Curated cross-check: overriding {_sk}={_ext_v} with curated "
+                        f"{_curated_v:,.0f} for {company} ({_reason})"
+                    )
+                    validated_data[_sk] = {
+                        _vk: _curated_v,
+                        "unit": "tCO2e",
+                        "year": curated_xc.get("data_year"),
+                        "source": f"Curated 2024 disclosure: {curated_xc.get('source_label')}",
+                        "source_url": curated_xc.get("source_url"),
+                        "confidence": "medium",
+                        "from_curated": True,
+                        "override_reason": _reason,
+                    }
+                    if _sk == "scope3":
+                        # Re-sync the local variable so downstream boundary
+                        # classification sees the corrected value.
+                        scope3_value = _curated_v
+                    elif _sk == "scope1":
+                        scope1_value = _curated_v
+                    elif _sk == "scope2":
+                        scope2_value = _curated_v
+
         # POST-VALIDATION fallback chain when magnitude validation rejected
         # all extracted values. Tier order:
         #   1. CURATED 2024 disclosure (when company is in known_emissions
@@ -1116,6 +1171,87 @@ class CarbonExtractor:
                     additional_info[key] = value
                     break
 
+        # Regex fallback for renewable energy percentage when LLM extraction
+        # didn't surface one. Scans the FULL report_chunks pool (not the
+        # truncated 32k extraction corpus) because renewable disclosures
+        # are usually on energy-table pages that don't carry the emission
+        # keywords used to prioritise the extraction corpus. Window-based
+        # co-occurrence: a "<n>%" within ~100 chars of "renewable/clean
+        # energy" wording counts. Negation/reduction contexts are filtered.
+        if additional_info.get("renewable_energy_percentage") in (None, "", 0, False):
+            # Cap blob at 60K chars and wrap in try/except — regex with
+            # non-greedy {0,100}? on multi-MB text can backtrack so heavily
+            # that the Python process gets killed before it returns. Cap
+            # AND timeout-safe by only iterating priority chunks first;
+            # if 60K of priority text is enough, we never touch the rest.
+            chunks_blob_parts: List[str] = []
+            chunks_blob_size = 0
+            BLOB_CAP = 60_000
+            ENERGY_TOKENS = ("renewable", "clean energy", "carbon-free", "carbon free",
+                             "100%", "% of our", " 100 percent ")
+            priority_chunks: List[str] = []
+            other_chunks: List[str] = []
+            try:
+                for _ch in (report_chunks or [])[:2000]:
+                    if not isinstance(_ch, dict):
+                        continue
+                    txt = str(_ch.get("page_content") or _ch.get("text") or "")
+                    if not txt:
+                        continue
+                    txt_lower = txt.lower()
+                    if any(tok in txt_lower for tok in ENERGY_TOKENS):
+                        priority_chunks.append(txt[:4000])  # truncate per chunk
+                    else:
+                        other_chunks.append(txt[:2000])
+                for txt in (priority_chunks + other_chunks):
+                    if chunks_blob_size + len(txt) > BLOB_CAP:
+                        chunks_blob_parts.append(txt[: BLOB_CAP - chunks_blob_size])
+                        chunks_blob_size = BLOB_CAP
+                        break
+                    chunks_blob_parts.append(txt)
+                    chunks_blob_size += len(txt)
+                chunks_blob = "\n".join(chunks_blob_parts)
+            except Exception as _exc:
+                print(f"   ⚠ Renewable scan blob build failed: {_exc}")
+                chunks_blob = ""
+            re_text = chunks_blob or extraction_text or ""
+            window_patterns = [
+                r"(\d{1,3}(?:\.\d+)?)\s*%[^.\n]{0,100}?(?:renewable|clean|carbon[- ]free|zero[- ]carbon)\s+(?:energy|electricity|power|sources?)",
+                r"(?:renewable|clean|carbon[- ]free|zero[- ]carbon)\s+(?:energy|electricity|power|sources?)[^.\n]{0,100}?(\d{1,3}(?:\.\d+)?)\s*%",
+                r"(\d{1,3}(?:\.\d+)?)\s*%\s+renewable\b",
+                r"matched\s+(\d{1,3}(?:\.\d+)?)\s*%\s+of[^.\n]{0,80}(?:electricity|energy)",
+                r"(\d{1,3}(?:\.\d+)?)\s*%\s+of\s+(?:our\s+)?(?:electricity|energy|power)\s+(?:consumption|use|sourced|from|with)[^.\n]{0,40}(?:renewable|clean)",
+                # Microsoft-style "matched 100% of our electricity use with renewable energy purchases"
+                r"(\d{1,3}(?:\.\d+)?)\s*%[^.\n]{0,40}(?:electricity|energy|consumption)[^.\n]{0,80}(?:renewable|clean|wind|solar)",
+                # Tesla / utility-style "100% renewable / 100% green tariff"
+                r"(\d{1,3}(?:\.\d+)?)\s*%\s+(?:green|wind|solar|hydro)\s+(?:energy|electricity|power|tariff)",
+            ]
+            negation_markers = (
+                "reduced", "reduction", "decrease", "down by", "lowered by",
+                "cut by", "fell by", "decline",
+            )
+            best_pct = None
+            try:
+                for pat in window_patterns:
+                    for m in re.finditer(pat, re_text, re.IGNORECASE):
+                        try:
+                            pct = float(m.group(1))
+                        except (ValueError, IndexError):
+                            continue
+                        if not (0 < pct <= 100):
+                            continue
+                        win_start = max(0, m.start() - 60)
+                        context = re_text[win_start:m.start()].lower()
+                        if any(marker in context for marker in negation_markers):
+                            continue
+                        if best_pct is None or pct > best_pct:
+                            best_pct = pct
+            except Exception as _exc:
+                print(f"   ⚠ Renewable scan regex failed: {_exc}")
+                best_pct = None
+            if best_pct is not None:
+                additional_info["renewable_energy_percentage"] = best_pct
+
         # Provenance: when no explicit data_source survived from the LLM
         # extraction, fall back to the report files actually parsed for
         # this run. Without this the field stayed "Unknown" forever — no
@@ -1237,7 +1373,9 @@ class CarbonExtractor:
         #   2. Inferred-from-claim with positive qualifier (real net-zero).
         #   3. LLM-extracted value (lower trust — known to overclaim).
         #   4. Existing result value.
-        #   5. Default fallback.
+        #   5. Regex scan over report chunks for declared net-zero.
+        #   6. Default fallback.
+        report_chunks_nz_target = self._extract_net_zero_from_chunks(report_chunks)
         if inferred_net_zero and "NOT a net-zero target" in inferred_net_zero:
             result["net_zero_target"] = inferred_net_zero
         else:
@@ -1245,6 +1383,7 @@ class CarbonExtractor:
                 inferred_net_zero
                 or result.get("net_zero_target")
                 or extracted_data.get("net_zero_target")
+                or report_chunks_nz_target
                 or "Not declared in available evidence"
             )
 
@@ -1265,6 +1404,89 @@ class CarbonExtractor:
             print(f"   Data Source: {additional_info.get('data_source', 'Unknown')}")
 
         return result
+
+    def _extract_net_zero_from_chunks(self, report_chunks: Optional[List[Dict[str, Any]]]) -> Optional[str]:
+        """Scan parsed report chunks for declared net-zero / carbon-neutral / carbon-negative targets.
+
+        Activates when the claim text doesn't carry a net-zero phrase but
+        the company's own report does (e.g. JPM's 'operational net zero
+        by 2030' tucked deep in their climate report). Picks the strongest
+        commitment by ranking: carbon negative > climate positive > net zero
+        > carbon neutral. Within the same tier, keeps the earliest year
+        with a 4-digit year qualifier.
+
+        Cap at 60K chars / 2000 chunks to keep regex bounded — Reliance
+        runs hit Python out-of-memory or ReDoS on the unbounded form.
+        """
+        if not report_chunks:
+            return None
+        text_blob_parts: List[str] = []
+        blob_size = 0
+        BLOB_CAP = 60_000
+        try:
+            for ch in (report_chunks or [])[:2000]:
+                if not isinstance(ch, dict):
+                    continue
+                t = str(ch.get("page_content") or ch.get("text") or "")
+                if not t:
+                    continue
+                t = t[:3000]  # truncate per chunk
+                if blob_size + len(t) > BLOB_CAP:
+                    text_blob_parts.append(t[: BLOB_CAP - blob_size])
+                    break
+                text_blob_parts.append(t)
+                blob_size += len(t)
+        except Exception:
+            return None
+        if not text_blob_parts:
+            return None
+        text = "\n".join(text_blob_parts)
+
+        tier_patterns = [
+            ("Carbon negative", [
+                r"carbon[- ]negative\s+(?:by|in)\s+(20[3-9]\d)",
+                r"(20[3-9]\d)[^.\n]{0,40}carbon[- ]negative",
+            ]),
+            ("Climate positive", [
+                r"climate[- ]positive\s+(?:by|in)\s+(20[3-9]\d)",
+                r"(20[3-9]\d)[^.\n]{0,40}climate[- ]positive",
+            ]),
+            ("Net zero", [
+                r"net[- ]zero[^.\n]{0,80}?(?:by|in|before)\s+(20[3-9]\d)",
+                r"(20[3-9]\d)[^.\n]{0,80}net[- ]zero",
+                r"net\s+carbon\s+zero[^.\n]{0,40}(?:by|in)\s+(20[3-9]\d)",
+                r"net[- ]zero\s+emissions[^.\n]{0,40}(?:by|in)\s+(20[3-9]\d)",
+            ]),
+            ("Carbon neutral", [
+                r"carbon[- ]neutral[^.\n]{0,40}(?:by|in)\s+(20[3-9]\d)",
+                r"(20[3-9]\d)[^.\n]{0,40}carbon[- ]neutral",
+                r"climate\s+neutral[^.\n]{0,40}(?:by|in)\s+(20[3-9]\d)",
+            ]),
+        ]
+        # Reject negation contexts ("we have NOT committed to net-zero").
+        negation_window = re.compile(
+            r"\b(no(?:t)?\s+(?:committed|target|set|plan)|do\s+not|haven't|will\s+not)\b",
+            re.IGNORECASE,
+        )
+        try:
+            for label, patterns in tier_patterns:
+                best_year: Optional[int] = None
+                for pat in patterns:
+                    for m in re.finditer(pat, text, re.IGNORECASE):
+                        try:
+                            year = int(m.group(1))
+                        except (ValueError, IndexError):
+                            continue
+                        win_start = max(0, m.start() - 80)
+                        if negation_window.search(text[win_start:m.start()]):
+                            continue
+                        if best_year is None or year < best_year:
+                            best_year = year
+                if best_year is not None:
+                    return f"{label} by {best_year}"
+        except Exception:
+            return None
+        return None
 
     def extract_net_zero_year_from_claim(self, claim: str) -> Optional[str]:
         """Extract a target description from the analyzed claim text.
@@ -1303,9 +1525,21 @@ class CarbonExtractor:
         is_reduction = ("reduce" in claim_lower or "reduction" in claim_lower or
                        "cut" in claim_lower or pct is not None)
 
-        # Net zero / carbon neutral: only when explicitly used AND not
-        # qualified by a scope-specific reduction phrase.
-        if ("net-zero" in claim_lower or "net zero" in claim_lower) and not is_scope_specific:
+        # Net zero / carbon neutral / carbon negative: only when explicitly
+        # used AND not qualified by a scope-specific reduction phrase.
+        # "Carbon negative" (Microsoft) is a STRONGER commitment than net
+        # zero — the company commits to removing more carbon than emitted.
+        # "Net carbon zero" / "net-carbon-zero" (Reliance) is treated as
+        # a net-zero variant — same target boundary, different phrasing.
+        if "carbon negative" in claim_lower and not is_scope_specific:
+            return f"Carbon negative by {year}" if year else "Carbon negative (year not specified)"
+        if "climate positive" in claim_lower and not is_scope_specific:
+            return f"Climate positive by {year}" if year else "Climate positive (year not specified)"
+        net_zero_phrases = (
+            "net-zero", "net zero", "net carbon zero", "net-carbon-zero",
+            "net zero carbon", "net-zero carbon",
+        )
+        if any(p in claim_lower for p in net_zero_phrases) and not is_scope_specific:
             return f"Net zero by {year}" if year else "Net zero (year not specified)"
         if "carbon neutral" in claim_lower and not is_scope_specific:
             return f"Carbon neutral by {year}" if year else "Carbon neutral (year not specified)"
@@ -2163,8 +2397,29 @@ class CarbonExtractor:
         return parsed
 
     def _fetch_sbti_registry_status(self, company_name: str) -> Dict[str, Any]:
-        """Best-effort SBTi registry signal extraction from public search results."""
+        """Best-effort SBTi registry signal extraction from public search results.
+
+        Hardened against name-collision false positives: a 'Tesla' search
+        was returning '/case-studies/tesco' as the source URL because DDG
+        ranked Tesco's case study above Tesla's (rare, but happens for
+        short company names). We now require that the result's URL or
+        title contain a token of the queried company before adopting it
+        as the canonical SBTi source.
+        """
         query = f"site:sciencebasedtargets.org/companies-taking-action {company_name}"
+        # Build a strict company-token set: 4+ chars, not a generic suffix.
+        company_lower = (company_name or "").lower()
+        company_tokens = [
+            t for t in re.split(r"[^a-z0-9]+", company_lower)
+            if len(t) >= 4 and t not in {
+                "corp", "inc", "ltd", "plc", "group", "company", "limited",
+                "industries", "holdings", "international",
+            }
+        ]
+        if not company_tokens and company_lower:
+            short = company_lower.split()[0]
+            if 2 <= len(short) <= 4:
+                company_tokens = [short]
         try:
             from ddgs import DDGS
 
@@ -2175,6 +2430,11 @@ class CarbonExtractor:
                     title = result.get("title", "")
                     body = result.get("body", "")
                     href = result.get("href", "")
+                    hay = f"{title} {body} {href}".lower()
+                    # Require company-token presence — kills the
+                    # Tesla→Tesco name collision and similar.
+                    if company_tokens and not any(tok in hay for tok in company_tokens):
+                        continue
                     if not source_url and href:
                         source_url = href
                     text_hits.append(f"{title} {body}")
@@ -2198,7 +2458,9 @@ class CarbonExtractor:
 
             out: Dict[str, Any] = {
                 "sbti_status": status,
-                "sbti_source": source_url or "sciencebasedtargets.org/companies-taking-action",
+                # If no company-matching URL was found, point to the
+                # canonical SBTi listing rather than a wrong company URL.
+                "sbti_source": source_url or "https://sciencebasedtargets.org/companies-taking-action",
             }
             out["science_based_target"] = sbti_bool
             return out
@@ -2690,17 +2952,26 @@ Extract ALL carbon emission data. Return ONLY valid JSON."""
 
         # Classification
         if scope3_value >= full_lo:
+            # The boundary label here is a MAGNITUDE-based signal. When we
+            # don't actually have a category breakdown (because the figure
+            # came from a curated table or a total-only disclosure), the
+            # "(15-category coverage)" suffix overstates what we know.
+            # Flag this so downstream readers can distinguish "magnitude
+            # consistent with full coverage" from "verified 15-category
+            # disclosure".
             boundary = "FULL"
             reason = (
                 f"Reported Scope 3 ({scope3_value:,.0f} tCO2e) falls in the full-boundary range "
-                f"for {industry} ({full_lo:,}–{full_hi:,} tCO2e), suggesting comprehensive "
-                f"15-category coverage."
+                f"for {industry} ({full_lo:,}–{full_hi:,} tCO2e). This is a MAGNITUDE-based "
+                f"classification — explicit per-category breakdown was not parsed and is "
+                f"required to confirm 15-category coverage."
             )
             return {
                 "boundary": boundary,
                 "reason": reason,
                 "missing_categories": [],
                 "use_phase_disclosed_separately": use_phase_present,
+                "magnitude_only": True,
             }
         if narrow_lo <= scope3_value < full_lo:
             boundary = "PARTIAL_SCOPE3" if use_phase_present else "NARROW"
@@ -3142,9 +3413,60 @@ Extract ALL carbon emission data. Return ONLY valid JSON."""
 
     def _check_brsr_compliance(self, data: Dict[str, Any], company: str) -> Dict[str, Any]:
         """
-        Check SEBI BRSR (Business Responsibility & Sustainability Report) compliance
-        Applicable to top 1000 listed Indian companies
+        Check SEBI BRSR (Business Responsibility & Sustainability Report) compliance.
+        Applicable to top 1000 listed Indian companies.
+
+        Applicability gate: BRSR is a SEBI/NSE/BSE-mandated framework. For
+        non-Indian companies (Microsoft, Tesla, JPM, Shell, etc.) we mark
+        applicable=False so the report doesn't surface a phantom BRSR gap.
+        Without this gate, Tesla was scored against BRSR and flagged with
+        "missing disclosures" for a regulation that has zero jurisdiction
+        over a US-listed entity.
         """
+        # Heuristic: detect India HQ from name tokens (we don't always have
+        # country threaded into this call site). The catch-all is large
+        # enough for the public-listed Indian companies that BRSR targets.
+        company_lower = (company or "").lower()
+        india_markers = (
+            "reliance industries", "tata", "infosys", "wipro", "hdfc",
+            "icici", "sbi", "state bank of india", "adani", "ntpc",
+            "ongc", "bharat", "indian oil", "iocl", "hindustan",
+            "mahindra", "maruti", "bajaj", "ambuja", "ultratech",
+            "asian paints", "berger paints", "godrej", "dabur",
+            "marico", "nestle india", "itc limited", "itc ltd",
+            "sun pharma", "dr. reddy", "cipla", "lupin", "biocon",
+            "axis bank", "kotak mahindra", "yes bank", "bank of baroda",
+            "punjab national bank", "vedanta", "jindal", "jsw",
+            "zomato", "paytm", "nykaa", "bse limited", "nse limited",
+            "powergrid", "coal india", "gail", "hpcl", "bpcl",
+            "indianrailways", "indian railways", "ircon", "rites",
+            "bhel", "bel", "hal", "drdo",
+            "lic", "life insurance corporation",
+            "aditya birla", "grasim", "hindalco",
+            "infotech", "tcs", "tech mahindra", "mphasis", "ltimindtree",
+            "indusind", "federal bank", "rbl bank", "idfc",
+            "hero motocorp", "tvs motor", "ashok leyland", "eicher motors",
+            "havells", "voltas", "blue star", "crompton greaves",
+            "titan company", "gillette india", "p&g india", "colgate-palmolive india",
+            "britannia", "varun beverages", "united spirits",
+            "siemens india", "abb india", "schneider electric india",
+        )
+        is_india = any(m in company_lower for m in india_markers)
+
+        if not is_india:
+            return {
+                "applicable": False,
+                "regulation": "SEBI BRSR (India)",
+                "reason": (
+                    f"Not applicable: '{company}' is not in the SEBI BRSR scope "
+                    "(top 1000 NSE-listed Indian companies). BRSR mandate covers "
+                    "Indian-domiciled, Indian-stock-exchange-listed entities only."
+                ),
+                "checks": {},
+                "compliance_score": 0.0,
+                "missing_disclosures": [],
+                "top_1000_mandate": False,
+            }
 
         brsr_checks = {
             "scope1_emissions_disclosed": bool(data.get("scope1", {}).get("value")),
@@ -3159,7 +3481,7 @@ Extract ALL carbon emission data. Return ONLY valid JSON."""
         compliance_score = sum(brsr_checks.values()) / len(brsr_checks) * 100
 
         return {
-            "applicable": True,  # Assume applicable for listed companies
+            "applicable": True,
             "checks": brsr_checks,
             "compliance_score": compliance_score,
             "regulation": "SEBI BRSR (India)",
