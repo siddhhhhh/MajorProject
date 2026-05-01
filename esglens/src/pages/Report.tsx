@@ -19,33 +19,11 @@ import {
 
 const TABS = ["Overview", "Audit Report", "Carbon", "Greenwashing", "Contradictions", "Regulatory", "Peers", "Explainability", "Evidence", "Raw Data"];
 
-const PATHWAY = Array.from({ length: 31 }, (_, i) => {
-  const year = 2020 + i;
-  const required = 100 - (i / 30) * 100;
-  const actual = 100 - (i / 30) * 12;
-  return { year, required, actual, gap: actual - required };
-});
-
-const SHAP = [
-  { f: "Scope 3 emissions vs target", v: 18 },
-  { f: "Capex misalignment (1.5°C)", v: 15 },
-  { f: "Dutch court legal precedent", v: 14 },
-  { f: "Net zero target weakened 2023", v: 11 },
-  { f: "FCA anti-greenwashing risk", v: 9 },
-  { f: "Renewables capex declining", v: 8 },
-  { f: "Strong governance disclosure", v: -6 },
-  { f: "TCFD partial compliance", v: -4 },
-  { f: "Stewardship reporting", v: -3 },
-];
-
-const DECEPTION = [
-  { axis: "Greenwashing", v: 77 },
-  { axis: "Greenhushing", v: 42 },
-  { axis: "Selective Disc.", v: 68 },
-  { axis: "Temporal Esc.", v: 71 },
-  { axis: "Tunnel Vision", v: 65 },
-  { axis: "Linguistic Risk", v: 58 },
-];
+// Empty fallbacks so charts render an empty state when backend data is
+// missing — never fabricated demo values that would mislead a viewer.
+const PATHWAY: Array<{ year: number; required: number; actual: number; gap: number }> = [];
+const SHAP: Array<{ f: string; v: number }> = [];
+const DECEPTION: Array<{ axis: string; v: number }> = [];
 
 function parseAuditSections(text?: string | null): { title: string; body: string }[] {
   if (!text) return [];
@@ -131,26 +109,21 @@ function apiToReportData(api: ESGReport): ReportData {
       gap: r.key_gap,
     })),
     regulatoryOverall: api.regulatory.length > 0 ? Math.round(api.regulatory.reduce((s, r) => s + r.compliance_score, 0) / api.regulatory.length) : 0,
-    peers: [
-      { name: api.company, ticker: api.ticker, esg: api.esg_score, gw: api.greenwashing.overall_score, rating: api.rating_grade, marketCap: 150, isFocus: true },
-      ...(api.sector === "Automotive" ? [
-        { name: "Toyota Motor Corp", ticker: "TM", esg: 65.2, gw: 45.1, rating: "A", marketCap: 380, isFocus: false },
-        { name: "Ford Motor", ticker: "F", esg: 58.4, gw: 52.3, rating: "BBB", marketCap: 48, isFocus: false },
-        { name: "General Motors", ticker: "GM", esg: 61.1, gw: 48.9, rating: "A", marketCap: 52, isFocus: false },
-      ] : api.sector === "Technology" ? [
-        { name: "Apple Inc.", ticker: "AAPL", esg: 78.4, gw: 32.1, rating: "AA", marketCap: 2800, isFocus: false },
-        { name: "Microsoft", ticker: "MSFT", esg: 82.1, gw: 28.5, rating: "AAA", marketCap: 3100, isFocus: false },
-        { name: "Alphabet", ticker: "GOOGL", esg: 74.5, gw: 36.2, rating: "A", marketCap: 1700, isFocus: false },
-      ] : api.sector === "Financial Services" ? [
-        { name: "Bank of America", ticker: "BAC", esg: 68.5, gw: 41.2, rating: "A", marketCap: 310, isFocus: false },
-        { name: "Citigroup", ticker: "C", esg: 62.4, gw: 45.8, rating: "BBB", marketCap: 120, isFocus: false },
-        { name: "Wells Fargo", ticker: "WFC", esg: 55.2, gw: 52.1, rating: "BB", marketCap: 210, isFocus: false },
-      ] : [
-        { name: "BP plc", ticker: "BP", esg: 54.2, gw: 78.5, rating: "BBB", marketCap: 110, isFocus: false },
-        { name: "ExxonMobil", ticker: "XOM", esg: 42.1, gw: 82.4, rating: "BB", marketCap: 450, isFocus: false },
-        { name: "Chevron", ticker: "CVX", esg: 45.8, gw: 79.1, rating: "BB", marketCap: 320, isFocus: false },
-      ])
-    ],
+    // Real peer rows from peer_comparison agent (mapper). marketCap is no
+    // longer fabricated — frontend now hides that column.
+    peers: (api.peers && api.peers.length > 0)
+      ? api.peers.map((p) => ({
+          name: p.name,
+          ticker: p.ticker || "",
+          esg: p.esg,
+          gw: p.gw,
+          rating: p.rating || "",
+          marketCap: 0,
+          isFocus: !!p.is_focus,
+        }))
+      : [
+          { name: api.company, ticker: api.ticker, esg: api.esg_score, gw: api.greenwashing.overall_score, rating: api.rating_grade, marketCap: 0, isFocus: true },
+        ],
     evidence: api.evidence.map((e) => ({
       type: e.source_type,
       domain: (e.source_url ?? "").replace(/https?:\/\//, "").split("/")[0] || e.source_name,
@@ -457,26 +430,60 @@ export default function Report() {
               <div className="label-eyebrow mb-2">IEA NZE ALIGNMENT</div>
               <h3 className="font-display text-2xl mb-6">2020 → 2050 emissions trajectory</h3>
               <div className="h-72">
-                <ResponsiveContainer>
-                  <ComposedChart data={activePathway}>
-                    <XAxis dataKey="year" stroke="hsl(var(--text-muted))" tick={{ fontSize: 11 }} />
-                    <YAxis stroke="hsl(var(--text-muted))" tick={{ fontSize: 11 }} />
-                    <Tooltip contentStyle={{ background: "hsl(var(--bg-elevated))", border: "1px solid hsl(var(--bg-border))", fontSize: 12 }} />
-                    <Area type="monotone" dataKey="gap" fill="hsl(var(--risk-critical))" fillOpacity={0.15} stroke="none" />
-                    <Line type="monotone" dataKey="required" stroke="hsl(var(--teal-bright))" strokeDasharray="5 5" strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="actual" stroke="hsl(var(--amber-bright))" strokeWidth={2.5} dot={false} />
-                  </ComposedChart>
-                </ResponsiveContainer>
+                {activePathway.length > 0 ? (
+                  <ResponsiveContainer>
+                    <ComposedChart data={activePathway}>
+                      <XAxis dataKey="year" stroke="hsl(var(--text-muted))" tick={{ fontSize: 11 }} />
+                      <YAxis stroke="hsl(var(--text-muted))" tick={{ fontSize: 11 }} />
+                      <Tooltip contentStyle={{ background: "hsl(var(--bg-elevated))", border: "1px solid hsl(var(--bg-border))", fontSize: 12 }} />
+                      <Area type="monotone" dataKey="gap" fill="hsl(var(--risk-critical))" fillOpacity={0.15} stroke="none" />
+                      <Line type="monotone" dataKey="required" stroke="hsl(var(--teal-bright))" strokeDasharray="5 5" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="actual" stroke="hsl(var(--amber-bright))" strokeWidth={2.5} dot={false} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex items-center justify-center h-full text-xs font-mono text-text-secondary">
+                    Pathway trajectory not computed (insufficient rate data).
+                  </div>
+                )}
               </div>
               <div className="mt-4 text-sm text-text-secondary">
-                <span className="text-amber-bright font-mono">{R.ieaGapPct ? Math.abs(R.ieaGapPct).toFixed(1) : "1.1"}%/yr gap</span> vs <span className="text-teal-bright font-mono">100%/yr required</span> for 2050 net zero.
+                {typeof requiredRate === "number" && typeof impliedRate === "number" ? (
+                  <>
+                    Company implied <span className="text-amber-bright font-mono">{impliedRate.toFixed(1)}%/yr</span> vs IEA NZE required <span className="text-teal-bright font-mono">{requiredRate.toFixed(1)}%/yr</span>
+                    {typeof R.ieaGapPct === "number" ? (
+                      <> · gap <span className="text-amber-bright font-mono">{R.ieaGapPct >= 0 ? "+" : ""}{R.ieaGapPct.toFixed(1)}%/yr</span></>
+                    ) : null}
+                    .
+                  </>
+                ) : (
+                  <span className="font-mono text-text-muted">Pathway alignment data not yet available for this company.</span>
+                )}
               </div>
             </div>
             <div className="rounded-xl bg-gradient-to-br from-risk-critical/10 to-bg-surface border border-risk-critical/30 p-10 text-center">
               <div className="label-eyebrow text-risk-critical mb-3">CARBON BUDGET COUNTDOWN</div>
-              <div className="font-display text-7xl text-risk-critical">{R.carbonBudgetYears > 0 ? R.carbonBudgetYears.toFixed(2) : "0.00"} yrs</div>
-              <div className="text-text-secondary mt-3">remaining at current trajectory</div>
+              {R.carbonBudgetYears > 0 ? (
+                <>
+                  <div className="font-display text-7xl text-risk-critical">{R.carbonBudgetYears.toFixed(2)} yrs</div>
+                  <div className="text-text-secondary mt-3">remaining at current trajectory</div>
+                </>
+              ) : (
+                <>
+                  <div className="font-display text-5xl text-text-secondary">—</div>
+                  <div className="text-text-secondary mt-3">Budget remaining not computed (insufficient pathway data)</div>
+                </>
+              )}
             </div>
+            {R.netZeroTarget && R.netZeroTarget !== "Unknown" && (
+              <div className="rounded-xl bg-bg-surface border border-bg-border p-6">
+                <div className="label-eyebrow mb-2">NET-ZERO TARGET</div>
+                <div className="font-display text-2xl text-teal-bright">{R.netZeroTarget}</div>
+                {R.alignmentStatus && (
+                  <div className="mt-2 font-mono text-xs text-text-secondary">Pathway status: {R.alignmentStatus}</div>
+                )}
+              </div>
+            )}
           </>
         )}
 
@@ -486,13 +493,19 @@ export default function Report() {
               <div className="rounded-xl bg-bg-surface border border-bg-border p-6">
                 <div className="label-eyebrow mb-2">DECEPTION RADAR</div>
                 <div className="h-80">
-                  <ResponsiveContainer>
-                    <RadarChart data={activeDeception}>
-                      <PolarGrid stroke="hsl(var(--bg-border))" />
-                      <PolarAngleAxis dataKey="axis" tick={{ fill: "hsl(var(--text-secondary))", fontSize: 11 }} />
-                      <Radar dataKey="v" stroke="hsl(var(--risk-high))" fill="hsl(var(--risk-high))" fillOpacity={0.4} />
-                    </RadarChart>
-                  </ResponsiveContainer>
+                  {activeDeception.length > 0 ? (
+                    <ResponsiveContainer>
+                      <RadarChart data={activeDeception}>
+                        <PolarGrid stroke="hsl(var(--bg-border))" />
+                        <PolarAngleAxis dataKey="axis" tick={{ fill: "hsl(var(--text-secondary))", fontSize: 11 }} />
+                        <Radar dataKey="v" stroke="hsl(var(--risk-high))" fill="hsl(var(--risk-high))" fillOpacity={0.4} />
+                      </RadarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-xs font-mono text-text-secondary">
+                      No deception-pattern data available for this run.
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="rounded-xl bg-gradient-to-br from-teal-bright/10 to-bg-surface border border-teal-dim/40 p-6">
@@ -573,41 +586,50 @@ export default function Report() {
         {tab === "Peers" && (
           <>
             <div className="rounded-xl bg-bg-surface border border-bg-border p-6">
-              <div className="label-eyebrow mb-4">SECTOR POSITIONING · ESG vs GREENWASHING RISK</div>
-              <div className="h-96">
-                <ResponsiveContainer>
-                  <ScatterChart>
-                    <XAxis dataKey="esg" name="ESG" stroke="hsl(var(--text-muted))" tick={{ fontSize: 11 }} label={{ value: "ESG SCORE →", fill: "hsl(var(--text-secondary))", fontSize: 11, position: "bottom" }} />
-                    <YAxis dataKey="gw" name="GW" stroke="hsl(var(--text-muted))" tick={{ fontSize: 11 }} label={{ value: "← GREENWASHING RISK", angle: -90, fill: "hsl(var(--text-secondary))", fontSize: 11, position: "insideLeft" }} />
-                    <ZAxis dataKey="marketCap" range={[100, 1200]} />
-                    <Tooltip cursor={{ stroke: "hsl(var(--teal-dim))" }} contentStyle={{ background: "hsl(var(--bg-elevated))", border: "1px solid hsl(var(--bg-border))", fontSize: 12 }} />
-                    <Scatter data={R.peers} fill="hsl(var(--teal-bright))">
-                      {R.peers.map((p, i) => (
-                        <Cell key={i} fill={p.isFocus ? "hsl(var(--teal-bright))" : "hsl(var(--amber-mid))"} />
-                      ))}
-                    </Scatter>
-                  </ScatterChart>
-                </ResponsiveContainer>
+              <div className="label-eyebrow mb-4">SECTOR ESG BENCHMARK</div>
+              <div className="h-80">
+                {R.peers.length > 1 ? (
+                  <ResponsiveContainer>
+                    <BarChart data={R.peers.map((p) => ({ name: p.name.replace(/ Corporation| Group| Industries| Inc\.?| plc/g, "").trim(), esg: p.esg, isFocus: p.isFocus }))}>
+                      <XAxis dataKey="name" stroke="hsl(var(--text-muted))" tick={{ fontSize: 11 }} interval={0} angle={-25} textAnchor="end" height={70} />
+                      <YAxis stroke="hsl(var(--text-muted))" tick={{ fontSize: 11 }} domain={[0, 100]} label={{ value: "ESG SCORE", angle: -90, position: "insideLeft", fill: "hsl(var(--text-secondary))", fontSize: 11 }} />
+                      <Tooltip contentStyle={{ background: "hsl(var(--bg-elevated))", border: "1px solid hsl(var(--bg-border))", fontSize: 12 }} />
+                      <Bar dataKey="esg" radius={[4, 4, 0, 0]}>
+                        {R.peers.map((p, i) => (
+                          <Cell key={i} fill={p.isFocus ? "hsl(var(--teal-bright))" : "hsl(var(--amber-mid))"} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex items-center justify-center h-full text-xs font-mono text-text-secondary">
+                    Sector peer comparators not yet populated by the backend — only the analysed company is shown.
+                  </div>
+                )}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-4 text-xs font-mono text-text-secondary">
+                <span className="inline-flex items-center gap-2"><span className="h-2 w-3 rounded-sm bg-teal-bright inline-block" /> Analysed company</span>
+                <span className="inline-flex items-center gap-2"><span className="h-2 w-3 rounded-sm bg-amber-mid inline-block" /> Sector peers</span>
               </div>
             </div>
             <div className="rounded-xl bg-bg-surface border border-bg-border overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="bg-bg-elevated">
                   <tr className="text-left">
-                    {["Company", "Ticker", "ESG", "GW Risk", "Rating", "Mkt Cap"].map((h) => (
+                    {["Company", "Ticker", "ESG", "GW Risk", "Rating"].map((h) => (
                       <th key={h} className="px-4 py-3 label-eyebrow">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {R.peers.map((p) => (
-                    <tr key={p.ticker} className={`border-t border-bg-border ${p.isFocus ? "bg-teal-bright/5 border-l-2 border-l-teal-bright" : ""}`}>
-                      <td className="px-4 py-3 font-medium">{p.name}</td>
-                      <td className="px-4 py-3 font-mono text-text-secondary">{p.ticker}</td>
-                      <td className="px-4 py-3 font-mono text-teal-bright">{p.esg}</td>
-                      <td className="px-4 py-3 font-mono text-risk-high">{p.gw}</td>
-                      <td className="px-4 py-3 font-display text-amber-bright">{p.rating}</td>
-                      <td className="px-4 py-3 font-mono text-text-secondary">£{p.marketCap}B</td>
+                    <tr key={`${p.name}-${p.ticker}`} className={`border-t border-bg-border ${p.isFocus ? "bg-teal-bright/5 border-l-2 border-l-teal-bright" : ""}`}>
+                      <td className="px-4 py-3 font-medium">{p.name}{p.isFocus ? <span className="ml-2 text-[10px] font-mono text-teal-bright">FOCUS</span> : null}</td>
+                      <td className="px-4 py-3 font-mono text-text-secondary">{p.ticker || "—"}</td>
+                      <td className="px-4 py-3 font-mono text-teal-bright">{p.esg ? p.esg.toFixed(1) : "—"}</td>
+                      {/* GW score is only computed for the analysed company; peers show "—". */}
+                      <td className="px-4 py-3 font-mono text-risk-high">{p.isFocus && p.gw > 0 ? p.gw.toFixed(1) : "—"}</td>
+                      <td className="px-4 py-3 font-display text-amber-bright">{p.rating || "—"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -621,18 +643,24 @@ export default function Report() {
             <div className="label-eyebrow mb-2">SHAP FEATURE IMPORTANCE</div>
             <h3 className="font-display text-2xl mb-6">Top risk drivers</h3>
             <div className="h-[420px]">
-              <ResponsiveContainer>
-                <BarChart data={activeShap} layout="vertical" margin={{ left: 200 }}>
-                  <XAxis type="number" stroke="hsl(var(--text-muted))" tick={{ fontSize: 11 }} />
-                  <YAxis dataKey="f" type="category" stroke="hsl(var(--text-secondary))" tick={{ fontSize: 11 }} width={200} />
-                  <Tooltip contentStyle={{ background: "hsl(var(--bg-elevated))", border: "1px solid hsl(var(--bg-border))", fontSize: 12 }} />
-                  <Bar dataKey="v" radius={[0, 4, 4, 0]}>
-                    {activeShap.map((s, i) => (
-                      <Cell key={i} fill={s.v > 0 ? "hsl(var(--risk-high))" : "hsl(var(--teal-bright))"} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+              {activeShap.length > 0 ? (
+                <ResponsiveContainer>
+                  <BarChart data={activeShap} layout="vertical" margin={{ left: 200 }}>
+                    <XAxis type="number" stroke="hsl(var(--text-muted))" tick={{ fontSize: 11 }} />
+                    <YAxis dataKey="f" type="category" stroke="hsl(var(--text-secondary))" tick={{ fontSize: 11 }} width={200} />
+                    <Tooltip contentStyle={{ background: "hsl(var(--bg-elevated))", border: "1px solid hsl(var(--bg-border))", fontSize: 12 }} />
+                    <Bar dataKey="v" radius={[0, 4, 4, 0]}>
+                      {activeShap.map((s, i) => (
+                        <Cell key={i} fill={s.v > 0 ? "hsl(var(--risk-high))" : "hsl(var(--teal-bright))"} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-xs font-mono text-text-secondary">
+                  Risk-driver attribution not computed for this run.
+                </div>
+              )}
             </div>
           </div>
         )}

@@ -1307,13 +1307,19 @@ def regulatory_scanning_node(state: ESGState) -> ESGState:
                 # company with no SEC ticker etc.
                 from utils.regulatory_fetchers import get_framework_weight
 
+                # Score across the FULL unified framework set (real-data fetches
+                # + heuristic multi-jurisdiction rows), not just real_rows.
+                # Otherwise a multi-jurisdiction GAP (e.g. EU CSRD detected via
+                # the DDG scan) is invisible to the capability calculation,
+                # producing perverse results like Shell scoring 100/100 with
+                # 2 active gaps because none of the gaps came from real_rows.
                 _pass_rows = [
-                    r for r in real_rows
-                    if isinstance(r, dict) and r.get("status") == "compliant"
+                    r for r in unified_frameworks
+                    if isinstance(r, dict) and str(r.get("status", "")).lower() == "compliant"
                 ]
                 _fail_rows = [
-                    r for r in real_rows
-                    if isinstance(r, dict) and r.get("status") == "gap"
+                    r for r in unified_frameworks
+                    if isinstance(r, dict) and str(r.get("status", "")).lower() == "gap"
                 ]
                 _real_pass = len(_pass_rows)
                 _real_fail = len(_fail_rows)
@@ -4089,8 +4095,26 @@ def verdict_generation_node(state: ESGState) -> ESGState:
         risk_outputs = [o for o in state.get("agent_outputs", []) if isinstance(o, dict) and o.get("agent") == "risk_scoring"]
         if risk_outputs:
             _risk_out = risk_outputs[-1].get("output", {})
-            _gw = float((_risk_out.get("greenwashing_result") or {}).get("greenwashing_score", 50) if isinstance(_risk_out, dict) else 50)
-            _esg = float(_risk_out.get("esg_score", 50) if isinstance(_risk_out, dict) else 50)
+            if isinstance(_risk_out, dict):
+                # Canonical post-recalibration GW score lives at the flat
+                # `greenwashingriskscore` key (see risk_scorer.py:2017).
+                # The legacy nested path `greenwashing_result.greenwashing_score`
+                # was never populated by the agent, so reading it returned the
+                # 50 fallback — the override caveat then misreported "raw GW 50"
+                # regardless of what the formula actually produced.
+                _gw_candidates = [
+                    _risk_out.get("greenwashingriskscore"),
+                    (_risk_out.get("greenwashing_result") or {}).get("greenwashing_score") if isinstance(_risk_out.get("greenwashing_result"), dict) else None,
+                    _risk_out.get("greenwashingscoreraw"),
+                ]
+                _gw = next((float(v) for v in _gw_candidates if isinstance(v, (int, float))), 50.0)
+                _esg_candidates = [
+                    _risk_out.get("esg_score"),
+                    _risk_out.get("esg_score_raw"),
+                ]
+                _esg = next((float(v) for v in _esg_candidates if isinstance(v, (int, float))), 50.0)
+            else:
+                _gw, _esg = 50.0, 50.0
         else:
             _gw, _esg = 50.0, 50.0
 

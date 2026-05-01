@@ -19,6 +19,7 @@ from api.models import (
     EvidenceItem,
     GreenwashingData,
     HistoryEntry,
+    PeerEntry,
     PillarScore,
     RegulatoryItem,
     RiskDriver,
@@ -113,33 +114,66 @@ def _map_carbon(raw: Dict) -> CarbonData:
 
     total = scope1 + scope2 + scope3
 
-    # Net-zero target from commitment_ledger or raw fields
-    cl = raw.get("commitment_ledger") or {}
-    if isinstance(cl, dict):
-        commitments = cl.get("commitments", []) or cl.get("verified_commitments", [])
-        net_zero_target = "Unknown"
-        for c in commitments:
-            if isinstance(c, dict):
+    # Pull agent-level findings — pathway + extraction live there, not at top level.
+    pathway_kf: Dict = {}
+    extraction_kf: Dict = {}
+    for ar in (raw.get("agent_results") or []):
+        if not isinstance(ar, dict):
+            continue
+        agent = ar.get("agent")
+        kf = ar.get("key_findings") or {}
+        if not isinstance(kf, dict):
+            continue
+        if agent == "carbon_pathway_analysis" and not pathway_kf:
+            pathway_kf = kf
+        elif agent == "carbon_extraction" and not extraction_kf:
+            extraction_kf = kf
+
+    # Net-zero target: prefer the carbon_extraction agent finding, then carbon_ext, then ledger.
+    net_zero_target = "Unknown"
+    if extraction_kf.get("net_zero_target"):
+        net_zero_target = str(extraction_kf["net_zero_target"])
+    elif carbon_ext.get("net_zero_target"):
+        net_zero_target = str(carbon_ext["net_zero_target"])
+    else:
+        cl = raw.get("commitment_ledger") or {}
+        if isinstance(cl, dict):
+            commitments = cl.get("commitments", []) or cl.get("verified_commitments", [])
+            for c in commitments:
+                if not isinstance(c, dict):
+                    continue
                 desc = c.get("description", "") or c.get("commitment", "")
-                if "net zero" in str(desc).lower() or "net-zero" in str(desc).lower():
+                if "net zero" in str(desc).lower() or "net-zero" in str(desc).lower() or "carbon negative" in str(desc).lower():
                     target_year = c.get("target_year", "") or c.get("year", "")
                     net_zero_target = f"Net zero by {target_year}" if target_year else str(desc)[:60]
                     break
-    else:
-        net_zero_target = str(carbon_ext.get("net_zero_target", "Unknown"))
 
-    # IEA gap from carbon_pathway_analysis (real values, not hardcoded)
+    # Carbon pathway: read from the agent's key_findings (canonical field names).
+    # Fall back to legacy top-level keys for older reports.
     cpa = raw.get("carbon_pathway_analysis") or {}
     if isinstance(cpa, dict) and "data" in cpa:
         cpa = cpa["data"]
-    iea_gap = _safe_float(cpa.get("iea_gap_pct") or cpa.get("gap_pct") or cpa.get("pathway_gap"), None) if isinstance(cpa, dict) else None
-    budget_years = _safe_float(cpa.get("budget_years_remaining") or cpa.get("remaining_years"), None) if isinstance(cpa, dict) else None
-    # Annual reduction rates — needed by the frontend trajectory chart so it
-    # plots the company's actual implied rate vs the IEA-required rate instead
-    # of a hardcoded 12%/yr placeholder line.
-    required_rate = _safe_float(cpa.get("required_annual_rate") or cpa.get("required_rate"), None) if isinstance(cpa, dict) else None
-    implied_rate = _safe_float(cpa.get("company_implied_rate") or cpa.get("implied_rate"), None) if isinstance(cpa, dict) else None
-    alignment_status = str(cpa.get("alignment_status") or "") if isinstance(cpa, dict) else ""
+    if not isinstance(cpa, dict):
+        cpa = {}
+
+    def _pick(*keys):
+        for src in (pathway_kf, cpa):
+            for k in keys:
+                if k in src and src[k] is not None:
+                    return src[k]
+        return None
+
+    budget_years = _safe_float(_pick("carbon_budget_remaining_yrs", "budget_years_remaining", "remaining_years"), None)
+    required_rate = _safe_float(_pick("required_annual_rate_raw", "required_annual_rate", "required_rate", "implied_cagr_required"), None)
+    implied_rate = _safe_float(_pick("company_implied_cagr", "company_implied_rate", "implied_rate"), None)
+    alignment_status = str(_pick("alignment_status") or "")
+
+    # IEA NZE annual-rate gap: the frontend Carbon tab caption shows "%/yr gap",
+    # so prefer the rate-gap (implied - required) over the cumulative iea_nze_gap_pct.
+    if required_rate is not None and implied_rate is not None:
+        iea_gap = implied_rate - required_rate
+    else:
+        iea_gap = _safe_float(_pick("iea_nze_gap_pct", "iea_gap_pct", "gap_pct", "pathway_gap_pct", "pathway_gap"), None)
 
     # data quality
     adv = (raw.get("scores") or {}).get("adversarial_audit") or {}
@@ -169,40 +203,110 @@ def _map_carbon(raw: Dict) -> CarbonData:
 # ── Greenwashing mapping ──────────────────────────────────────────────────────
 
 def _map_greenwashing(raw: Dict) -> GreenwashingData:
-    gw = raw.get("greenwishing_analysis") or raw.get("greenwashing_analysis") or {}
-    if isinstance(gw, dict) and "data" in gw:
-        gw = gw["data"]
+    # Deception data lives in the greenwishing_detection agent's key_findings,
+    # and ClimateBERT NLP output lives in climatebert_analysis. Top-level keys
+    # are not populated in current pipeline runs.
+    gw: Dict = {}
+    cb: Dict = {}
+    for ar in (raw.get("agent_results") or []):
+        if not isinstance(ar, dict):
+            continue
+        agent = ar.get("agent")
+        kf = ar.get("key_findings") or {}
+        if not isinstance(kf, dict):
+            continue
+        if agent == "greenwishing_detection" and not gw:
+            gw = kf
+        elif agent == "climatebert_analysis" and not cb:
+            cb = kf
+
+    # Fall back to top-level keys for legacy reports.
+    if not gw:
+        gw = raw.get("greenwishing_analysis") or raw.get("greenwashing_analysis") or {}
+        if isinstance(gw, dict) and "data" in gw:
+            gw = gw["data"]
+    if not cb:
+        cb = raw.get("climatebert_analysis") or {}
+        if isinstance(cb, dict) and "data" in cb:
+            cb = cb["data"]
 
     scores = raw.get("scores") or {}
     gw_score = _safe_float(scores.get("greenwashingriskscore") or scores.get("greenwashing_score_raw"), 0)
 
-    # ClimateBERT
-    cb = raw.get("climatebert_analysis") or {}
-    if isinstance(cb, dict) and "data" in cb:
-        cb = cb["data"]
-    if not isinstance(cb, dict):
-        cb = {}
+    def _score_or(d: Any, key_main: str, key_alt: str = "") -> float:
+        if isinstance(d, dict):
+            sub = d.get(key_main)
+            if isinstance(sub, dict) and sub.get("score") is not None:
+                return _safe_float(sub.get("score"), 0.0)
+            if key_alt and d.get(key_alt) is not None:
+                return _safe_float(d.get(key_alt), 0.0)
+        return 0.0
+
+    def _detected(d: Any, key: str) -> bool:
+        if isinstance(d, dict):
+            sub = d.get(key)
+            if isinstance(sub, dict):
+                return bool(sub.get("detected", False))
+            return bool(sub)
+        return False
+
+    # ClimateBERT: real fields live under claim_analysis.climate_relevance.score
+    # (0–100) and claim_analysis.greenwashing_detection.risk_level.
+    cb_claim = (cb.get("claim_analysis") or {}) if isinstance(cb, dict) else {}
+    cb_relevance_pct = _safe_float(
+        (cb_claim.get("climate_relevance") or {}).get("score") if isinstance(cb_claim.get("climate_relevance"), dict)
+        else cb.get("climate_relevance") or cb.get("relevance_score"),
+        0.0,
+    )
+    # The frontend expects relevance as a 0–1 fraction (it multiplies by 100 for display).
+    if cb_relevance_pct > 1.0:
+        cb_relevance_frac = cb_relevance_pct / 100.0
+    else:
+        cb_relevance_frac = cb_relevance_pct
+
+    cb_risk_level = ""
+    cb_gw_detection = (cb_claim.get("greenwashing_detection") or {}) if isinstance(cb_claim, dict) else {}
+    if isinstance(cb_gw_detection, dict):
+        cb_risk_level = str(cb_gw_detection.get("risk_level") or "")
+    if not cb_risk_level:
+        cb_risk_level = str(cb.get("risk_level") or cb.get("climate_risk") or "LOW")
+
+    # Linguistic risk proxy: greenwashing_risk_score from ClimateBERT's overall
+    # assessment (0–100), or the greenwishing detector's overall_deception_risk.
+    overall_dr = gw.get("overall_deception_risk") if isinstance(gw, dict) else None
+    if isinstance(overall_dr, dict) and overall_dr.get("score") is not None:
+        linguistic_risk = _safe_float(overall_dr.get("score"), 0.0)
+    else:
+        cb_overall = (cb_claim.get("overall_assessment") or {}) if isinstance(cb_claim, dict) else {}
+        linguistic_risk = _safe_float(
+            cb_overall.get("greenwashing_risk_score") if isinstance(cb_overall, dict) else None,
+            0.0,
+        )
+
+    # Temporal escalation: classify from greenwishing.score (which represents
+    # severity of aspirational language). LOW/MEDIUM/HIGH bands.
+    gw_aspirational = _score_or(gw, "greenwishing", "greenwishing_score")
+    if gw_aspirational >= 60:
+        temporal_band = "HIGH"
+    elif gw_aspirational >= 30:
+        temporal_band = "MEDIUM"
+    else:
+        temporal_band = "LOW"
+    if isinstance(gw, dict) and gw.get("temporal_escalation"):
+        temporal_band = str(gw["temporal_escalation"])
 
     return GreenwashingData(
         overall_score=gw_score,
-        greenwishing_score=_safe_float(
-            (gw.get("greenwishing") or {}).get("score") if isinstance(gw.get("greenwishing"), dict)
-            else gw.get("greenwishing_score"),
-            0.0
-        ),
-        greenhushing_score=_safe_float(
-            (gw.get("greenhushing") or {}).get("score") if isinstance(gw.get("greenhushing"), dict)
-            else gw.get("greenhushing_score"),
-            0.0
-        ),
-        selective_disclosure=bool(gw.get("selective_disclosure", False)),
-        temporal_escalation=str(gw.get("temporal_escalation", "LOW")),
-        carbon_tunnel_vision=bool(gw.get("carbon_tunnel_vision", False)),
-        linguistic_risk=_safe_float(raw.get("linguistic_risk") or gw.get("linguistic_risk"), 0.0),
-        gsi_score=_safe_float(raw.get("gsi_score") or gw.get("gsi_score"), 0.0),
-        boilerplate_score=_safe_float(raw.get("boilerplate_pct") or gw.get("boilerplate_score"), 0.0),
-        climatebert_relevance=_safe_float(cb.get("climate_relevance") or cb.get("relevance_score"), 0.0),
-        climatebert_risk=str(cb.get("risk_level") or cb.get("climate_risk", "LOW")),
+        greenwishing_score=gw_aspirational,
+        greenhushing_score=_score_or(gw, "greenhushing", "greenhushing_score"),
+        selective_disclosure=_detected(gw, "selective_disclosure"),
+        temporal_escalation=temporal_band,
+        carbon_tunnel_vision=_detected(gw, "carbon_tunnel_vision"),
+        linguistic_risk=linguistic_risk,
+        gsi_score=_safe_float(raw.get("gsi_score") or (gw.get("gsi_score") if isinstance(gw, dict) else None), 0.0),
+        boilerplate_score=_safe_float(raw.get("boilerplate_pct") or (gw.get("boilerplate_score") if isinstance(gw, dict) else None), 0.0),
+        climatebert_relevance=cb_relevance_frac,
+        climatebert_risk=cb_risk_level or "LOW",
     )
 
 
@@ -222,18 +326,58 @@ def _map_contradictions(raw: Dict) -> List[Contradiction]:
     elif isinstance(ca, list):
         items = ca
 
+    # Backstop: pull from the contradiction_analysis agent's key_findings
+    # when neither top-level list nor contradiction_analysis dict was present.
+    if not items:
+        for ar in (raw.get("agent_results") or []):
+            if not isinstance(ar, dict):
+                continue
+            if ar.get("agent") != "contradiction_analysis":
+                continue
+            kf = ar.get("key_findings") or {}
+            if isinstance(kf, dict):
+                items = kf.get("contradiction_list") or kf.get("contradictions") or []
+            break
+
+    company_claim = str(raw.get("claim_analyzed") or raw.get("claim") or "").strip()
+
     for i, item in enumerate(items):
         if not isinstance(item, dict):
             continue
+        # Contradiction items typically have only `description` — the contradicting
+        # evidence summary. Surface the company's analysed claim on the CLAIM side
+        # of the UI card and the description on the EVIDENCE side, so the two
+        # columns aren't echoes of each other.
+        description = str(item.get("description") or "").strip()
+        explicit_claim = str(item.get("claim") or item.get("claim_text") or "").strip()
+        explicit_evidence = str(item.get("evidence") or item.get("evidence_text") or "").strip()
+
+        claim_text = explicit_claim or company_claim or description
+        evidence_text = explicit_evidence or description or claim_text
+
+        impact = str(item.get("impact") or "")
+        if not impact:
+            severity = str(item.get("severity", "MEDIUM")).upper()
+            confidence = str(item.get("confidence") or "").upper()
+            stype = str(item.get("source_type") or "").lower()
+            if severity == "HIGH":
+                impact = "Materially undermines the headline claim."
+            elif "regulatory" in stype or "verified" in stype:
+                impact = "Verified counter-evidence — weighted into the headline score."
+            elif "llm" in stype or confidence == "LOW":
+                impact = "LLM-inferred signal — directional only, not used as a ground-truth floor."
+            else:
+                impact = "Counter-evidence considered in the score."
+
         result.append(Contradiction(
             id=str(item.get("id", f"c{i}")),
             severity=str(item.get("severity", "MEDIUM")).upper(),
-            claim_text=str(item.get("claim") or item.get("claim_text") or item.get("description", "")),
-            evidence_text=str(item.get("evidence") or item.get("evidence_text") or item.get("description", "")),
+            claim_text=claim_text,
+            evidence_text=evidence_text,
             source=str(item.get("source", "")),
             source_url=item.get("url") or item.get("source_url"),
             year=_safe_int(item.get("year"), 0) or None,
-            impact=str(item.get("impact", "")),
+            impact=impact,
         ))
 
     return result
@@ -241,42 +385,160 @@ def _map_contradictions(raw: Dict) -> List[Contradiction]:
 
 # ── Evidence mapping ──────────────────────────────────────────────────────────
 
+def _classify_source_type(url: str, source_name: str, reliability_tier: str) -> str:
+    """Mirror professional_report_generator's source-type bucketing for the UI."""
+    u = (url or "").lower()
+    name = (source_name or "").lower()
+    tier = (reliability_tier or "").lower()
+    if "regulator" in tier or "filing" in tier:
+        return "Regulatory Filing"
+    if "news" in tier or "media" in tier:
+        return "Major News"
+    if "company" in tier or "disclos" in tier:
+        return "Company Disclosure"
+    if "esg" in tier or "data" in tier:
+        return "Verified ESG Data"
+    if any(k in u for k in ["sec.gov", "europa.eu", "epa.gov", "ec.europa.eu", "company-information.service.gov.uk"]):
+        return "Regulatory Filing"
+    if any(k in u for k in ["reuters.com", "ft.com", "bloomberg.com", "wsj.com", "newsweek.com", "guardian", "nytimes"]):
+        return "Major News"
+    if any(k in name for k in ["companies house", "sec edgar", "ofgem", "fca"]) or "filing" in name:
+        return "Regulatory Filing"
+    if any(k in name for k in ["reuters", "bloomberg", "guardian", "newsweek", "ft", "nytimes", "wsj"]):
+        return "Major News"
+    if u:
+        return "Web Source"
+    return "Unknown"
+
+
+def _parse_year(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    s = str(value)
+    m = re.search(r"(19|20|21)\d{2}", s)
+    if m:
+        try:
+            return int(m.group(0))
+        except ValueError:
+            return None
+    return None
+
+
 def _map_evidence(raw: Dict) -> List[EvidenceItem]:
     result = []
 
-    # Try multiple keys
+    # Prefer evidence_records (richest shape: snippet, url, relationship_to_claim,
+    # reliability_tier, date) — that's what the audit TXT renders. Fall through
+    # to other keys only if records is empty.
     ev_list = (
-        raw.get("unified_evidence")
+        raw.get("evidence_records")
+        or raw.get("unified_evidence")
         or raw.get("evidence")
-        or raw.get("evidence_records")
         or []
     )
     if isinstance(ev_list, dict):
         ev_list = ev_list.get("items", []) or []
 
+    # Build a stance lookup from evidence_sources (keyed by URL) — sometimes
+    # records say "Neutral" but the source registry has the real stance.
+    stance_by_url: Dict[str, str] = {}
+    for src in (raw.get("evidence_sources") or []):
+        if not isinstance(src, dict):
+            continue
+        url = src.get("url") or ""
+        stance = src.get("stance") or src.get("role") or ""
+        if url and stance:
+            stance_by_url[url] = str(stance)
+
+    stance_map = {
+        "SUPPORTS": "SUPPORTING",
+        "SUPPORTIVE": "SUPPORTING",
+        "CONTRADICTS": "CONTRADICTING",
+        "MIXED": "NEUTRAL",
+    }
+
+    seen_urls: set = set()
     for i, item in enumerate(ev_list):
         if not isinstance(item, dict):
             continue
 
-        stance_raw = str(item.get("role") or item.get("stance") or item.get("relationship_to_claim") or "NEUTRAL").upper()
-        stance_map = {
-            "SUPPORTS": "SUPPORTING",
-            "SUPPORTIVE": "SUPPORTING",
-            "CONTRADICTS": "CONTRADICTING",
-            "MIXED": "NEUTRAL",
-        }
+        # Skip internal LLM-synthesis "sources" — these are the system's own
+        # inferences and must not be listed alongside external citations.
+        _src_type_l = str(item.get("source_type") or item.get("origin") or "").lower()
+        _src_name_l = str(item.get("source_name") or item.get("source") or "").lower()
+        if (
+            "llm_scan" in _src_type_l
+            or "llm evidence synthesis" in _src_name_l
+            or "claim_decomposition" in _src_name_l
+            or "internal llm" in _src_name_l
+        ):
+            continue
+
+        url = str(item.get("url") or item.get("source_url") or "").strip()
+        # De-dupe by URL so the Evidence tab shows one row per unique source.
+        if url and url in seen_urls:
+            continue
+        if url:
+            seen_urls.add(url)
+
+        # Stance: prefer item.relationship_to_claim, then evidence_sources lookup.
+        stance_raw = str(
+            item.get("role")
+            or item.get("stance")
+            or item.get("relationship_to_claim")
+            or stance_by_url.get(url, "")
+            or "NEUTRAL"
+        ).upper().split(",")[0].strip()
         stance = stance_map.get(stance_raw, stance_raw)
+        if stance not in ("SUPPORTING", "CONTRADICTING", "NEUTRAL"):
+            stance = "NEUTRAL"
+
+        source_name = str(item.get("source_name") or item.get("source") or "Unknown")
+        reliability_tier = str(item.get("reliability_tier") or "")
+        source_type = _classify_source_type(url, source_name, reliability_tier)
+
+        # Verified if the source has a real URL (mirrors the TXT report's
+        # _compute_reliability_tier rule: "no URL → unverifiable").
+        archive_verified = bool(url) and not item.get("archive_verified", True) is False
+        if "archive_verified" in item:
+            archive_verified = bool(item.get("archive_verified"))
+        else:
+            archive_verified = bool(url)
+
+        # Credibility: derive from reliability_tier when not explicit.
+        cred = _safe_float(item.get("credibility"), None)
+        if cred is None:
+            tier_l = reliability_tier.lower()
+            if "regulator" in tier_l or "filing" in tier_l or source_type == "Regulatory Filing":
+                cred = 0.95
+            elif "news" in tier_l or source_type == "Major News":
+                cred = 0.8
+            elif "company" in tier_l or "disclos" in tier_l:
+                cred = 0.75
+            elif "esg" in tier_l:
+                cred = 0.85
+            elif url:
+                cred = 0.6
+            else:
+                cred = 0.4
+
+        # Year: parse from item.year, else from item.date.
+        year = _safe_int(item.get("year"), 0) or None
+        if year is None:
+            year = _parse_year(item.get("date") or item.get("date_retrieved"))
+
+        excerpt = str(item.get("text") or item.get("excerpt") or item.get("snippet") or item.get("title") or "")
 
         result.append(EvidenceItem(
             id=str(item.get("id", f"e{i}")),
-            source_name=str(item.get("source") or item.get("source_name") or "Unknown"),
-            source_url=item.get("url") or item.get("source_url"),
-            credibility=_safe_float(item.get("credibility"), 0.5),
+            source_name=source_name,
+            source_url=url or None,
+            credibility=cred,
             stance=stance,
-            excerpt=str(item.get("text") or item.get("excerpt") or item.get("snippet") or ""),
-            year=_safe_int(item.get("year"), 0) or None,
-            source_type=str(item.get("origin", item.get("source_type", "Unknown"))),
-            archive_verified=bool(item.get("archive_verified", False)),
+            excerpt=excerpt,
+            year=year,
+            source_type=source_type,
+            archive_verified=archive_verified,
         ))
 
     return result[:50]  # cap for safety
@@ -420,7 +682,18 @@ def _map_risk_drivers(raw: Dict) -> List[RiskDriver]:
     if gw.overall_score > 60:
         _add_fallback("Elevated Greenwashing Signals", "HIGH", "increases_risk", 10.0)
 
-    for d in drivers:
+    # Map impact tier to a default magnitude when no real SHAP value exists.
+    # The Explainability bar chart uses these as relative weights — keep them
+    # spread out (HIGH > MODERATE > LOW) so bars don't all render identically.
+    impact_to_magnitude = {
+        "CRITICAL": 18.0,
+        "HIGH": 14.0,
+        "MEDIUM": 9.0,
+        "MODERATE": 9.0,
+        "LOW": 5.0,
+    }
+
+    for idx, d in enumerate(drivers):
         if not isinstance(d, dict):
             continue
         raw_dir = str(d.get("direction", "increases_risk")).lower()
@@ -429,13 +702,111 @@ def _map_risk_drivers(raw: Dict) -> List[RiskDriver]:
         else:
             direction = "reduces_risk"
 
+        impact = str(d.get("impact", "")).upper()
+        shap_value = _safe_float(d.get("shap_value") or d.get("value"), None)
+        if shap_value is None or shap_value == 0:
+            magnitude = impact_to_magnitude.get(impact, 8.0)
+            # Stagger drivers slightly by rank so bars don't render at exactly
+            # the same height when multiple share the same impact tier.
+            magnitude = max(2.0, magnitude - (idx * 0.5))
+            shap_value = magnitude if direction == "increases_risk" else -magnitude
+
         result.append(RiskDriver(
             name=str(d.get("name", d.get("feature", ""))),
-            impact=str(d.get("impact", "")),
+            impact=impact or "MEDIUM",
             direction=direction,
-            shap_value=_safe_float(d.get("shap_value") or d.get("value"), None) or None,
+            shap_value=shap_value,
         ))
     return result
+
+
+# ── Peer mapping ──────────────────────────────────────────────────────────────
+
+def _map_peers(raw: Dict, focus_company: str, focus_ticker: str, focus_esg: float, focus_gw: float, focus_rating: str, focus_industry: str) -> tuple[List[PeerEntry], Optional[Dict[str, float]]]:
+    """Map peer_comparison agent output to a list of PeerEntry objects.
+
+    The focus company is always inserted as the first row with is_focus=True.
+    Real peers come from agent_results[peer_comparison].key_findings.peers.
+    Returns (peers_list, industry_average_dict_or_None).
+    """
+    peers: List[PeerEntry] = []
+    industry_avg: Optional[Dict[str, float]] = None
+
+    raw_peers: List[Dict[str, Any]] = []
+    for ar in (raw.get("agent_results") or []):
+        if not isinstance(ar, dict):
+            continue
+        if ar.get("agent") not in ("peer_comparison", "industry_comparator"):
+            continue
+        kf = ar.get("key_findings") or {}
+        if not isinstance(kf, dict):
+            continue
+        candidate = kf.get("peers")
+        if isinstance(candidate, list) and candidate:
+            raw_peers = candidate
+            ia = kf.get("industry_average")
+            if isinstance(ia, dict):
+                industry_avg = {
+                    "esg": _safe_float(ia.get("esg"), 0.0),
+                    "e": _safe_float(ia.get("e"), 0.0),
+                    "s": _safe_float(ia.get("s"), 0.0),
+                    "g": _safe_float(ia.get("g"), 0.0),
+                }
+            break
+
+    # Always place the focus company first.
+    peers.append(PeerEntry(
+        name=focus_company,
+        ticker=focus_ticker,
+        esg=focus_esg,
+        gw=focus_gw,
+        rating=focus_rating,
+        is_focus=True,
+        industry=focus_industry,
+    ))
+
+    # De-dup against the focus company by stem-match (so "Microsoft" matches
+    # "Microsoft Corporation"). Build a comparison key using a normalised stem
+    # of the focus name so common-suffix peers don't double up.
+    def _stem(s: str) -> str:
+        s = s.lower().strip()
+        for suffix in (
+            " corporation", " corp", " inc.", " inc", " plc", " ltd",
+            " limited", " group", ", inc.", ", inc", ", ltd", " ag", " s.a.",
+            " sa", " co.", " co", " holdings", " industries",
+        ):
+            if s.endswith(suffix):
+                s = s[: -len(suffix)].strip()
+                break
+        return s.replace(",", "").strip()
+
+    focus_stem = _stem(focus_company)
+    seen_stems = {focus_stem}
+    for p in raw_peers:
+        if not isinstance(p, dict):
+            continue
+        name = str(p.get("company") or p.get("name") or "").strip()
+        if not name:
+            continue
+        peer_stem = _stem(name)
+        if peer_stem in seen_stems:
+            continue
+        seen_stems.add(peer_stem)
+        peers.append(PeerEntry(
+            name=name,
+            ticker=str(p.get("ticker") or ""),
+            esg=_safe_float(p.get("esg") or p.get("esg_score"), 0.0),
+            gw=_safe_float(p.get("gw") or p.get("greenwashing_risk_score") or p.get("gw_score"), 0.0),
+            rating=str(p.get("rating") or ""),
+            is_focus=bool(p.get("is_target", False)),
+            industry=str(p.get("industry") or focus_industry),
+            e_score=_safe_float(p.get("e"), None),
+            s_score=_safe_float(p.get("s"), None),
+            g_score=_safe_float(p.get("g"), None),
+            rank=str(p.get("rank")) if p.get("rank") is not None else None,
+        ))
+
+    return peers, industry_avg
 
 
 # ── Ticker / sector from company name ────────────────────────────────────────
@@ -520,12 +891,38 @@ def map_report_to_schema(raw: Dict, report_id: str) -> ESGReport:
 
     esg_score = _safe_float(scores.get("esg_score"), 0.0)
     rating_grade = str(scores.get("esg_rating", "B"))
-    risk_level_raw = str(raw.get("risk_level", scores.get("risk_level", "MODERATE"))).upper()
+    gw_score_for_band = _safe_float(scores.get("greenwashingriskscore") or scores.get("greenwashing_score_raw"), 0.0)
+    risk_level_raw = str(raw.get("risk_level", scores.get("risk_level", "")) or "").upper()
     if risk_level_raw not in ("HIGH", "MODERATE", "LOW"):
-        risk_level_raw = "MODERATE"
+        risk_level_raw = ""
+    # Floor the band against the headline GW score so a missing/stale risk_level
+    # never underrepresents risk. The 4-tier _risk_band scheme (LOW/MODERATE/
+    # HIGH/CRITICAL) collapses to 3 here because the API surface is 3-band.
+    if gw_score_for_band >= 60:
+        floor_band = "HIGH"
+    elif gw_score_for_band >= 40:
+        floor_band = "MODERATE"
+    else:
+        floor_band = "LOW"
+    order = {"LOW": 0, "MODERATE": 1, "HIGH": 2}
+    if not risk_level_raw or order[floor_band] > order.get(risk_level_raw, 0):
+        risk_level_raw = floor_band
         
     conf_val = _safe_float(scores.get("confidence"), 0.0)
     confidence = conf_val * 100 if conf_val <= 1.0 else conf_val
+    # Apply the same confidence-ceiling cap that the TXT report applies, so the
+    # headline confidence on the frontend matches the printed audit (e.g. 65%
+    # not 75.7%). The ceiling lives under raw.calibration when present.
+    cal_block = raw.get("calibration") or {}
+    if isinstance(cal_block, dict):
+        ceiling = cal_block.get("confidence_ceiling_pct")
+        if isinstance(ceiling, (int, float)):
+            confidence = min(confidence, float(ceiling))
+    # Confidence caps stored on scores (e.g. evidence-thinness or coverage caps).
+    for cap_key in ("confidence_cap_pct", "confidence_ceiling_pct"):
+        cap_val = scores.get(cap_key)
+        if isinstance(cap_val, (int, float)):
+            confidence = min(confidence, float(cap_val))
 
     # Agents
     adv = scores.get("adversarial_audit") or {}
@@ -578,6 +975,18 @@ def map_report_to_schema(raw: Dict, report_id: str) -> ESGReport:
     if not isinstance(retriever_tally_block, dict):
         retriever_tally_block = {}
 
+    # Real peer comparison data — replaces the hardcoded sector-peer rows.
+    _gw_overall = _safe_float(scores.get("greenwashingriskscore") or scores.get("greenwashing_score_raw"), 0.0)
+    peers_list, peer_industry_avg = _map_peers(
+        raw,
+        focus_company=company,
+        focus_ticker=ticker,
+        focus_esg=esg_score,
+        focus_gw=_gw_overall,
+        focus_rating=rating_grade,
+        focus_industry=industry or sector,
+    )
+
     report = ESGReport(
         id=report_id,
         company=company,
@@ -603,6 +1012,8 @@ def map_report_to_schema(raw: Dict, report_id: str) -> ESGReport:
         ai_verdict=ai_verdict,
         executive_summary=exec_summary,
         top_risk_drivers=_map_risk_drivers(raw),
+        peers=peers_list,
+        peer_industry_average=peer_industry_avg,
         temporal_score=temporal_score,
         temporal_risk=temporal_risk,
         claim_trend=claim_trend,

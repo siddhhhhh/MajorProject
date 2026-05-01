@@ -11,8 +11,13 @@ function downloadBlob(content: string, filename: string, type: string) {
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
+  a.rel = "noopener";
+  // Some browsers (Firefox, certain Chromium builds) silently drop
+  // a programmatic .click() if the anchor isn't attached to the document.
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
   function buildReportText() {
@@ -56,16 +61,23 @@ function downloadBlob(content: string, filename: string, type: string) {
     setLoading(true);
     try {
       const res = await fetch(`/api/reports/${reportId}/pdf`);
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        const errText = await res.text().catch(() => res.statusText);
+        throw new Error(`PDF endpoint ${res.status}: ${errText.slice(0, 200)}`);
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = `ESGLens_${R.company.replace(/ /g, "_")}_${reportId}.pdf`;
+      a.rel = "noopener";
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 0);
     } catch (e) {
       console.error("PDF download failed", e);
+      alert(`PDF download failed:\n${(e as Error).message}`);
     } finally {
       setLoading(false);
     }

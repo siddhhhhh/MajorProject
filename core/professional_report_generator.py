@@ -674,20 +674,30 @@ class ProfessionalReportGenerator:
     def _confidence_label(self, pct: float, quality_label: Optional[str] = None) -> str:
         """Map percentage to a coarse confidence label.
 
-        When ``quality_label`` is provided (from ReportQualityChecker), use
-        the more conservative of the two — i.e. if the percentage suggests
-        MEDIUM but the quality checker downgraded to LOW (due to coverage/
-        evidence gaps), surface LOW. Without this rule, Section 3 said
-        "59.0% (MEDIUM)" while the header/JSON said LOW for the same run.
+        Bands aligned with the 70% high-trust threshold mentioned elsewhere
+        in the report. Previously the LOW/MEDIUM cutover sat at 50, which
+        produced inconsistent labels across reports (e.g. VW 53.9% = MEDIUM
+        but Tesla 55.0% = LOW once the conservative quality-downgrade kicked
+        in). The current bands keep the labels stable for similar pct values
+        and only allow the quality_label to ESCALATE conservatism by one
+        tier — never to invert it.
+
+        Bands: HIGH ≥75, MEDIUM ≥60 (sits below the 70% high-trust line),
+        LOW <60.
         """
-        pct_label = "HIGH" if pct >= 75 else "MEDIUM" if pct >= 50 else "LOW"
+        if pct >= 75:
+            pct_label = "HIGH"
+        elif pct >= 60:
+            pct_label = "MEDIUM"
+        else:
+            pct_label = "LOW"
         if not quality_label:
             return pct_label
-        # Pick the more conservative of (pct-derived, quality-derived).
         order = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
         q = quality_label.upper().strip()
         if q not in order:
             return pct_label
+        # Conservative downgrade only — quality can drop the label, never raise it.
         return pct_label if order[pct_label] <= order[q] else q
 
     def _rating_from_esg_score(self, esg_score: Any) -> str:
@@ -1504,7 +1514,33 @@ class ProfessionalReportGenerator:
         # Append phantom contradiction sources — items flagged in Section 7 that
         # were not in the retrieved evidence pool. Without this Section 4 hides
         # the contradicting evidence the headline score relies on.
+        # LLM-synthesised contradictions are NOT external citations — they are
+        # the system's own inference. Listing them as a verified web source
+        # misrepresents the evidence base, so we skip them at the citation
+        # table layer (they still surface in Section 7 with the TIER-3 badge).
+        def _is_internal_llm_source(rec: Dict[str, Any]) -> bool:
+            stype = str(rec.get("source_type") or "").lower()
+            sname = str(rec.get("source_name") or "").lower()
+            url = str(rec.get("source_url") or "").lower()
+            llm_markers = ("llm_scan", "llm_evidence", "llm-inferred", "llm inferred")
+            llm_name_markers = (
+                "llm evidence synthesis",
+                "llm synthesis",
+                "claim_decomposition",
+                "claim decomposition",
+                "internal llm",
+            )
+            if any(m in stype for m in llm_markers):
+                return True
+            if any(m in sname for m in llm_name_markers):
+                return True
+            if not url and "llm" in sname:
+                return True
+            return False
+
         for rec in contradiction_records:
+            if _is_internal_llm_source(rec):
+                continue
             _key = (rec.get("source_name", "").lower() + "|" + rec.get("domain", "")).strip("|")
             if _key in matched_contra_keys:
                 continue
@@ -1693,6 +1729,37 @@ class ProfessionalReportGenerator:
                 value = row.get("value")
                 value_txt = f"{float(value):+.2f}" if isinstance(value, (int, float)) else str(value)
                 score_header.append(f"  {label:<36} {value_txt:>10}")
+
+            # ── Append ground-truth override rows so the headline ESG/GW
+            # numbers in the VERDICT block reconcile with the formula
+            # output. Without these rows the reader sees ESG=60.2 in the
+            # ledger and ESG=35 in the verdict with no arithmetic bridge.
+            agents_block = v.get("agents") or {}
+            kco = {}
+            if isinstance(agents_block, dict):
+                _vao = agents_block.get("verdict_generation") or {}
+                _vout = _vao.get("output") if isinstance(_vao, dict) else {}
+                if isinstance(_vout, dict):
+                    kco = _vout.get("known_case_override") or {}
+            if isinstance(kco, dict) and kco.get("applied"):
+                _floor_gw = kco.get("floor_gw_score")
+                _ceiling_esg = kco.get("ceiling_esg_score")
+                _case_id = kco.get("case_id") or "GT"
+                if isinstance(_floor_gw, (int, float)):
+                    score_header.append(
+                        f"  {'GW Score (ground-truth floor, ' + str(_case_id) + ')':<36} {float(_floor_gw):+10.2f}"
+                    )
+                if isinstance(_ceiling_esg, (int, float)):
+                    score_header.append(
+                        f"  {'ESG Score (ground-truth ceiling, ' + str(_case_id) + ')':<36} {float(_ceiling_esg):+10.2f}"
+                    )
+                score_header.append("  ─" * 28)
+                score_header.append(
+                    "  Headline GW/ESG in Section 1 use the ground-truth bounds above,"
+                )
+                score_header.append(
+                    "  not the formula/composite values, when a documented case is matched."
+                )
             score_header.append("")
 
             # ── GW FORMULA INPUTS (audit table) ──────────────────────────
@@ -1730,6 +1797,45 @@ class ProfessionalReportGenerator:
             score_header.append("")
         # ── End modifier ledger / formula inputs ─────────────────────────
 
+        # Pull pillar fact-node coverage from the fact-graph motifs so we
+        # can warn when a pillar's score rests on near-zero KG evidence
+        # (e.g. Governance scored to one-decimal precision while only
+        # 4 fact nodes exist for it). Mirrors the structure stored under
+        # agent_results[risk_scoring].key_findings.fact_graph.motifs.
+        _fg_motifs: Dict[str, Any] = {}
+        try:
+            _agents_block = v.get("agents") or {}
+            if isinstance(_agents_block, dict):
+                _risk_ao = _agents_block.get("risk_scoring") or {}
+                _risk_out = _risk_ao.get("output") if isinstance(_risk_ao, dict) else {}
+                if isinstance(_risk_out, dict):
+                    _fg = _risk_out.get("fact_graph") or {}
+                    if isinstance(_fg, dict):
+                        _fg_motifs = _fg.get("motifs") or {}
+        except Exception:
+            _fg_motifs = {}
+        _pillar_fact_coverage: Dict[str, int] = {}
+        if isinstance(_fg_motifs, dict):
+            _cov = _fg_motifs.get("pillar_coverage") or {}
+            if isinstance(_cov, dict):
+                for _k, _vv in _cov.items():
+                    try:
+                        _pillar_fact_coverage[str(_k).upper()] = int(_vv)
+                    except (TypeError, ValueError):
+                        pass
+
+        def _coverage_warning(letter: str) -> Optional[str]:
+            """Return a one-line caveat when a pillar's KG fact-node count is below 5."""
+            cnt = _pillar_fact_coverage.get(letter)
+            if cnt is None:
+                return None
+            if cnt >= 5:
+                return None
+            return (
+                f"  ⚠ KG coverage thin: only {cnt} fact node(s) for this pillar — "
+                "factor scores carry false precision; treat numbers as directional."
+            )
+
         score_header.extend([
             f"ENVIRONMENTAL PILLAR - {self._pillar_score_text(e_score, e_missing)}",
             self._pillar_insight_line("Environmental", None if e_missing else e_score, pillar_snapshot["Environmental"]["block"]),
@@ -1737,6 +1843,8 @@ class ProfessionalReportGenerator:
             f"  {'Factor':<34} {'Signal':<18} {'Source':<32} {'Weight':<7} {'Contribution to Score':<22} {'Data Quality':<18}",
             "  " + "-" * 135,
         ])
+        if (warn := _coverage_warning("E")):
+            score_header.append(warn)
 
         def _append_pillar_rows(block: Dict[str, Any], fallback_score: float, expected_total: int, score_missing: bool = False) -> Tuple[int, int, float]:
             sub = self._pillar_sub_indicators(block)
@@ -1828,6 +1936,8 @@ class ProfessionalReportGenerator:
             f"  {'Factor':<34} {'Signal':<18} {'Source':<32} {'Weight':<7} {'Contribution to Score':<22} {'Data Quality':<18}",
             "  " + "-" * 135,
         ])
+        if (warn := _coverage_warning("S")):
+            score_header.append(warn)
         social_block = pillar_factors.get("social", {}) if isinstance(pillar_factors, dict) else {}
         social_scored, social_total, _ = _append_pillar_rows(social_block, s_score, 5, s_missing)
         score_header.extend([
@@ -1838,6 +1948,8 @@ class ProfessionalReportGenerator:
             f"  {'Factor':<34} {'Signal':<18} {'Source':<32} {'Weight':<7} {'Contribution to Score':<22} {'Data Quality':<18}",
             "  " + "-" * 135,
         ])
+        if (warn := _coverage_warning("G")):
+            score_header.append(warn)
         gov_block = pillar_factors.get("governance", {}) if isinstance(pillar_factors, dict) else {}
         governance_scored, governance_total, _ = _append_pillar_rows(gov_block, g_score, 6, g_missing)
         if (s_score <= 15 or g_score <= 15) and (
@@ -2698,15 +2810,47 @@ class ProfessionalReportGenerator:
         section7 = [major, "SECTION 9: DECEPTION PATTERN ANALYSIS", major]
         section7.append(f"  Overall Deception Risk:  {self._fmt_score1(overall_dec)}/100  ({overall_lvl})")
         if isinstance(overall_dec, (int, float)) and abs(float(overall_dec) - float(v["gw_score"])) > 30:
-            section7.append(
-                self._wrap_paragraph(
-                    f"  NOTE: Deception Risk ({self._fmt_score1(overall_dec)}) and Greenwashing Score "
-                    f"({v['gw_score']:.1f}) diverge materially. "
-                    "Low deception + high greenwashing = disclosure gap, not intentional manipulation. "
-                    "Risks are driven by omission and execution shortfalls rather than confirmed misrepresentation.",
-                    width=80,
+            # Build a context-aware divergence note. The earlier blanket text
+            # ("disclosure gap, not intentional manipulation") was misleading
+            # when the high GW score actually came from a ground-truth
+            # ENFORCEMENT floor — i.e. confirmed misrepresentation, the
+            # opposite of what the boilerplate claimed.
+            kco = {}
+            try:
+                _vao = v.get("agents", {}).get("verdict_generation") or {}
+                _vout = _vao.get("output") if isinstance(_vao, dict) else {}
+                if isinstance(_vout, dict):
+                    kco = _vout.get("known_case_override") or {}
+            except Exception:
+                kco = {}
+
+            divergence_explanation: str
+            if isinstance(kco, dict) and kco.get("applied"):
+                _case_id = kco.get("case_id", "GT")
+                divergence_explanation = (
+                    f"  NOTE: Deception Risk ({self._fmt_score1(overall_dec)}) measures linguistic "
+                    f"manipulation in the disclosure text, while the Greenwashing Score "
+                    f"({v['gw_score']:.1f}) is floored by ground-truth case {_case_id} — a "
+                    "documented external enforcement record (court ruling, settlement, regulatory "
+                    "fine). Linguistic analysis sees relatively clean text; the headline reflects "
+                    "historical confirmed misrepresentation captured by the registry."
                 )
-            )
+            elif float(overall_dec) < float(v["gw_score"]):
+                divergence_explanation = (
+                    f"  NOTE: Deception Risk ({self._fmt_score1(overall_dec)}) and Greenwashing "
+                    f"Score ({v['gw_score']:.1f}) diverge materially. The headline is being lifted "
+                    "by non-linguistic signals — typically regulatory gaps, contradiction-database "
+                    "matches, or carbon-pathway misalignment — rather than by promotional language "
+                    "in the text itself. Treat as disclosure/execution risk, not text manipulation."
+                )
+            else:
+                divergence_explanation = (
+                    f"  NOTE: Deception Risk ({self._fmt_score1(overall_dec)}) exceeds the headline "
+                    f"Greenwashing Score ({v['gw_score']:.1f}). Linguistic patterns flag risk that "
+                    "the structured/regulatory signals do not yet corroborate; review Section 9 "
+                    "tactics for context."
+                )
+            section7.append(self._wrap_paragraph(divergence_explanation, width=80))
         section7.append("")
 
         # --- Tactic Table (consistent labels throughout) ---
@@ -2897,6 +3041,12 @@ class ProfessionalReportGenerator:
             adjacent_used = bool(cal.get("adjacent_expansion_used"))
             adjacent_industries = cal.get("adjacent_industries") or []
             no_industry_match = bool(cal.get("no_industry_match"))
+            # Honesty fix: if there are zero ground-truth cases for the issuer's
+            # industry, do not label the calibration subset with that industry —
+            # that produced misleading lines like "industry: Oil & Gas" while
+            # the system reference had 0/51 Oil & Gas cases.
+            if no_industry_match and subset_industry == company_industry:
+                subset_industry = f"cross-industry (no {company_industry} cases in dataset)"
             fallback_used = bool(cal.get("fallback_used"))
             fallback_reason = cal.get("fallback_reason")
             low_sample = bool(cal.get("low_sample"))
@@ -3786,7 +3936,11 @@ class ProfessionalReportGenerator:
                 *claim_tail,
                 f"Report ID:          {report_id}",
                 f"Date:               {date_line}",
-                f"Confidence:         {v['confidence_pct']:.1f}% ({v['report_confidence']})",
+                # Use confidence_label (the percentage-aware bucket) rather than
+                # report_confidence (the upstream quality-checker label) so that
+                # the header band matches Section 3's body. Otherwise a 51.6%
+                # run could show "(HIGH)" in the header and "(MEDIUM)" in body.
+                f"Confidence:         {v['confidence_pct']:.1f}% ({v['confidence_label']})",
                 f"Version:            {report_version}",
                 minor,
             ]),
@@ -4020,6 +4174,14 @@ class ProfessionalReportGenerator:
         ).upper()
         if rating.upper() in {"CCC", "C"} and band in {"LOW", "MODERATE"}:
             band = "HIGH"
+        # Floor the band against the calibrated greenwashing score so an upstream
+        # label can never UNDERSTATE risk relative to the headline number. e.g.
+        # GW=90 must surface as CRITICAL even if a stale risk_level field said
+        # MODERATE. Upstream is allowed to ESCALATE the band (CCC override above).
+        gw_floor_band = self._risk_band(gw_calibrated)
+        order = {"LOW": 0, "MODERATE": 1, "HIGH": 2, "CRITICAL": 3}
+        if order.get(gw_floor_band, 0) > order.get(band, 0):
+            band = gw_floor_band
         return {
             "display_esg_score": round(display_esg, 1),
             "rating_basis_score": round(display_esg, 1),
@@ -4136,11 +4298,42 @@ class ProfessionalReportGenerator:
                     raw_gw = kco.get("raw_gw_score")
                     floor_gw = kco.get("floor_gw_score")
                     case_id = kco.get("case_id", "")
+
+                    # Build a transparent arithmetic bridge so the reader can
+                    # follow GW formula → recalibrated → ground-truth floor.
+                    # Without this, the verdict shows three different numbers
+                    # (formula 22.4, recalibrated 16.1, headline 80) with no
+                    # mathematical path between them.
+                    risk_ao = agents.get("risk_scoring") or {}
+                    risk_out = risk_ao.get("output") if isinstance(risk_ao, dict) else {}
+                    formula_gw = None
+                    recal_gw = None
+                    if isinstance(risk_out, dict):
+                        formula_gw = risk_out.get("greenwashingscoreraw")
+                        recal_gw = risk_out.get("greenwashingriskscore_raw") or risk_out.get("greenwashingriskscore")
+                    chain_parts: List[str] = []
+                    if isinstance(formula_gw, (int, float)):
+                        chain_parts.append(f"formula {float(formula_gw):.1f}")
+                    if isinstance(recal_gw, (int, float)) and (not isinstance(formula_gw, (int, float)) or abs(float(recal_gw) - float(formula_gw)) > 0.05):
+                        chain_parts.append(f"recalibrated {float(recal_gw):.1f}")
+                    if isinstance(raw_gw, (int, float)) and not chain_parts:
+                        chain_parts.append(f"raw {float(raw_gw):.1f}")
+                    if isinstance(floor_gw, (int, float)):
+                        chain_parts.append(f"ground-truth floor {float(floor_gw):.1f}")
+                    chain_str = " → ".join(chain_parts) if chain_parts else f"raw {raw_gw} → floor {floor_gw}"
+
+                    raw_esg = kco.get("raw_esg_score")
+                    ceiling_esg = kco.get("ceiling_esg_score")
+                    esg_chain = ""
+                    if isinstance(raw_esg, (int, float)) and isinstance(ceiling_esg, (int, float)):
+                        esg_chain = f" ESG: pillar composite {float(raw_esg):.1f} → ground-truth ceiling {float(ceiling_esg):.1f}."
+
+                    reason = kco.get("reason") or "documented confirmed-greenwashing case"
                     caveats.append(
-                        f"GROUND TRUTH OVERRIDE: Headline scores adjusted (case {case_id}) — "
-                        f"raw GW {raw_gw} → floor {floor_gw}/100. The system's pre-override "
-                        f"verdict differed from the documented regulatory record; raw values "
-                        f"in Section 10."
+                        f"GROUND TRUTH OVERRIDE: Headline scores adjusted (case {case_id}). "
+                        f"GW chain: {chain_str}/100.{esg_chain} "
+                        f"Floor/ceiling sourced from data/known_cases.py "
+                        f"because: {str(reason).rstrip('. ')}."
                     )
 
         # Confidence ceiling caveat
@@ -5018,7 +5211,17 @@ class ProfessionalReportGenerator:
             return "Limited Disclosure"
         return "Verified" if factor.get("verifiable") else "Estimated"
 
-    def _pillar_driver_terms(self, pillar_name: str, block: Any, limit: int = 2) -> List[str]:
+    def _pillar_driver_terms(self, pillar_name: str, block: Any, limit: int = 2, direction: str = "weakness") -> List[str]:
+        """Return the factor names that most explain the pillar score.
+
+        When ``direction='strength'`` we return the highest-scoring factors
+        (so a "strongest pillar driven by X" sentence actually names the
+        strongest factors). When ``direction='weakness'`` (default) we
+        return the lowest-scoring or missing factors. The earlier version
+        always sorted ascending and returned the LOWEST factors regardless
+        of context — producing nonsense like "Social is the strongest
+        pillar due to employee health & safety (25/100)".
+        """
         factors = self._pillar_sub_indicators(block)
         scored: List[Tuple[float, str]] = []
         missing: List[str] = []
@@ -5034,6 +5237,20 @@ class ProfessionalReportGenerator:
             else:
                 missing.append(name.lower())
 
+        is_strength = str(direction).lower().startswith("strength")
+        if is_strength:
+            # For strengths, prefer the top-scoring factors. Filter out
+            # anything below 50 — calling a 25/100 factor a "strength" is
+            # exactly the bug we're fixing.
+            high_scored = [s for s in scored if s[0] >= 50.0]
+            if high_scored:
+                high_scored.sort(key=lambda item: item[0], reverse=True)
+                return [item[1] for item in high_scored[:limit]]
+            # No factor scores ≥50 — be honest.
+            return ["no individual factor scores high enough to be called a strength"]
+
+        # Weakness path: prefer missing-disclosure factors first, then the
+        # lowest-scoring numeric factors.
         if missing:
             return [f"limited disclosure for {item}" for item in missing[:limit]]
         if scored:
@@ -5048,11 +5265,19 @@ class ProfessionalReportGenerator:
         return defaults.get(pillar_name, ["available factor evidence"])[:limit]
 
     def _pillar_insight_line(self, pillar_name: str, score: Any, block: Any) -> str:
-        drivers = self._join_business_list(self._pillar_driver_terms(pillar_name, block, limit=2))
         label = self._score_band_label(score).lower()
         if label == "data not available":
             return f"{pillar_name}: limited disclosure prevents a decision-grade pillar interpretation."
-        return f"{pillar_name}: {label} score driven by {drivers}."
+        # Make the narrative match its source. The driver list comes from
+        # the LOWEST-scoring factors, so the verb has to match: "weighed
+        # down by" for low/moderate pillars, "supported by" highlighting the
+        # strengths for higher-scoring pillars.
+        score_num = float(score) if isinstance(score, (int, float)) else 0.0
+        if score_num >= 65:
+            drivers = self._join_business_list(self._pillar_driver_terms(pillar_name, block, limit=2, direction="strength"))
+            return f"{pillar_name}: {label} score supported by {drivers}."
+        drivers = self._join_business_list(self._pillar_driver_terms(pillar_name, block, limit=2, direction="weakness"))
+        return f"{pillar_name}: {label} score weighed down by {drivers}."
 
     def _build_score_derivation_summary(
         self,
@@ -5063,8 +5288,16 @@ class ProfessionalReportGenerator:
     ) -> str:
         weakest = pillars.get(weakest_pillar, {})
         strongest = pillars.get(strongest_pillar, {})
-        weakest_drivers = self._join_business_list(self._pillar_driver_terms(weakest_pillar, weakest.get("block"), limit=2))
-        strongest_drivers = self._join_business_list(self._pillar_driver_terms(strongest_pillar, strongest.get("block"), limit=2))
+        # Reconcile narrative against actual pillar scores. Without this
+        # ordering check we sometimes named the higher-scored pillar as
+        # "weakest" (e.g. Social=62 mis-cited as weaker than Governance=56).
+        s_score = strongest.get("score") if isinstance(strongest, dict) else None
+        w_score = weakest.get("score") if isinstance(weakest, dict) else None
+        if isinstance(s_score, (int, float)) and isinstance(w_score, (int, float)) and s_score < w_score:
+            strongest_pillar, weakest_pillar = weakest_pillar, strongest_pillar
+            strongest, weakest = weakest, strongest
+        weakest_drivers = self._join_business_list(self._pillar_driver_terms(weakest_pillar, weakest.get("block"), limit=2, direction="weakness"))
+        strongest_drivers = self._join_business_list(self._pillar_driver_terms(strongest_pillar, strongest.get("block"), limit=2, direction="strength"))
         other_pillars = [name for name in ["Environmental", "Social", "Governance"] if name not in {strongest_pillar, weakest_pillar}]
         other_text = " and ".join(other_pillars) if other_pillars else "remaining pillars"
         performance = {"Low": "weak", "Moderate": "moderate", "High": "strong"}.get(
@@ -5513,6 +5746,16 @@ class ProfessionalReportGenerator:
         score = self._safe_float(tri_score, -1.0)
         if total_sources <= 0:
             return "Limited", "no evidence sources available"
+        # Hard guards on stance composition. Without these, an upstream
+        # triangulation_score of 80 caused us to emit "Strong (broad
+        # agreement…)" for a 0-supporting + 1-contradicting evidence pool —
+        # which is the opposite of agreement.
+        if supporting_count == 0 and contradicting_count > 0:
+            return "Limited", f"no supporting sources; {contradicting_count} contradicting"
+        if supporting_count == 0:
+            return "Limited", "no explicit supporting sources"
+        if contradicting_count > supporting_count:
+            return "Limited", "contradicting sources outweigh supporting"
         if score >= 75 and contradicting_count == 0:
             return "Strong", "high agreement across sources"
         if score >= 75:
@@ -6505,18 +6748,28 @@ class ProfessionalReportGenerator:
                 "Calibration dataset may not fully represent the sector and geography of this issuer; transport of thresholds should be reviewed."
             )
 
+        # Each tuple: (display_name, *aliases). The actual agent in the pipeline
+        # may be registered under any of the aliases; if any alias succeeded we
+        # consider the dimension covered.
         crucial_agents = [
-            "evidence_retrieval",
-            "risk_scoring",
-            "sentiment_analysis",
-            "industry_comparator",
-            "temporal_analysis",
+            ("evidence_retrieval", "evidence_retrieval"),
+            ("risk_scoring", "risk_scoring"),
+            ("sentiment_analysis", "sentiment_analysis"),
+            ("industry_comparator", "industry_comparator", "peer_comparison"),
+            ("temporal_analysis", "temporal_analysis", "temporal_consistency"),
         ]
-        for name in crucial_agents:
-            a = agents.get(name)
-            if not a or a.get("error"):
+        for entry in crucial_agents:
+            display_name = entry[0]
+            aliases = entry[1:]
+            covered = False
+            for alias in aliases:
+                a = agents.get(alias)
+                if a and not a.get("error"):
+                    covered = True
+                    break
+            if not covered:
                 limitations.append(
-                    f"Core agent '{name}' failed or returned no structured output; its dimension is effectively missing from the integrated score."
+                    f"Core agent '{display_name}' failed or returned no structured output; its dimension is effectively missing from the integrated score."
                 )
 
         return limitations
@@ -8017,16 +8270,32 @@ Industry Baseline Adjustment: {industry_adj:+.1f} points
         elif temporal_mode in {"trend", "snapshot"} and temporal_quality_score >= 45 and temporal_weight >= 0.05:
             temporal_reliability = "moderate"
 
-        offset_points = 8
+        # Realism contributions: track which dimensions were actually assessable
+        # so we can renormalise the final score and avoid the failure mode where
+        # every default-input report converges on the same arithmetic sum.
+        # Each dimension is allotted 25 points and the final score is rescaled
+        # over the dimensions that produced a meaningful signal.
+        dim_max = 25
+        dim_assessed: List[str] = []
+        dim_points: Dict[str, float] = {}
+
+        offset_points = None
         if offset_integrity == "strong":
             offset_points = 25
         elif offset_integrity == "moderate":
             offset_points = 17
         elif offset_integrity == "weak":
             offset_points = 7
-        offset_points = max(0, offset_points - min(int(offset_penalty), 10))
+        elif offset_integrity == "unknown":
+            offset_points = None  # not assessable
+        elif offset_integrity == "not_applicable":
+            offset_points = None  # don't fabricate signal when company has no offsets
+        if offset_points is not None:
+            offset_points = max(0, offset_points - min(int(offset_penalty), 10))
+            dim_points["offset"] = offset_points
+            dim_assessed.append("offset")
 
-        dei_points = 8
+        dei_points = None
         if dei_execution == "strong":
             dei_points = 25
         elif dei_execution == "improving":
@@ -8037,25 +8306,51 @@ Industry Baseline Adjustment: {industry_adj:+.1f} points
             dei_points = 9
         elif dei_execution == "target_only":
             dei_points = 6
+        # "insufficient" classification means we couldn't measure DEI execution;
+        # don't default to 8 points which inflates the final score.
+        if dei_points is not None:
+            dim_points["dei"] = dei_points
+            dim_assessed.append("dei")
 
-        evidence_points = min(
-            25, int((independent_share * 0.5) + (premium_share * 0.25) + (source_diversity * 2))
-        )
-        if evidence_gap:
-            evidence_points = max(0, evidence_points - 6)
+        evidence_signal_present = bool(independent_share or premium_share or source_diversity)
+        if evidence_signal_present:
+            evidence_points = min(
+                25, int((independent_share * 0.5) + (premium_share * 0.25) + (source_diversity * 2))
+            )
+            if evidence_gap:
+                evidence_points = max(0, evidence_points - 6)
+            dim_points["evidence"] = evidence_points
+            dim_assessed.append("evidence")
+        else:
+            evidence_points = None
 
-        temporal_points = 6
+        temporal_points = None
         if temporal_reliability == "strong":
             temporal_points = 25
         elif temporal_reliability == "moderate":
             temporal_points = 16
+        elif temporal_mode in {"trend", "snapshot"}:
+            temporal_points = 6  # we did try, just got limited data
+        if temporal_points is not None:
+            dim_points["temporal"] = temporal_points
+            dim_assessed.append("temporal")
 
-        realism_score = max(0, min(100, offset_points + dei_points + evidence_points + temporal_points))
+        # Rescale to /100 over assessed dimensions only — each dimension caps at
+        # 25 and we report what fraction of the assessable budget was earned.
+        if dim_assessed:
+            assessable_budget = dim_max * len(dim_assessed)
+            earned = sum(dim_points.values())
+            realism_score = int(round((earned / assessable_budget) * 100))
+        else:
+            realism_score = 0
+
         realism_label = "high"
         if realism_score < 70:
             realism_label = "moderate"
         if realism_score < 50:
             realism_label = "limited"
+        if not dim_assessed:
+            realism_label = "unknown"
 
         return {
             "realism_score": realism_score,

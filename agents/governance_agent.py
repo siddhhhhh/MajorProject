@@ -35,6 +35,17 @@ class GovernanceAgent:
         combined_text = f"{claim_text}\n{evidence_text}".lower()
 
         sec_proxy = self._parse_sec_proxy_filings(company)
+        # Non-US fallback: when the SEC EDGAR path returns no proxy filings
+        # (foreign listing, ADR, no DEF 14A obligation), fetch the same
+        # board/comp/whistleblower/ethics signals directly from the annual
+        # report or governance pages already present in the evidence pool.
+        # Without this, companies like Volkswagen (DE — supervisory board
+        # publicly disclosed) showed "no relevant disclosure in retrieved
+        # evidence" even though their Annual Report carries every figure.
+        if not sec_proxy.get("filings"):
+            non_us = self._fetch_governance_from_evidence_urls(company, evidence)
+            if non_us.get("filings"):
+                sec_proxy = non_us
         board = self._extract_board_signals(combined_text, sec_proxy)
         comp = self._extract_compensation_signals(combined_text, sec_proxy)
         audit = self._extract_audit_signals(combined_text)
@@ -211,6 +222,205 @@ class GovernanceAgent:
             "sources": sources,
         }
 
+    def _fetch_governance_from_evidence_urls(
+        self, company: str, evidence: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Non-US fallback: extract board signals directly from annual-report
+        and governance pages already in the evidence pool.
+
+        For non-US issuers (VW, BMW, Daimler, Total, Shell, BP, Reliance…)
+        the SEC EDGAR DEF 14A path returns nothing, and the regex over
+        evidence snippets sees only fragmentary text. The fix is to fetch
+        the actual annual-report / governance HTML the evidence retriever
+        already discovered — and follow the in-page links to specific
+        supervisory-board / remuneration / corporate-governance subpages
+        — then run the same metrics extraction pipeline.
+
+        Heuristic: any URL whose domain or path contains tokens that
+        identify a governance disclosure surface (annual report, IR site,
+        governance page, supervisory board page). For root annual-report
+        URLs, harvest in-page links pointing at governance sub-pages.
+        """
+        if not isinstance(evidence, list) or not evidence:
+            return {"filings": [], "filings_count": 0, "sources": []}
+
+        # Prioritisation tokens — earlier = stronger candidate
+        priority_tokens = (
+            "supervisory-board", "supervisory_board",
+            "board-of-directors", "board_of_directors",
+            "corporate-governance", "corporate_governance",
+            "governance",
+            "annual-report", "annualreport", "annual_report",
+            "investor", "investors", "ir.",
+            "proxy-statement", "proxy_statement",
+            "remuneration", "compensation",
+        )
+
+        # Sub-page link tokens to follow from a root annual-report page.
+        # German two-tier issuers split governance disclosure across many
+        # pages (supervisory-board.html, remuneration-report/*, members-of-
+        # the-supervisory-board-and-committees.html, fuehrungspositionen-
+        # gesetz quota disclosure). The root page rarely carries the actual
+        # numbers — they live one click in.
+        followable_tokens = (
+            "supervisory-board",
+            "members-of-the-supervisory-board",
+            "members-of-the-board-of-management",
+            "board-of-management",
+            "remuneration-report",
+            "remuneration",
+            "corporate-governance",
+            "compensation",
+            "composition-of-the-supervisory-board",
+            # German FüPoG II quota disclosure pages — that's where the
+            # women-on-board % is actually published.
+            "fuehrungspositionen-gesetz",
+            "fuepog",
+            "diversity",
+            "board-diversity",
+            "women-in-leadership",
+            "declaration-of-conformity",
+            "corporate-governance-declaration",
+        )
+
+        candidates: List[tuple] = []  # (priority_score, url, title, followable)
+        seen_urls: set = set()
+        for ev in evidence:
+            if not isinstance(ev, dict):
+                continue
+            url = str(ev.get("url") or ev.get("source_url") or "").strip()
+            if not url or url in seen_urls:
+                continue
+            url_l = url.lower()
+            score = 0
+            for i, tok in enumerate(priority_tokens):
+                if tok in url_l:
+                    score += max(1, len(priority_tokens) - i)
+                    break
+            if score == 0:
+                continue
+            seen_urls.add(url)
+            title = str(ev.get("title") or "")
+            # Mark root annual-report URLs as "followable" — i.e. we should
+            # also harvest governance subpage links from their HTML.
+            is_root_ar = any(t in url_l for t in ("annualreport", "annual-report", "annual_report"))
+            candidates.append((score, url, title, is_root_ar))
+
+        candidates.sort(key=lambda row: row[0], reverse=True)
+        candidates = candidates[:6]
+
+        # Stage 1: harvest follow-up URLs from root annual-report pages
+        # that haven't been linked directly. We rewrite relative paths into
+        # absolute URLs against the parent's base.
+        from urllib.parse import urljoin
+        # Highest-value sub-page tokens — FüPoG / composition / supervisory
+        # board pages typically carry the actual quota numbers, while the
+        # generic "report-of-the-supervisory-board" landing page just has
+        # narrative meeting minutes. Rank harvested URLs so the high-value
+        # ones get fetched first within our budget.
+        priority_followups = (
+            "fuehrungspositionen-gesetz",
+            "fuepog",
+            "composition-of-the-supervisory-board",
+            "supervisory-board.html",  # canonical CG declaration page
+            "remuneration-report",
+            "members-of-the-supervisory-board",
+            "members-of-the-board-of-management",
+            "board-of-management",
+            "diversity",
+            "declaration-of-conformity",
+            "corporate-governance-declaration",
+            "remuneration",
+            "compensation",
+            "corporate-governance",
+            "supervisory-board",
+        )
+
+        followups: List[tuple] = []  # (priority, url, title)
+        for score, url, title, is_root_ar in candidates:
+            if not is_root_ar:
+                continue
+            try:
+                resp = requests.get(url, timeout=12, headers={"User-Agent": self.user_agent})
+                if resp.status_code != 200:
+                    continue
+                hrefs = re.findall(r'href="([^"#?]+)"', resp.text)
+            except Exception:
+                continue
+            for href in hrefs:
+                href_l = href.lower()
+                if not any(t in href_l for t in followable_tokens):
+                    continue
+                if not any(href_l.endswith(suffix) for suffix in (".html", ".htm", "/")) and "?" not in href_l:
+                    if not href_l.endswith(".html"):
+                        continue
+                full = urljoin(url, href)
+                if full in seen_urls:
+                    continue
+                seen_urls.add(full)
+                # Token-aware priority — rank earlier hits higher.
+                tok_priority = 0
+                for i, tok in enumerate(priority_followups):
+                    if tok in href_l:
+                        tok_priority = len(priority_followups) - i
+                        break
+                followups.append((score + 5 + tok_priority, full, f"governance subpage of {title or url}"))
+                if len(followups) >= 25:
+                    break
+            if len(followups) >= 25:
+                break
+
+        # Merge: prefer follow-up subpages first since they're typically
+        # where the numbers actually live.
+        all_targets = sorted(followups, key=lambda r: r[0], reverse=True) + \
+                      [(c[0], c[1], c[2]) for c in candidates]
+        # De-dup again (followups + candidates can overlap)
+        unique_targets: List[tuple] = []
+        seen_2 = set()
+        for tup in all_targets:
+            if tup[1] in seen_2:
+                continue
+            seen_2.add(tup[1])
+            unique_targets.append(tup)
+
+        proxy_filings: List[Dict[str, Any]] = []
+        sources: List[Dict[str, Any]] = []
+        # Track whether we've already captured the most informative metrics
+        # so we know when to stop crawling sub-pages.
+        captured = {"board_independence_pct": False, "board_gender_pct": False, "ceo_worker_pay_ratio": False}
+        for score, url, title in unique_targets[:12]:  # fetch budget
+            parsed = self._extract_proxy_metrics_from_url(url)
+            if not parsed:
+                continue
+            if not any(v not in (None, False) for v in parsed.values()):
+                continue
+            proxy_filings.append({
+                "title": title or url,
+                "url": url,
+                "form_type": "annual_report_or_governance_page",
+                "parsed_metrics": parsed,
+            })
+            sources.append({
+                "title": title or url,
+                "url": url,
+                "source": "non-US governance fallback",
+            })
+            for key in captured:
+                if parsed.get(key) is not None and parsed.get(key) is not False:
+                    captured[key] = True
+            # Stop once we have BOTH board independence AND board gender, or
+            # we've collected 5 pages — whichever comes first. Without this
+            # the crawler used to stop after 3 boilerplate pages and miss
+            # the page with the actual quota figures.
+            if (captured["board_independence_pct"] and captured["board_gender_pct"]) or len(proxy_filings) >= 5:
+                break
+
+        return {
+            "filings": proxy_filings,
+            "filings_count": len(proxy_filings),
+            "sources": sources,
+        }
+
     def _fetch_def14a_filings_direct(self, company: str) -> List[Dict[str, Any]]:
         """Direct SEC EDGAR query for DEF 14A proxy statements.
 
@@ -338,19 +548,38 @@ class GovernanceAgent:
             # how Microsoft/JPM proxies usually phrase it; the previous
             # regex captured only the numerator and treated it as a raw
             # percentage (Microsoft scored 11% independent).
+            #
+            # Two-tier-system patterns also added: German DAX issuers
+            # (VW, BMW, Daimler) report a separate Supervisory Board
+            # ("Aufsichtsrat") with explicit independence + women-quota
+            # disclosures under the German Corporate Governance Code and
+            # FüPoG II quota law.
             board_independence_pct = (
-                self._first_percent(text, r"(?:board independence|independent directors|independent non-executive directors)[^\d]{0,40}(\d{1,3}(?:\.\d+)?)\s*%")
-                or self._first_percent(text, r"(\d{1,3}(?:\.\d+)?)\s*%\s{0,40}(?:of\s+(?:the\s+)?)?(?:board members|directors)\s{0,40}(?:are\s+)?independent")
-                or self._first_fraction_pct(text, r"(\d{1,2})\s+of\s+(?:our\s+|the\s+)?(\d{1,2})\s+(?:director\s+nominees|directors|board\s+members|nominees)\s{0,40}(?:are\s+)?independent")
-                or self._first_fraction_pct(text, r"(\d{1,2})\s+of\s+(?:the\s+)?(\d{1,2})\s+(?:director\s+nominees|directors|board\s+members)\s{0,40}qualify\s+as\s+independent")
-                or self._first_fraction_pct(text, r"of\s+(?:our|the)\s+(\d{1,2})\s+(?:director\s+nominees|directors)[^.\n]{0,80}?(\d{1,2})\s+(?:are\s+)?independent")
+                self._first_percent(text, r"(?:board independence|independent directors|independent non-executive directors|independent supervisory board|independent members? of (?:the )?supervisory board)[^\d]{0,40}(\d{1,3}(?:\.\d+)?)\s*%")
+                or self._first_percent(text, r"(\d{1,3}(?:\.\d+)?)\s*%\s{0,40}(?:of\s+(?:the\s+)?)?(?:board members|directors|supervisory board members|members of the supervisory board)\s{0,40}(?:are\s+)?independent")
+                or self._first_fraction_pct(text, r"(\d{1,2})\s+of\s+(?:our\s+|the\s+)?(\d{1,2})\s+(?:director\s+nominees|directors|board\s+members|nominees|supervisory\s+board\s+members|members\s+of\s+the\s+supervisory\s+board)\s{0,40}(?:are\s+)?independent")
+                or self._first_fraction_pct(text, r"(\d{1,2})\s+of\s+(?:the\s+)?(\d{1,2})\s+(?:director\s+nominees|directors|board\s+members|supervisory\s+board\s+members)\s{0,40}qualify\s+as\s+independent")
+                or self._first_fraction_pct(text, r"of\s+(?:our|the)\s+(\d{1,2})\s+(?:director\s+nominees|directors|supervisory\s+board\s+members)[^.\n]{0,80}?(\d{1,2})\s+(?:are\s+)?independent")
+                # German Corporate Governance Code: "the supervisory board
+                # consists of N members, of which K are independent"
+                or self._first_fraction_pct(text, r"supervisory\s+board\s+(?:consists?\s+of|comprises?|has)\s+(\d{1,2})\s+members[^.\n]{0,120}?(\d{1,2})\s+(?:are\s+)?(?:considered\s+)?independent")
             )
-            # Board gender — bidirectional + X-of-Y fraction handler
+            # Board gender — bidirectional + X-of-Y fraction handler.
+            # Includes EU FüPoG II quota wording ("women's share on the
+            # supervisory board", "frauenquote"), broader phrasings, and
+            # the German Annual Report convention "X% of the members of
+            # the supervisory board are women" (which never says "female"
+            # or "directors", so the older patterns missed it).
             board_gender_pct = (
-                self._first_percent(text, r"(?:board gender|women on board|female directors|women in the board|gender\s+representation)[^\d]{0,40}(\d{1,3}(?:\.\d+)?)\s*%")
-                or self._first_percent(text, r"(\d{1,3}(?:\.\d+)?)\s*%\s{0,40}(?:of\s+(?:the\s+)?)?(?:directors|board members|nominees)\s{0,40}(?:are\s+)?(?:women|female)")
-                or self._first_fraction_pct(text, r"(\d{1,2})\s+of\s+(?:our\s+|the\s+)?(\d{1,2})\s+(?:director\s+nominees|directors|board\s+members|nominees)\s{0,40}(?:are\s+)?(?:women|female)")
-                or self._first_fraction_pct(text, r"of\s+(?:our|the)\s+(\d{1,2})\s+(?:director\s+nominees|directors)[^.\n]{0,80}?(\d{1,2})\s+(?:are\s+)?(?:women|female)")
+                self._first_percent(text, r"(?:board gender|women on board|female directors|women in the board|gender\s+representation|women['']?s?\s+share\s+(?:on|in)\s+(?:the\s+)?(?:supervisory\s+)?board|female\s+supervisory\s+board\s+members?|frauenquote)[^\d]{0,40}(\d{1,3}(?:\.\d+)?)\s*%")
+                or self._first_percent(text, r"(\d{1,3}(?:\.\d+)?)\s*%\s{0,40}(?:of\s+(?:the\s+)?)?(?:directors|board members|nominees|supervisory\s+board\s+members|members\s+of\s+the\s+supervisory\s+board)\s{0,40}(?:are\s+)?(?:women|female)")
+                # German FüPoG-style: "in total, 40% of the members of the
+                # supervisory board" (the women context is implicit from
+                # the surrounding paragraph header).
+                or self._first_percent(text, r"(?:in\s+total[, ]+)?(\d{1,3}(?:\.\d+)?)\s*%\s+of\s+the\s+members\s+of\s+the\s+supervisory\s+board")
+                or self._first_fraction_pct(text, r"(\d{1,2})\s+of\s+(?:our\s+|the\s+)?(\d{1,2})\s+(?:director\s+nominees|directors|board\s+members|nominees|supervisory\s+board\s+members|members\s+of\s+the\s+supervisory\s+board)\s{0,40}(?:are\s+)?(?:women|female)")
+                or self._first_fraction_pct(text, r"of\s+(?:our|the)\s+(\d{1,2})\s+(?:director\s+nominees|directors|supervisory\s+board\s+members)[^.\n]{0,80}?(\d{1,2})\s+(?:are\s+)?(?:women|female)")
+                or self._first_fraction_pct(text, r"supervisory\s+board\s+(?:consists?\s+of|comprises?|has)\s+(\d{1,2})\s+members[^.\n]{0,120}?(\d{1,2})\s+(?:are\s+)?(?:women|female)")
             )
             # CEO-to-worker pay ratio — NUMBER:1 format, bidirectional
             ceo_worker_pay_ratio = (
@@ -363,26 +592,36 @@ class GovernanceAgent:
                 self._first_percent(text, r"(?:long[-\s]?term\s+incentive|lti|incentive\s+plan)[^\d]{0,40}(\d{1,3}(?:\.\d+)?)\s*%[^\n\r]{0,60}esg")
                 or self._first_percent(text, r"esg\s{0,40}(\d{1,3}(?:\.\d+)?)\s*%\s{0,40}(?:of\s+)?(?:lti|long[-\s]?term)")
             )
-            # Board size
-            board_size = self._first_number(
-                text,
-                r"board\s+(?:consists?|comprises?)\s+of\s+(\d{1,2})\s+(?:directors|members)"
+            # Board size — accepts "board of directors", "supervisory board",
+            # and "management board" (the German two-tier system reports both).
+            board_size = (
+                self._first_number(text, r"(?:supervisory\s+board|board\s+of\s+directors|management\s+board)\s+(?:consists?\s+of|comprises?\s+of?|has)\s+(\d{1,2})\s+(?:directors|members)")
+                or self._first_number(text, r"board\s+(?:consists?|comprises?)\s+of\s+(\d{1,2})\s+(?:directors|members)")
             )
             audit_committee_independence = (
-                "audit committee" in text and "100" in text and "independent" in text
+                ("audit committee" in text or "prüfungsausschuss" in text)
+                and "100" in text and "independent" in text
             )
             # Whistleblower / ethics hotline disclosure — NYSE / Nasdaq /
-            # Sarbanes-Oxley §301 require these for listed companies.
+            # Sarbanes-Oxley §301 require these for listed companies, and
+            # the EU Whistleblower Directive (2019/1937) requires them for
+            # any EU employer ≥50 staff. German DAX issuers commonly call
+            # these "Speak Up", "Hinweisgebersystem", or "BKMS".
             whistleblower_hotline = any(p in text for p in (
                 "ethics hotline", "ethics helpline", "whistleblower hotline",
-                "speak up line", "speakup line", "speak-up line",
+                "whistleblowing system", "whistleblowing hotline",
+                "speak up line", "speakup line", "speak-up line", "speakup channel",
                 "anonymous reporting", "compliance hotline",
+                "hinweisgebersystem", "bkms system",
+                "integrity line", "integrity hotline",
             ))
-            # Anti-corruption / code of conduct disclosure
+            # Anti-corruption / code of conduct disclosure — broadened to
+            # include EU/German anti-corruption frameworks and ISO 37001.
             has_anti_corruption_policy = any(p in text for p in (
                 "code of conduct", "anti-corruption", "anti-bribery",
                 "fcpa compliance", "uk bribery act", "anti-money laundering",
-                "ethics training",
+                "ethics training", "iso 37001", "compliance management system",
+                "verhaltenskodex", "antikorruptionsrichtlinie",
             ))
             return {
                 "board_independence_pct": board_independence_pct,
@@ -399,12 +638,14 @@ class GovernanceAgent:
 
     def _extract_board_signals(self, combined_text: str, sec_proxy: Dict[str, Any]) -> Dict[str, Any]:
         board_ind = (
-            self._first_percent(combined_text, r"(?:board independence|independent directors|independent non-executive directors|non-executive directors)[^\d]{0,40}(\d{1,3}(?:\.\d+)?)\s*%")
-            or self._first_percent(combined_text, r"(\d{1,3}(?:\.\d+)?)\s*%\s{0,40}(?:of\s+(?:the\s+)?)?(?:board members|directors)\s{0,40}(?:are\s+)?independent")
+            self._first_percent(combined_text, r"(?:board independence|independent directors|independent non-executive directors|non-executive directors|independent supervisory board|independent members? of (?:the )?supervisory board)[^\d]{0,40}(\d{1,3}(?:\.\d+)?)\s*%")
+            or self._first_percent(combined_text, r"(\d{1,3}(?:\.\d+)?)\s*%\s{0,40}(?:of\s+(?:the\s+)?)?(?:board members|directors|supervisory board members)\s{0,40}(?:are\s+)?independent")
+            or self._first_fraction_pct(combined_text, r"(\d{1,2})\s+of\s+(?:our\s+|the\s+)?(\d{1,2})\s+(?:directors|board members|supervisory board members)\s{0,40}(?:are\s+)?independent")
         )
         board_gender = (
-            self._first_percent(combined_text, r"(?:board gender|women on board|female directors)[^\d]{0,40}(\d{1,3}(?:\.\d+)?)\s*%")
-            or self._first_percent(combined_text, r"(\d{1,3}(?:\.\d+)?)\s*%\s{0,30}women\s{0,30}(?:director|board)")
+            self._first_percent(combined_text, r"(?:board gender|women on board|female directors|women['']?s?\s+share\s+(?:on|in)\s+(?:the\s+)?(?:supervisory\s+)?board|frauenquote)[^\d]{0,40}(\d{1,3}(?:\.\d+)?)\s*%")
+            or self._first_percent(combined_text, r"(\d{1,3}(?:\.\d+)?)\s*%\s{0,30}women\s{0,30}(?:director|board|supervisory)")
+            or self._first_fraction_pct(combined_text, r"(\d{1,2})\s+of\s+(?:our\s+|the\s+)?(\d{1,2})\s+(?:directors|board members|supervisory board members)\s{0,40}(?:are\s+)?(?:women|female)")
         )
         tenure = self._first_number(combined_text, r"(?:director tenure|average tenure)[^\d]{0,30}(\d{1,2}(?:\.\d+)?)")
         interlocks = self._first_number(combined_text, r"serves on[^\d]{0,30}(\d{1,2}) boards")

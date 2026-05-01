@@ -229,6 +229,20 @@ export interface RiskDriver {
   shap_value?: number;
 }
 
+export interface PeerEntry {
+  name: string;
+  ticker?: string;
+  esg: number;
+  gw: number;
+  rating?: string;
+  is_focus: boolean;
+  industry?: string;
+  e_score?: number | null;
+  s_score?: number | null;
+  g_score?: number | null;
+  rank?: string | null;
+}
+
 export interface ESGReport {
   id: string;
   company: string;
@@ -254,6 +268,8 @@ export interface ESGReport {
   ai_verdict: string;
   executive_summary: string;
   top_risk_drivers: RiskDriver[];
+  peers: PeerEntry[];
+  peer_industry_average?: { esg?: number; e?: number; s?: number; g?: number } | null;
   temporal_score: number;
   temporal_risk: string;
   claim_trend: string;

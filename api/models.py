@@ -93,6 +93,20 @@ class RiskDriver(BaseModel):
     shap_value: Optional[float] = None
 
 
+class PeerEntry(BaseModel):
+    name: str
+    ticker: str = ""
+    esg: float = 0.0
+    gw: float = 0.0
+    rating: str = ""
+    is_focus: bool = False
+    industry: str = ""
+    e_score: Optional[float] = None
+    s_score: Optional[float] = None
+    g_score: Optional[float] = None
+    rank: Optional[str] = None
+
+
 class PipelineAgent(BaseModel):
     name: str
     status: str                  # queued / running / completed / error
@@ -141,6 +155,10 @@ class ESGReport(BaseModel):
 
     # Explainability
     top_risk_drivers: List[RiskDriver] = []
+
+    # Peer comparison (real peers from peer_comparison agent, not hardcoded)
+    peers: List[PeerEntry] = []
+    peer_industry_average: Optional[Dict[str, float]] = None
 
     # Temporal
     temporal_score: int = 0
