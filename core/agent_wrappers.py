@@ -1377,15 +1377,14 @@ def regulatory_scanning_node(state: ESGState) -> ESGState:
                         f"({unified_score:.0f}/100) — no real-data rows evaluated"
                     )
 
-                # Risk level derived from the (now meaningful) score
+                # MSCI-style 3-band scale (LOW / MODERATE / HIGH).
+                # CRITICAL was collapsed into HIGH May-2026 per design call.
                 if unified_score >= 75:
                     derived_risk = "LOW"
                 elif unified_score >= 50:
-                    derived_risk = "MEDIUM"
-                elif unified_score >= 25:
-                    derived_risk = "HIGH"
+                    derived_risk = "MODERATE"
                 else:
-                    derived_risk = "CRITICAL"
+                    derived_risk = "HIGH"
 
                 result["compliance_result"] = {
                     "score": round(unified_score, 1),
@@ -3094,24 +3093,49 @@ def _build_analyses_dict(state: ESGState) -> Dict[str, Any]:
             analyses["fact_graph"] = agent_result
 
     # ── Controversy signal extraction for GW R-variable ──────────────────
-    # Count HIGH-severity contradictions from the contradiction agent output.
-    contradiction_payload = state.get("contradiction_results", {})
-    if isinstance(contradiction_payload, dict):
-        contras = (
-            contradiction_payload.get("contradictions")
-            or contradiction_payload.get("contradiction_list")
-            or contradiction_payload.get("specific_contradictions")
-            or []
+    # Severity-weighted contradiction count drives the bucket model's
+    # current_contradictions bucket via risk_scorer.
+    # Source preference order (first match wins):
+    #   1. ``analyses["contradiction_analysis"]`` — already populated above
+    #      from agent_outputs; this is the canonical pipeline-internal store.
+    #   2. ``state["contradiction_results"]`` — set by the contradiction node;
+    #      kept as a fallback for replay scripts that bypass agent_outputs.
+    #   3. ``state["contradictions"]`` — top-level alias used by some renderers.
+    contras = analyses.get("contradiction_analysis") or []
+    if not contras:
+        contradiction_payload = (
+            state.get("contradiction_results")
+            or state.get("contradictions")
+            or {}
         )
-    elif isinstance(contradiction_payload, list):
-        contras = contradiction_payload
-    else:
+        if isinstance(contradiction_payload, dict):
+            contras = (
+                contradiction_payload.get("contradictions")
+                or contradiction_payload.get("contradiction_list")
+                or contradiction_payload.get("specific_contradictions")
+                or []
+            )
+        elif isinstance(contradiction_payload, list):
+            contras = contradiction_payload
+        else:
+            contras = []
+    if not isinstance(contras, list):
         contras = []
 
-    controversy_raw = sum(
-        1 for c in contras
-        if isinstance(c, dict) and str(c.get("severity", "")).upper() == "HIGH"
-    )
+    # Severity-weighted contradiction count.
+    # CRITICAL (e.g. $34B Dieselgate settlement) carries 3× a HIGH signal —
+    # they are categorically more severe and previously didn't count at all
+    # because the filter only matched 'HIGH'. LOW counts at 0.25× because
+    # any retrieved disagreement carries some signal (a clean-leader run
+    # should not bottom out at literal zero).
+    _SEVERITY_WEIGHTS = {"CRITICAL": 3.0, "HIGH": 1.0, "MEDIUM": 0.5, "LOW": 0.25}
+    weighted_severity = 0.0
+    for c in contras:
+        if not isinstance(c, dict):
+            continue
+        sev = str(c.get("severity", "")).upper()
+        weighted_severity += _SEVERITY_WEIGHTS.get(sev, 0.0)
+    controversy_raw = int(round(weighted_severity))
     analyses["controversy_signals"] = controversy_raw
 
     # Count regulatory gaps so the scorer can de-duplicate overlapping signals.
@@ -4131,115 +4155,58 @@ def verdict_generation_node(state: ESGState) -> ESGState:
             print(f"      ESG: {gt_validation.get('esg_actual')}/100 (expected {gt_validation.get('esg_expected')}) {'✅' if gt_validation.get('esg_in_range') else '❌'}")
             print(f"      Calibration: {cal_status}")
 
-            # Apply known-case floor: when a documented CONFIRMED_GREENWASHING
-            # case exists for this company (e.g. VW/Dieselgate, BP/Deepwater),
-            # the headline GW risk MUST reflect the historical record. Without
-            # this floor, the system happily scored Volkswagen 25.8/100 LOW
-            # despite the $34.7B Dieselgate settlement — calibration was
-            # disconnected from output.
+            # Architecture (May-2026 audit fix):
+            # Historical misconduct flows ONLY into the GW Trust Penalty
+            # bucket — never into ESG. ESG must always reflect *current*
+            # pillar performance so a company that genuinely improves can
+            # earn a higher score over time. Hard ESG ceilings made the
+            # system punitive in a way the user explicitly rejected.
             #
-            # Floor strategy:
-            #   - CONFIRMED_GREENWASHING + system underscored → floor = lower
-            #     bound of the case's expected_gw_range.
-            #   - Apply only when the system score is below the floor (don't
-            #     drag down a correctly-high score).
-            #   - Document the adjustment so the report shows the override
-            #     rather than silently rewriting the number.
+            # GW behaviour: instead of overwriting GW with ground_truth_floor,
+            # we publish a `known_case_trust_penalty` that the new
+            # historical_trust bucket consumes (risk_scorer:R_historical
+            # weighting, default 30%). Hierarchy is now explicit:
+            #     base formula → trust penalty contribution → final.
             outcome = (gt_validation.get("outcome") or "").upper()
             gw_expected = gt_validation.get("gw_expected") or [0, 100]
-            esg_expected = gt_validation.get("esg_expected") or [0, 100]
             if outcome == "CONFIRMED_GREENWASHING" and not gt_validation.get("gw_in_range"):
                 floor_gw = float(gw_expected[0])
                 if _gw < floor_gw:
-                    verdict_data.setdefault("known_case_override", {})
-                    verdict_data["known_case_override"] = {
-                        "applied": True,
+                    # Publish the trust penalty as a SOFT signal. risk_scorer
+                    # picks this up via state["known_case_trust_penalty"] and
+                    # routes it through the historical_trust bucket. We do
+                    # NOT overwrite _gw here.
+                    trust_penalty_score = float(floor_gw)
+                    verdict_data["known_case_trust_penalty"] = {
                         "case_id": gt_validation.get("case_id"),
+                        "outcome": outcome,
                         "raw_gw_score": round(_gw, 1),
-                        "floor_gw_score": round(floor_gw, 1),
+                        "implied_floor_gw": round(floor_gw, 1),
+                        "trust_penalty_score": round(trust_penalty_score, 1),
+                        "applies_to": "historical_trust_bucket",
                         "reason": (
                             f"Documented {outcome} case "
                             f"({gt_validation.get('regulatory_action', '')[:80]}); "
-                            "raised GW score to ground-truth floor."
+                            "contribution flows into historical_trust bucket "
+                            "(no hard headline override)."
                         ),
                     }
-                    _gw = floor_gw
-                    print(f"      🛡️ Known-case floor applied: GW raised to {floor_gw:.0f}/100 (case {gt_validation.get('case_id')})")
-            # ESG ceiling for confirmed-greenwashing cases (mirror of the GW
-            # floor): the system shouldn't report ESG > expected upper bound.
-            if outcome == "CONFIRMED_GREENWASHING" and not gt_validation.get("esg_in_range"):
-                ceiling_esg = float(esg_expected[1])
-                if _esg > ceiling_esg:
-                    verdict_data.setdefault("known_case_override", {})
-                    verdict_data["known_case_override"]["raw_esg_score"] = round(_esg, 1)
-                    verdict_data["known_case_override"]["ceiling_esg_score"] = round(ceiling_esg, 1)
-                    _esg = ceiling_esg
-                    print(f"      🛡️ Known-case ceiling applied: ESG capped at {ceiling_esg:.0f}/100")
-            # Persist the corrected scores so downstream verdict / report
-            # rendering uses the floored/capped values.
-            verdict_data["gw_score_adjusted"] = round(_gw, 1)
-            verdict_data["esg_score_adjusted"] = round(_esg, 1)
+                    state["known_case_trust_penalty"] = verdict_data["known_case_trust_penalty"]
+                    print(
+                        f"      🛡️ Known-case trust penalty published "
+                        f"(score={trust_penalty_score:.0f}, case "
+                        f"{gt_validation.get('case_id')}); GW formula will "
+                        f"absorb via historical_trust bucket."
+                    )
 
-            # Push the floored GW / capped ESG back into ALL fields the
-            # report renderer might pull from. The renderer reads
-            # `scores.greenwashingriskscore` and `pillar_scores.displayesgscore`
-            # via `_resolve_score_basis`. If we only patch the agent_output's
-            # nested `greenwashing_result.greenwashing_score`, the headline
-            # Section 1 still shows the unfloored 25.8 number.
-            if verdict_data.get("known_case_override", {}).get("applied"):
-                for _ao in state.get("agent_outputs", []):
-                    if _ao.get("agent") == "risk_scoring" and isinstance(_ao.get("output"), dict):
-                        _out = _ao["output"]
-                        _gw_result = _out.get("greenwashing_result")
-                        if isinstance(_gw_result, dict):
-                            _gw_result["greenwashing_score_raw"] = _gw_result.get("greenwashing_score")
-                            _gw_result["greenwashing_score"] = float(_gw)
-                            _gw_result["known_case_floor_applied"] = True
-                        # Top-level GW score fields the renderer arbitrates over
-                        for _gw_key in ("greenwashing_score", "greenwashingriskscore",
-                                        "greenwashing_risk_score", "gw_score"):
-                            if _gw_key in _out:
-                                _out[f"{_gw_key}_raw"] = _out[_gw_key]
-                            _out[_gw_key] = float(_gw)
-                        # ESG score fields
-                        if "esg_score" in _out:
-                            _out["esg_score_raw"] = _out["esg_score"]
-                        _out["esg_score"] = float(_esg)
-                        # Pillar-derived display ESG. The renderer reads from
-                        # both "pillarscores" (no underscore) and "pillar_scores"
-                        # — patch both to avoid the headline staying at the
-                        # raw value while the band updates.
-                        for _ps_key in ("pillar_scores", "pillarscores"):
-                            _ps = _out.get(_ps_key)
-                            if isinstance(_ps, dict):
-                                for _esg_key in ("displayesgscore", "display_esg_score",
-                                                 "overall_esg_score"):
-                                    if _esg_key in _ps:
-                                        _ps[f"{_esg_key}_raw"] = _ps[_esg_key]
-                                    _ps[_esg_key] = float(_esg)
-                        # Risk-level inside the agent output (some renderers read this)
-                        for _rl_key in ("risk_level", "risklevel"):
-                            if _rl_key in _out:
-                                _out[f"{_rl_key}_raw"] = _out[_rl_key]
-                # Also push to top-level state fields the renderer fallbacks consult.
-                state["greenwashing_score"] = float(_gw)
-                state["esg_score"] = float(_esg)
-                state["gw_score"] = float(_gw)
-                # Risk level promotion: GW ≥ 60 → HIGH, ≥ 80 → CRITICAL.
-                if _gw >= 80:
-                    new_level = "CRITICAL"
-                elif _gw >= 60:
-                    new_level = "HIGH"
-                elif _gw >= 40:
-                    new_level = "MODERATE"
-                else:
-                    new_level = "LOW"
-                old_level = state.get("risk_level", "UNKNOWN")
-                if new_level != old_level:
-                    print(f"      🛡️ Risk level promoted: {old_level} → {new_level} (known-case floor)")
-                    state["risk_level"] = new_level
-                    verdict_data["risk_level"] = new_level
-                    verdict_data["risk_level_promoted_by_known_case"] = True
+            # ESG ceiling logic deliberately removed (audit fix). ESG should
+            # represent current pillar performance, not punishment memory.
+            # If a confirmed-greenwashing company's pillars genuinely improve,
+            # the ESG number should improve with them.
+
+            # Surface the raw scores for transparency only — never overwrite.
+            verdict_data["gw_score_raw"] = round(_gw, 1)
+            verdict_data["esg_score_raw"] = round(_esg, 1)
     except Exception as e:
         print(f"   ⚠️ Ground truth validation error (non-fatal): {e}")
 

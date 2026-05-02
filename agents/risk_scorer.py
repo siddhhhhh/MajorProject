@@ -22,6 +22,10 @@ from ml_models.lightgbm_esg_predictor import LightGBMESGPredictor
 from ml_models.lstm_trend_predictor import get_lstm_predictor
 from ml_models.anomaly_detector import get_anomaly_detector
 from ml_models.score_calibrator import recalibrate_greenwashing_score
+from core.penalty_decay import (
+    classify_claim_pillar as _pd_classify_claim_pillar,
+    weighted_penalty_contribution as _pd_weighted_penalty,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -741,45 +745,154 @@ class RiskScorer:
     # Greenwashing Score (GW) — Phase 5 of overhaul
     # -----------------------------------------------------------------
 
-    # Industry-specific weight profiles for the GW formula
-    _GW_WEIGHT_PROFILES: Dict[str, Dict[str, float]] = {
-        "oil_and_gas":      {"alpha": 0.45, "beta": 0.30, "gamma": 0.15, "delta": 0.10},
-        "energy":           {"alpha": 0.45, "beta": 0.30, "gamma": 0.15, "delta": 0.10},
-        "coal":             {"alpha": 0.45, "beta": 0.30, "gamma": 0.15, "delta": 0.10},
-        "mining":           {"alpha": 0.45, "beta": 0.30, "gamma": 0.15, "delta": 0.10},
-        "aviation":         {"alpha": 0.45, "beta": 0.30, "gamma": 0.15, "delta": 0.10},
-        "banking":          {"alpha": 0.30, "beta": 0.35, "gamma": 0.20, "delta": 0.15},
-        "insurance":        {"alpha": 0.30, "beta": 0.35, "gamma": 0.20, "delta": 0.15},
-        "asset_management": {"alpha": 0.30, "beta": 0.35, "gamma": 0.20, "delta": 0.15},
-        "financial_services":{"alpha": 0.30, "beta": 0.35, "gamma": 0.20, "delta": 0.15},
-        "retail":           {"alpha": 0.40, "beta": 0.25, "gamma": 0.25, "delta": 0.10},
-        "food_beverage":    {"alpha": 0.40, "beta": 0.25, "gamma": 0.25, "delta": 0.10},
-        "consumer_goods":   {"alpha": 0.40, "beta": 0.25, "gamma": 0.25, "delta": 0.10},
-        "fast_fashion":     {"alpha": 0.40, "beta": 0.25, "gamma": 0.25, "delta": 0.10},
-        "technology":       {"alpha": 0.35, "beta": 0.20, "gamma": 0.30, "delta": 0.15},
-        "software":         {"alpha": 0.35, "beta": 0.20, "gamma": 0.30, "delta": 0.15},
-        "healthcare":       {"alpha": 0.35, "beta": 0.20, "gamma": 0.30, "delta": 0.15},
+    # Industry-specific weight profiles for the GW formula.
+    #
+    # Bucket model (May-2026 audit fix replacing the αC + βR + γD + δT
+    # decomposition):
+    #
+    #   GW = w_fg · formula_gap          # claim vs performance gap
+    #      + w_ht · historical_trust     # decayed enforcement + known-case + sector memory
+    #      + w_cc · current_contradictions  # recent contradictions + temporal escalation
+    #      + w_dq · disclosure_quality   # disclosure deficit
+    #
+    # Weights sum to 1.0 within each profile. Per-bucket scores are 0-100
+    # with high = more risk. Hard floors have been replaced by additive
+    # contributions to historical_trust so the formula remains the
+    # authoritative source rather than a number that overrides it.
+    _GW_BUCKET_WEIGHT_PROFILES: Dict[str, Dict[str, float]] = {
+        # High-carbon sectors lean more on historical trust.
+        "oil_and_gas":      {"formula_gap": 0.35, "historical_trust": 0.40, "current_contradictions": 0.15, "disclosure_quality": 0.10},
+        "energy":           {"formula_gap": 0.35, "historical_trust": 0.40, "current_contradictions": 0.15, "disclosure_quality": 0.10},
+        "coal":             {"formula_gap": 0.35, "historical_trust": 0.40, "current_contradictions": 0.15, "disclosure_quality": 0.10},
+        "mining":           {"formula_gap": 0.35, "historical_trust": 0.40, "current_contradictions": 0.15, "disclosure_quality": 0.10},
+        "aviation":         {"formula_gap": 0.35, "historical_trust": 0.40, "current_contradictions": 0.15, "disclosure_quality": 0.10},
+        "automotive":       {"formula_gap": 0.35, "historical_trust": 0.40, "current_contradictions": 0.15, "disclosure_quality": 0.10},
+        # Financial sectors lean on contradictions (financed-emissions disputes etc).
+        "banking":          {"formula_gap": 0.30, "historical_trust": 0.35, "current_contradictions": 0.25, "disclosure_quality": 0.10},
+        "insurance":        {"formula_gap": 0.30, "historical_trust": 0.35, "current_contradictions": 0.25, "disclosure_quality": 0.10},
+        "asset_management": {"formula_gap": 0.30, "historical_trust": 0.35, "current_contradictions": 0.25, "disclosure_quality": 0.10},
+        "financial_services":{"formula_gap": 0.30, "historical_trust": 0.35, "current_contradictions": 0.25, "disclosure_quality": 0.10},
+        # Tech / low-carbon: gap term dominates because performance is easier to verify.
+        "technology":       {"formula_gap": 0.45, "historical_trust": 0.20, "current_contradictions": 0.25, "disclosure_quality": 0.10},
+        "software":         {"formula_gap": 0.45, "historical_trust": 0.20, "current_contradictions": 0.25, "disclosure_quality": 0.10},
+        "healthcare":       {"formula_gap": 0.40, "historical_trust": 0.25, "current_contradictions": 0.25, "disclosure_quality": 0.10},
+        # Consumer-facing (advertising-claim risk).
+        "retail":           {"formula_gap": 0.40, "historical_trust": 0.25, "current_contradictions": 0.25, "disclosure_quality": 0.10},
+        "consumer_goods":   {"formula_gap": 0.40, "historical_trust": 0.25, "current_contradictions": 0.25, "disclosure_quality": 0.10},
+        "fast_fashion":     {"formula_gap": 0.40, "historical_trust": 0.30, "current_contradictions": 0.20, "disclosure_quality": 0.10},
+        "food_beverage":    {"formula_gap": 0.40, "historical_trust": 0.25, "current_contradictions": 0.25, "disclosure_quality": 0.10},
     }
-    _GW_DEFAULT_WEIGHTS = {"alpha": 0.35, "beta": 0.25, "gamma": 0.25, "delta": 0.15}
+    _GW_BUCKET_DEFAULT_WEIGHTS = {
+        "formula_gap": 0.40,
+        "historical_trust": 0.30,
+        "current_contradictions": 0.20,
+        "disclosure_quality": 0.10,
+    }
+    # Sectors that get an additive uplift to historical_trust as a baseline
+    # ("sector memory") — not a hard floor, just a +N point contribution
+    # that lets the bucket formula make the final call.
+    _SECTOR_TRUST_UPLIFT: Dict[str, float] = {
+        # High-carbon: extraction & combustion, persistent climate risk.
+        "oil_and_gas": 15.0, "energy": 15.0, "coal": 20.0,
+        "mining": 12.0, "aviation": 12.0, "automotive": 8.0,
+        # Financial services: systemic financed-emissions exposure +
+        # NZBA dynamics make sector memory load-bearing (banks underwrite
+        # the high-carbon sectors above). Weighted lower than direct
+        # emitters because the exposure is one step removed.
+        "banking": 10.0, "insurance": 8.0, "asset_management": 10.0,
+        "financial_services": 10.0,
+    }
+
+    # Backwards-compat alias so legacy calls do not crash mid-deploy.
+    # Code paths still referencing _GW_WEIGHT_PROFILES read these mapped
+    # values: alpha=formula_gap, beta=historical_trust, gamma=disclosure_quality,
+    # delta=current_contradictions. New code MUST use _GW_BUCKET_WEIGHT_PROFILES.
+    _GW_WEIGHT_PROFILES: Dict[str, Dict[str, float]] = {
+        ind: {
+            "alpha": p["formula_gap"], "beta": p["historical_trust"],
+            "gamma": p["disclosure_quality"], "delta": p["current_contradictions"],
+        }
+        for ind, p in _GW_BUCKET_WEIGHT_PROFILES.items()
+    }
+    _GW_DEFAULT_WEIGHTS = {
+        "alpha": 0.40, "beta": 0.30, "gamma": 0.10, "delta": 0.20,
+    }
 
     def _get_industry_sigma(self, industry: str) -> float:
-        """Risk Mitigation #3: Use global_cross_sector_sigma when peer count < 5."""
+        """Backwards-compat: returns sigma only. New callers should use
+        ``_get_industry_sigma_provenance`` so the source of the sigma can be
+        surfaced in the report (V6 in the consistency validator)."""
+        return self._get_industry_sigma_provenance(industry)["sigma"]
+
+    # Industry-name aliases. The peer DB stores each industry under one
+    # canonical key; runtime callers may pass synonyms. Adding aliases here
+    # lets `_get_industry_sigma_provenance` find the right peer pool instead
+    # of falling through to cross-sector fallback. Add new aliases as the
+    # peer DB grows; never remove unless the DB key itself changes.
+    _INDUSTRY_ALIASES = {
+        "tech": "technology",
+        "it services": "technology",
+        "it": "technology",
+        "software": "technology",
+        "internet": "technology",
+        "financial services": "banking",
+        "banks": "banking",
+        "investment banking": "banking",
+        "asset management": "banking",
+        "auto": "automotive",
+        "auto manufacturing": "automotive",
+        "vehicles": "automotive",
+        "oil & gas": "oil and gas",
+        "oilandgas": "oil and gas",
+        "energy": "oil and gas",
+        "fmcg": "consumer goods",
+        "cpg": "consumer goods",
+        "pharma": "pharmaceuticals",
+    }
+
+    def _get_industry_sigma_provenance(self, industry: str) -> Dict[str, Any]:
+        """Return sigma plus its provenance.
+
+        ``source`` is one of:
+          * ``"industry"`` — ≥5 peers in the company's own industry, statistically valid
+          * ``"cross_sector_global"`` — fewer than 5 industry peers; sigma was
+            computed across all sectors (gap_term may be over- or
+            under-stated; consumer should mark provisional)
+          * ``"hardcoded_fallback"`` — peer DB unavailable; sigma=20.0
+        """
         import json
         try:
             with open("data/peer_database.json", "r") as f:
                 db = json.load(f)
             peers_dict = db.get("peers", {})
 
-            # Collect ESG scores for the specific industry
-            norm_industry = industry.lower().replace("_", " ")
-            industry_peers = peers_dict.get(norm_industry, [])
+            norm_industry = industry.lower().replace("_", " ").strip()
+            # Resolve aliases first (e.g. "Financial Services" -> "banking").
+            canonical = self._INDUSTRY_ALIASES.get(norm_industry, norm_industry)
+            industry_peers = peers_dict.get(canonical, [])
+            # Fallback: try a couple of common variants in case the DB uses a
+            # slightly different spelling than the alias map.
+            if len(industry_peers) < 5:
+                for variant in (
+                    canonical.replace(" ", "_"),
+                    canonical.replace(" ", ""),
+                    canonical.replace("&", "and"),
+                ):
+                    p = peers_dict.get(variant)
+                    if p and len(p) > len(industry_peers):
+                        industry_peers = p
+                        canonical = variant
 
             if len(industry_peers) >= 5:
-                scores = [p.get("esg_score", 50) for p in industry_peers]
                 import statistics
-                return max(5.0, statistics.stdev(scores))
+                scores = [p.get("esg_score", 50) for p in industry_peers]
+                return {
+                    "sigma": max(5.0, statistics.stdev(scores)),
+                    "source": "industry",
+                    "n_peers": len(industry_peers),
+                    "industry": canonical,
+                }
 
-            # Fallback: global cross-sector sigma
             all_scores = []
             for sector_peers in peers_dict.values():
                 for p in sector_peers:
@@ -788,10 +901,21 @@ class RiskScorer:
                         all_scores.append(s)
             if len(all_scores) >= 3:
                 import statistics
-                return max(5.0, statistics.stdev(all_scores))
+                return {
+                    "sigma": max(5.0, statistics.stdev(all_scores)),
+                    "source": "cross_sector_global",
+                    "n_peers": len(all_scores),
+                    "industry": norm_industry,
+                    "industry_peer_count": len(industry_peers),
+                }
         except Exception:
             pass
-        return 20.0  # Ultimate fallback
+        return {
+            "sigma": 20.0,
+            "source": "hardcoded_fallback",
+            "n_peers": 0,
+            "industry": industry.lower().replace("_", " ") if industry else "",
+        }
 
     def calculate_greenwashing_score(
         self,
@@ -803,72 +927,196 @@ class RiskScorer:
         industry: str,
         *,
         applied_hard_caps: Optional[List[Dict[str, Any]]] = None,
+        # Bucket-model inputs (May-2026 audit fix). When provided they
+        # override the corresponding component derived from the legacy
+        # (C, P, R, D, T) inputs. Callers that have already split historical
+        # vs current signals should set these explicitly.
+        decayed_enforcement_score: Optional[float] = None,
+        known_case_trust_penalty: Optional[float] = None,
+        current_contradictions_score: Optional[float] = None,
     ) -> Dict[str, Any]:
-        """Compute Greenwashing Risk Score (GW), 0-100.
+        """Compute Greenwashing Risk Score (GW), 0-100, via the bucket model.
 
-        GW = alpha * gap_term + beta * R + gamma * (1 - D/100) * 100 + delta * T
+        ::
 
-        Where gap_term = min(100, max(0, C - P) / industry_sigma * 100)
+            GW = w_fg · formula_gap
+               + w_ht · historical_trust
+               + w_cc · current_contradictions
+               + w_dq · disclosure_quality
 
-        This score is INDEPENDENT of the ESG Performance Score.
+        Buckets are 0-100 with high = more risk. Hard floors have been
+        replaced by additive contributions to ``historical_trust`` so the
+        formula remains the authoritative source, not a number that gets
+        overridden. The legacy (C, P, R, D, T) inputs map as:
+
+          * formula_gap          ←  gap_term(C, P, sigma)
+          * historical_trust     ←  decayed enforcement R + known-case trust
+                                    penalty + sector trust uplift
+          * current_contradictions ← R-current sub-signal + T (temporal escalation)
+          * disclosure_quality   ←  (1 - D/100) × 100
+
+        ESG is independent of GW. Past misconduct does NOT cap ESG.
         """
         if applied_hard_caps is None:
             applied_hard_caps = []
 
-        # Resolve weights
         norm_ind = industry.lower().replace(" ", "_").replace("&", "and")
-        weights = self._GW_WEIGHT_PROFILES.get(norm_ind, self._GW_DEFAULT_WEIGHTS)
-
-        # Risk Mitigation #2: If T is based on insufficient data, set to 0 and redistribute delta
-        t_effective = T
-        alpha = weights["alpha"]
-        beta = weights["beta"]
-        gamma = weights["gamma"]
-        delta = weights["delta"]
-
-        if T == 0.0:
-            # Redistribute delta proportionally to alpha and gamma
-            alpha += delta * 0.6
-            gamma += delta * 0.4
-            delta = 0.0
-
-        # Gap term
-        sigma = self._get_industry_sigma(industry)
-        raw_gap = max(0.0, C - P)
-        gap_term = min(100.0, (raw_gap / sigma) * 100.0)
-
-        # Disclosure deficit
-        disclosure_deficit = (1.0 - D / 100.0) * 100.0
-
-        # Compute GW
-        GW = (
-            alpha * gap_term
-            + beta * R
-            + gamma * disclosure_deficit
-            + delta * t_effective
+        bucket_weights = self._GW_BUCKET_WEIGHT_PROFILES.get(
+            norm_ind, self._GW_BUCKET_DEFAULT_WEIGHTS,
         )
-        GW = round(max(0.0, min(100.0, GW)), 1)
+        w_fg = bucket_weights["formula_gap"]
+        w_ht = bucket_weights["historical_trust"]
+        w_cc = bucket_weights["current_contradictions"]
+        w_dq = bucket_weights["disclosure_quality"]
+
+        # ── Bucket A — formula_gap (claim vs performance) ──────────────────
+        sigma_info = self._get_industry_sigma_provenance(industry)
+        sigma = sigma_info["sigma"]
+        raw_gap = max(0.0, C - P)
+        formula_gap_score = min(100.0, (raw_gap / sigma) * 100.0)
+
+        # ── Bucket B — historical_trust ────────────────────────────────────
+        # When the caller provides explicit decayed/known-case scores we use
+        # them; otherwise we approximate via R (legacy callers).
+        sector_uplift = float(self._SECTOR_TRUST_UPLIFT.get(norm_ind, 0.0))
+        if decayed_enforcement_score is None and known_case_trust_penalty is None:
+            # Legacy path: R is a blend, treat ~60% as historical proxy.
+            historical_base = float(R) * 0.6
+        else:
+            decayed = float(decayed_enforcement_score or 0.0)
+            kc = float(known_case_trust_penalty or 0.0)
+            # Take the dominant of the two registered signals (don't double-count
+            # the same incident if it's in both feeds). The registry has been
+            # ground-truth-validated against confirmed cases (Dieselgate, BP,
+            # etc.) so it deserves full weight; live decayed enforcement
+            # already self-attenuates by date so it also deserves full weight.
+            historical_base = max(decayed, kc)
+        historical_trust_score = max(0.0, min(100.0, historical_base + sector_uplift))
+
+        # ── Bucket C — current_contradictions ──────────────────────────────
+        if current_contradictions_score is None:
+            # Legacy: use the contradiction-share of R plus temporal escalation.
+            current_contradictions_score = max(0.0, min(100.0,
+                float(R) * 0.4 + float(T) * 0.5,
+            ))
+        else:
+            # Caller-provided raw contradiction score; fold T (temporal
+            # escalation) in as a 50% sub-signal.
+            current_contradictions_score = max(0.0, min(100.0,
+                float(current_contradictions_score) + float(T) * 0.5,
+            ))
+
+        # ── Bucket D — disclosure_quality ──────────────────────────────────
+        disclosure_quality_score = max(0.0, min(100.0, (1.0 - D / 100.0) * 100.0))
+
+        # ── Final ──────────────────────────────────────────────────────────
+        formula_gap_term = w_fg * formula_gap_score
+        historical_trust_term = w_ht * historical_trust_score
+        current_contradictions_term = w_cc * current_contradictions_score
+        disclosure_quality_term = w_dq * disclosure_quality_score
+
+        gw_raw = (
+            formula_gap_term + historical_trust_term
+            + current_contradictions_term + disclosure_quality_term
+        )
+        GW = max(0.0, min(100.0, gw_raw))
+        clamp_delta = round(GW - gw_raw, 2)
+        GW = round(GW, 1)
+
+        # Legacy aliasing for V5 in the consistency validator and any
+        # downstream readers that pre-date the bucket renaming.
+        alpha_term = formula_gap_term
+        beta_term = historical_trust_term
+        gamma_term = disclosure_quality_term
+        delta_term = current_contradictions_term
 
         return {
             "greenwashing_score": GW,
             "formula_components": {
-                "C": round(C, 1),
-                "P": round(P, 1),
-                "R": round(R, 1),
-                "D": round(D, 1),
-                "T": round(T, 1),
-                "gap_term": round(gap_term, 1),
-                "disclosure_deficit": round(disclosure_deficit, 1),
+                # Bucket scores (0-100) — primary explainability surface.
+                "formula_gap_score": round(formula_gap_score, 1),
+                "historical_trust_score": round(historical_trust_score, 1),
+                "current_contradictions_score": round(current_contradictions_score, 1),
+                "disclosure_quality_score": round(disclosure_quality_score, 1),
+                # Bucket weighted contributions (sum to GW pre-clamp).
+                "formula_gap_term": round(formula_gap_term, 2),
+                "historical_trust_term": round(historical_trust_term, 2),
+                "current_contradictions_term": round(current_contradictions_term, 2),
+                "disclosure_quality_term": round(disclosure_quality_term, 2),
+                # Legacy aliases (keep V5 reconciliation green).
+                "alpha_term": round(alpha_term, 2),
+                "beta_term":  round(beta_term, 2),
+                "gamma_term": round(gamma_term, 2),
+                "delta_term": round(delta_term, 2),
+                "clamp_delta": clamp_delta,
+                "raw_weighted_sum": round(gw_raw, 2),
+                # Legacy raw-input echo for renderers that look at C, P, R, D, T.
+                "C": round(C, 1), "P": round(P, 1), "R": round(R, 1),
+                "D": round(D, 1), "T": round(T, 1),
+                # Sigma provenance (V6).
                 "industry_sigma": round(sigma, 1),
+                "sigma_provenance": sigma_info["source"],
+                "sigma_n_peers": sigma_info.get("n_peers"),
+                "sector_trust_uplift": round(sector_uplift, 1),
+                # Legacy keys consumed by the renderer + the inline print
+                # statements in the calling site. DO NOT REMOVE — when the
+                # `gap_term` key was dropped during the May-2026 bucket-model
+                # rewrite, a single `print(...['gap_term'])` raised KeyError,
+                # the broad except in the calling site caught it AFTER the
+                # successful pillar_factors build, wiped the pillarfactors
+                # dict, and skipped writing greenwashingformula /
+                # greenwashingriskscore / scoremodifierledger — which is what
+                # caused every "N/A" in the VW report. The aliases are cheap;
+                # leaving them out is expensive.
+                "gap_term": round(formula_gap_score, 1),
+                "disclosure_deficit": round(disclosure_quality_score, 1),
+                # Per-bucket provenance for the report breakdown.
+                "bucket_provenance": {
+                    "formula_gap": {
+                        "claim_intensity_C": round(C, 1),
+                        "performance_P": round(P, 1),
+                        "industry_sigma": round(sigma, 1),
+                        "raw_gap": round(raw_gap, 1),
+                    },
+                    "historical_trust": {
+                        "decayed_enforcement_score": (
+                            None if decayed_enforcement_score is None
+                            else round(float(decayed_enforcement_score), 1)
+                        ),
+                        "known_case_trust_penalty": (
+                            None if known_case_trust_penalty is None
+                            else round(float(known_case_trust_penalty), 1)
+                        ),
+                        "sector_trust_uplift": round(sector_uplift, 1),
+                        "legacy_R_input": round(R, 1),
+                    },
+                    "current_contradictions": {
+                        "raw_contradictions_score": (
+                            None if current_contradictions_score is None
+                            else round(float(current_contradictions_score), 1)
+                        ),
+                        "temporal_escalation_T": round(T, 1),
+                        "legacy_R_input": round(R, 1),
+                    },
+                    "disclosure_quality": {
+                        "disclosure_completeness_D": round(D, 1),
+                        "disclosure_deficit": round(disclosure_quality_score, 1),
+                    },
+                },
             },
             "weights": {
-                "alpha": round(alpha, 3),
-                "beta": round(beta, 3),
-                "gamma": round(gamma, 3),
-                "delta": round(delta, 3),
+                # New bucket weights (canonical).
+                "formula_gap": round(w_fg, 3),
+                "historical_trust": round(w_ht, 3),
+                "current_contradictions": round(w_cc, 3),
+                "disclosure_quality": round(w_dq, 3),
+                # Legacy aliases.
+                "alpha": round(w_fg, 3), "beta": round(w_ht, 3),
+                "gamma": round(w_dq, 3), "delta": round(w_cc, 3),
             },
             "industry_profile": norm_ind,
             "applied_hard_caps": applied_hard_caps,
+            "model_version": "bucket_v1",
         }
 
     def calculate_pillar_scores(self, all_analyses: Dict[str, Any]) -> Dict[str, Any]:
@@ -1923,12 +2171,80 @@ class RiskScorer:
             independent_contradictions = max(0, controversy_raw - reggaps)
 
             # Step 3: Blend — 0.6 regulatory (verified), 0.4 contradiction (probabilistic)
-            R = min(100.0,
+            R_raw = min(100.0,
                 regulatory_R * 0.6 +
                 min(100.0, independent_contradictions * 20.0) * 0.4
             )
+
+            # Step 3b — apply time-decay + claim-relevance gating to dated
+            # enforcement rows (audit fix: Dieselgate-2015 dominating a
+            # 2025 climate-target claim). Active enforcement bypasses
+            # decay; undated rows are pass-through (decay=1.0). When at
+            # least one enforcement row is dated, R is replaced with the
+            # adjusted value; otherwise we keep the blended R.
+            r_components: List[Dict[str, Any]] = []
+            try:
+                _early_claim_text = (
+                    (all_analyses.get("claim", {}) or {}).get("claim_text")
+                    or all_analyses.get("claim_text")
+                    or all_analyses.get("claim_analyzed")
+                    or ""
+                )
+                _claim_pillar = _pd_classify_claim_pillar(_early_claim_text)
+                _reg_payload_for_decay = (
+                    all_analyses.get("regulatory_scanning")
+                    or all_analyses.get("regulatory_compliance")
+                    or {}
+                )
+                _enf_rows = []
+                if isinstance(_reg_payload_for_decay, dict):
+                    for r in (_reg_payload_for_decay.get("compliance_results") or []):
+                        if isinstance(r, dict) and str(r.get("status", "")).lower() == "active_enforcement":
+                            _enf_rows.append(r)
+                _has_dated = any(r.get("incident_year") for r in _enf_rows)
+                if _enf_rows:
+                    weighted_total = 0.0
+                    base_total = 0.0
+                    for er in _enf_rows:
+                        wp = _pd_weighted_penalty(
+                            base_penalty=float(er.get("penalty_score", 25.0) or 25.0),
+                            incident_pillar=er.get("incident_pillar"),
+                            claim_pillar=_claim_pillar,
+                            incident_year=er.get("incident_year"),
+                            is_active=bool(er.get("is_active", True)),
+                        )
+                        rec = wp.as_dict()
+                        rec["evidence_url"] = er.get("evidence_url")
+                        rec["specific_violation"] = (er.get("specific_violation") or "")[:160]
+                        r_components.append(rec)
+                        weighted_total += wp.weighted
+                        base_total += wp.base
+                    enforcement_adjustment = (weighted_total / base_total) if base_total > 0 else 1.0
+                    if _has_dated:
+                        # Apply the adjustment factor to the regulatory share
+                        # of R only — the contradiction-probability share is
+                        # already approximate and not date-aware.
+                        regulatory_share = regulatory_R * 0.6 * enforcement_adjustment
+                        contradiction_share = min(100.0, independent_contradictions * 20.0) * 0.4
+                        R = min(100.0, regulatory_share + contradiction_share)
+                    else:
+                        R = R_raw
+                else:
+                    R = R_raw
+                    enforcement_adjustment = 1.0
+            except Exception as _decay_exc:
+                # Never let decay/relevance break a real run — fall back to
+                # the original blended R and log.
+                logging.getLogger(__name__).warning(
+                    "decay/relevance gating skipped: %s", _decay_exc,
+                )
+                R = R_raw
+                enforcement_adjustment = 1.0
+
             print(f"   📊 R breakdown: regulatory_R={regulatory_R:.1f}, controversy_raw={controversy_raw}, "
-                  f"reggaps={reggaps}, independent={independent_contradictions}, blended_R={R:.1f}")
+                  f"reggaps={reggaps}, independent={independent_contradictions}, "
+                  f"blended_R_raw={R_raw:.1f}, enforcement_adj={enforcement_adjustment:.3f}, "
+                  f"R_final={R:.1f} (n_enforcement={len(r_components)})")
 
             # Compute D (Disclosure Completeness) from pillarfactors
             D = self.calculate_disclosure_score(
@@ -1961,6 +2277,13 @@ class RiskScorer:
                 if C < _C_FLOOR:
                     applied_hard_caps.append({
                         "cap": "net_zero_claim_intensity_floor",
+                        # Tells V5 in the consistency validator that this cap
+                        # modifies a formula INPUT (claim intensity C), not
+                        # the output GW directly. V5 widens its tolerance for
+                        # input-modifying caps because the formula re-prices
+                        # the gap term internally and the post-cap component
+                        # ledger captures the result, not the delta.
+                        "affects": "formula_input_C",
                         "original_C": round(C, 1),
                         "floored_C": _C_FLOOR,
                         "reason": (
@@ -1972,45 +2295,166 @@ class RiskScorer:
                     C = _C_FLOOR
                     print(f"  [C-floor] net-zero claim detected - C raised {round(applied_hard_caps[-1]['original_C'], 1)} -> {_C_FLOOR}")
 
+            # high_carbon_greenwashing_flag previously hard-floored GW at 70.
+            # Bucket-model rewrite (May-2026 audit): record an INFORMATIONAL
+            # cap row so the trail survives, but the actual contribution now
+            # flows through the historical_trust bucket via _SECTOR_TRUST_UPLIFT.
+            # Hierarchy is now: base formula → trust bucket → final, with no
+            # post-formula override that bypasses the math.
             if high_carbon_greenwashing_flag:
                 applied_hard_caps.append({
-                    "cap": "high_carbon_greenwashing_flag",
-                    "effect": "GW floor at 70",
-                    "reason": "Oil & Gas sector + green claims + low ESG",
+                    "cap": "high_carbon_sector_trust_uplift",
+                    "affects": "historical_trust_bucket",
+                    "effect": "added sector trust uplift to historical_trust bucket "
+                              "(no headline floor)",
+                    "reason": "Oil & Gas / coal / mining + green claim + low ESG. "
+                              "See _SECTOR_TRUST_UPLIFT for per-sector point values.",
                 })
 
-            # Compute GW score
+            # ── Bucket-model inputs ──────────────────────────────────────
+            # decayed_enforcement_score: each enforcement row carries
+            # base × decay × relevance. Sum the weighted values, normalised
+            # against the maximum a single 25-point penalty could contribute
+            # so the score lives on the 0-100 axis the bucket expects.
+            decayed_enforcement_score = 0.0
+            if r_components:
+                _weighted_sum = sum(
+                    float(c.get("weighted") or 0.0)
+                    for c in r_components if isinstance(c, dict)
+                )
+                # Normalise: a fully-active relevant 25-point lawsuit produces
+                # `25` weighted; cap at the per-bucket 0-100 axis.
+                decayed_enforcement_score = min(100.0, _weighted_sum * 4.0)
+
+            # known_case_trust_penalty: in-line registry lookup so the
+            # bucket formula owns the entire computation (the verdict-stage
+            # agent_wrapper now only RECORDS the validation, it no longer
+            # mutates scores).
+            known_case_trust_penalty: Optional[float] = None
+            try:
+                from data.known_cases import validate_pipeline_output as _kc_lookup
+                _kc = _kc_lookup(company=company, gw_score=0.0, esg_score=50.0)
+                if _kc.get("case_found") and (_kc.get("outcome") or "").upper() == "CONFIRMED_GREENWASHING":
+                    _gw_range = _kc.get("gw_expected") or [0, 100]
+                    known_case_trust_penalty = float(_gw_range[0])
+                    applied_hard_caps.append({
+                        "cap": "known_case_trust_penalty",
+                        "affects": "historical_trust_bucket",
+                        "case_id": _kc.get("case_id"),
+                        "outcome": _kc.get("outcome"),
+                        "trust_penalty_score": round(known_case_trust_penalty, 1),
+                        "reason": (
+                            f"Documented {_kc.get('outcome')} case — flows into "
+                            f"historical_trust bucket via known_case_trust_penalty "
+                            f"contribution; never overrides the headline."
+                        ),
+                    })
+            except Exception as _kc_exc:
+                logging.getLogger(__name__).debug(
+                    "known-case lookup skipped: %s", _kc_exc,
+                )
+
+            # current_contradictions_score: the raw recent-contradiction
+            # signal, kept SEPARATE from the historical bucket so an old
+            # scandal can't dominate a current claim's evaluation.
+            #
+            # Composition (post-May-2026 fix):
+            #   * 20 raw points per severity-weighted contradiction
+            #     (CRITICAL=3, HIGH=1, MEDIUM=0.5, LOW=0.25)
+            #   * 5 raw points per regulatory gap
+            # Reggaps are added (not subtracted from contradictions) because
+            # both signals carry independent information. The dedup pattern
+            # (max(0, controversy_raw - reggaps)) made companies with both
+            # signals — Microsoft (3 LOWs + 3 reggaps), JPM (1 HIGH + 3
+            # reggaps) — score 0 on this bucket, which is the opposite of
+            # what the evidence suggests.
+            current_contradictions_score_input = min(
+                100.0,
+                controversy_raw * 20.0 + reggaps * 7.0,
+            )
+
+            # Compute GW via the bucket model.
             gw_result = self.calculate_greenwashing_score(
                 C=C, P=P, R=R, D=D, T=T,
                 industry=industry,
                 applied_hard_caps=applied_hard_caps,
+                decayed_enforcement_score=decayed_enforcement_score,
+                known_case_trust_penalty=known_case_trust_penalty,
+                current_contradictions_score=current_contradictions_score_input,
             )
+
+            # Stamp the per-incident penalty ledger so the report layer can
+            # show the decay+relevance math (V7 in the consistency validator)
+            # and so reviewers can reproduce the headline.
+            try:
+                gw_result["formula_components"]["R_raw"] = round(R_raw, 1)
+                gw_result["formula_components"]["R_after_decay"] = round(R, 1)
+                gw_result["formula_components"]["enforcement_adjustment"] = round(
+                    enforcement_adjustment, 3
+                )
+                gw_result["formula_components"]["r_components"] = r_components
+                gw_result["formula_components"]["claim_pillar"] = _claim_pillar
+                gw_result["formula_components"]["decayed_enforcement_score"] = round(
+                    decayed_enforcement_score, 1
+                )
+                gw_result["formula_components"]["known_case_trust_penalty"] = (
+                    None if known_case_trust_penalty is None
+                    else round(known_case_trust_penalty, 1)
+                )
+            except Exception:
+                pass
+
+            # Emit a cap row when the sigma was sourced from cross-sector
+            # fallback or hardcoded. V6 in the consistency validator
+            # requires this disclosure so the reader knows the gap_term may
+            # be cross-sector-normalised. The cap is informational only —
+            # it does not mutate any number.
+            try:
+                _sigma_prov = (gw_result.get("formula_components") or {}).get("sigma_provenance")
+                if _sigma_prov in ("cross_sector_global", "hardcoded_fallback"):
+                    _n_peers = (gw_result.get("formula_components") or {}).get("sigma_n_peers")
+                    applied_hard_caps.append({
+                        "cap": "cross_sector_sigma_fallback",
+                        "affects": "formula_input_sigma",
+                        "sigma_provenance": _sigma_prov,
+                        "sigma_n_peers": _n_peers,
+                        "reason": (
+                            f"Industry peer count below 5 — gap_term computed "
+                            f"with {_sigma_prov} sigma (n={_n_peers}). "
+                            f"Numeric score should be treated as cross-sector "
+                            f"normalised; widen confidence interval accordingly."
+                        ),
+                    })
+                    gw_result["applied_hard_caps"] = applied_hard_caps
+            except Exception:
+                pass
             greenwashing_risk = gw_result["greenwashing_score"]
             self._last_lineage = gw_result
 
-            # Apply domain override caps AFTER formula computation
-            if high_carbon_greenwashing_flag and greenwashing_risk < 70:
-                applied_hard_caps.append({
-                    "cap": "domain_override_floor",
-                    "effect": f"GW raised from {greenwashing_risk} to 70",
-                    "reason": "High-carbon sector domain knowledge override",
-                })
-                greenwashing_risk = 70.0
-                gw_result["greenwashing_score"] = greenwashing_risk
-                gw_result["applied_hard_caps"] = applied_hard_caps
+            # NOTE: the previous code path applied a post-formula GW floor
+            # (`if high_carbon_greenwashing_flag and greenwashing_risk < 70:
+            #     greenwashing_risk = 70`). That override violated the
+            # bucket-model invariant — formula must remain authoritative.
+            # The high-carbon signal now contributes via _SECTOR_TRUST_UPLIFT
+            # in calculate_greenwashing_score; no post-formula overwrite.
 
             final_score = greenwashing_risk
             recalibration = recalibrate_greenwashing_score(final_score, sector=industry)
             final_score_recalibrated = float(recalibration.get("recalibrated_score", final_score))
             risk_level = self._risk_level_from_greenwashing_score(final_score_recalibrated, company)
 
+            # Defensive: never use bracket lookups inside the broad-try
+            # block — a single missing key here would cascade through the
+            # except at the bottom of this section, wipe pillarfactors, and
+            # skip the result-population that the renderer depends on.
+            _fc = (gw_result or {}).get("formula_components") or {}
             print(f"   C (Claim Intensity):        {C}/100")
             print(f"   P (Performance):            {P}/100")
             print(f"   R (Controversy Risk):       {R}/100")
             print(f"   D (Disclosure Completeness): {D}/100")
             print(f"   T (Temporal Escalation):    {T}/100")
-            print(f"   Industry sigma:             {gw_result['formula_components']['industry_sigma']}")
-            print(f"   Gap term:                   {gw_result['formula_components']['gap_term']}")
+            print(f"   Industry sigma:             {_fc.get('industry_sigma', 'N/A')}")
+            print(f"   Gap term:                   {_fc.get('gap_term', _fc.get('formula_gap_score', 'N/A'))}")
             print(f"   GW Score (raw):             {greenwashing_risk}/100")
             print(f"   GW Score (recalibrated):    {final_score_recalibrated}/100")
 
@@ -2023,19 +2467,44 @@ class RiskScorer:
             # Store full GW formula trace for auditability
             result["greenwashingformula"] = gw_result
 
-            # Rebuild score_modifier_ledger with the new formula trace
+            # Defensive: ALL bracket lookups inside this try block must use
+            # .get() — a single KeyError here cascades to wiping pillarfactors
+            # and skipping all the result-population below. See May-2026
+            # post-mortem note above the print loop.
+            _w = (gw_result or {}).get("weights") or {}
+            _fc = (gw_result or {}).get("formula_components") or {}
+
+            # Rebuild score_modifier_ledger. Two layers:
+            #   1. Legacy (C/P/R/D/T) rows — required by the renderer's
+            #      GW FORMULA INPUTS table (professional_report_generator
+            #      reads these label strings exactly).
+            #   2. New bucket-model rows — explain the 40/30/20/10
+            #      decomposition the user actually sees in the headline.
             result["scoremodifierledger"] = [
                 {"label": "ESG Score (independent, from pillars)", "value": round(overall_esg, 1)},
+                # Legacy formula inputs — keep labels exact, the renderer
+                # depends on the exact string match in ledger_map.
                 {"label": "C (Claim Intensity)", "value": round(C, 1)},
                 {"label": "P (Performance Score)", "value": round(P, 1)},
                 {"label": "Gap (C - P)", "value": round(max(0, C - P), 1)},
                 {"label": "R (Controversy Risk)", "value": round(R, 1)},
                 {"label": "D (Disclosure Completeness)", "value": round(D, 1)},
                 {"label": "T (Temporal Escalation)", "value": round(T, 1)},
-                {"label": "α (gap weight)", "value": gw_result["weights"]["alpha"]},
-                {"label": "β (controversy weight)", "value": gw_result["weights"]["beta"]},
-                {"label": "γ (disclosure weight)", "value": gw_result["weights"]["gamma"]},
-                {"label": "δ (temporal weight)", "value": gw_result["weights"]["delta"]},
+                # Legacy weights — value uses .get to survive any future
+                # weight-name change in calculate_greenwashing_score.
+                {"label": "α (formula gap weight)", "value": _w.get("alpha", _w.get("formula_gap"))},
+                {"label": "β (historical trust weight)", "value": _w.get("beta", _w.get("historical_trust"))},
+                {"label": "γ (disclosure quality weight)", "value": _w.get("gamma", _w.get("disclosure_quality"))},
+                {"label": "δ (current contradictions weight)", "value": _w.get("delta", _w.get("current_contradictions"))},
+                # Bucket model — explains the 40/30/20/10 decomposition.
+                {"label": "Bucket: Formula Gap (score)", "value": _fc.get("formula_gap_score")},
+                {"label": "Bucket: Historical Trust (score)", "value": _fc.get("historical_trust_score")},
+                {"label": "Bucket: Current Contradictions (score)", "value": _fc.get("current_contradictions_score")},
+                {"label": "Bucket: Disclosure Quality (score)", "value": _fc.get("disclosure_quality_score")},
+                {"label": "Bucket: Formula Gap (weighted contribution)", "value": _fc.get("formula_gap_term")},
+                {"label": "Bucket: Historical Trust (weighted contribution)", "value": _fc.get("historical_trust_term")},
+                {"label": "Bucket: Current Contradictions (weighted contribution)", "value": _fc.get("current_contradictions_term")},
+                {"label": "Bucket: Disclosure Quality (weighted contribution)", "value": _fc.get("disclosure_quality_term")},
                 {"label": "GW Score (formula)", "value": round(greenwashing_risk, 1)},
                 {"label": "GW Score (recalibrated)", "value": round(final_score_recalibrated, 1)},
                 {"label": "Applied hard caps", "value": len(applied_hard_caps)},
@@ -2043,8 +2512,17 @@ class RiskScorer:
             print(f"   ✅ Pillar factors populated with sub-indicator breakdown")
             result["scoremodifierledger"].extend(
                 {
-                    "label": str(cap.get("cap", "hard_cap")),
-                    "value": cap.get("floored_C") or cap.get("floor") or cap.get("effect", "applied"),
+                    "label": str(cap.get("cap", "hard_cap") or "hard_cap"),
+                    # Order of preference: explicit bucket-model fields,
+                    # then legacy floor/ceiling fields, then "applied".
+                    "value": (
+                        cap.get("trust_penalty_score")
+                        or cap.get("displayed_value")
+                        or cap.get("floored_C")
+                        or cap.get("floor")
+                        or cap.get("effect")
+                        or "applied"
+                    ),
                 }
                 for cap in applied_hard_caps
                 if isinstance(cap, dict)
@@ -2054,10 +2532,15 @@ class RiskScorer:
             result["pillarfactors"] = {}
 
         # Apply structural penalties from new cross-agent features after pillar synchronization.
+        # CRITICAL: penalty must appear in the ledger or the reader sees a
+        # headline GW that doesn't reconcile to the bucket breakdown above.
+        # Pre-fix this caused the JPMorgan ledger to show GW=8.8 while the
+        # headline showed GW=31.1 with no audit trail.
         structural = self._compute_structural_penalties(all_analyses)
         structural_penalty = float(structural.get("total_penalty", 0.0) or 0.0)
         if structural_penalty > 0:
-            final_score = round(min(100.0, max(0.0, float(result.get("greenwashingscoreraw", final_score)) + structural_penalty)), 1)
+            pre_structural_score = float(result.get("greenwashingscoreraw", final_score))
+            final_score = round(min(100.0, max(0.0, pre_structural_score + structural_penalty)), 1)
             recalibration = recalibrate_greenwashing_score(final_score, sector=industry)
             final_score_recalibrated = float(recalibration.get("recalibrated_score", final_score))
             risk_level = self._risk_level_from_greenwashing_score(final_score_recalibrated, company)
@@ -2071,6 +2554,41 @@ class RiskScorer:
                 "   ⚠️ Structural penalties applied: "
                 f"+{structural_penalty:.1f} ({', '.join(structural.get('applied_rules', []))})"
             )
+
+            # Update the ledger so the headline reconciles to the breakdown.
+            ledger = result.get("scoremodifierledger")
+            if isinstance(ledger, list):
+                # Append rows for each structural rule fired so the reader
+                # can trace +20 here, +15 there.
+                for rule in structural.get("applied_rules", []):
+                    ledger.append({
+                        "label": f"Structural penalty: {rule}",
+                        "value": rule.split(":+")[-1] if ":+" in rule else "applied",
+                    })
+                ledger.append({
+                    "label": "Structural penalty (total)",
+                    "value": round(structural_penalty, 1),
+                })
+                # Rename the now-superseded GW rows so the audit chain reads
+                # top-to-bottom: bucket formula → calibration only → +structural
+                # → final calibrated.
+                for row in ledger:
+                    if row.get("label") == "GW Score (formula)":
+                        row["label"] = "GW Score (bucket formula, pre-structural)"
+                    elif row.get("label") == "GW Score (recalibrated)":
+                        # This is the FIRST recalibration (informational only —
+                        # structural is applied to the raw bucket score, not
+                        # the calibrated one, so this row is not on the
+                        # critical path to the final number).
+                        row["label"] = "GW Score (calibrated, before structural — informational)"
+                ledger.append({
+                    "label": "GW Score (raw bucket + structural penalties)",
+                    "value": round(final_score, 1),
+                })
+                ledger.append({
+                    "label": "GW Score (final, recalibrated)",
+                    "value": round(final_score_recalibrated, 1),
+                })
 
         result["scoring_methodology"] = scoring_methodology
 
@@ -2186,8 +2704,8 @@ class RiskScorer:
         return result
 
     def _greenwashing_label(self, score: float) -> str:
-        if score >= 80:
-            return "CRITICAL"
+        # MSCI-style 3-band scale (HIGH / MEDIUM / LOW). CRITICAL collapsed
+        # into HIGH May-2026.
         if score >= 60:
             return "HIGH"
         if score >= 40:

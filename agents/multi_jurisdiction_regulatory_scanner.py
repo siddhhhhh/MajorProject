@@ -251,6 +251,10 @@ class MultiJurisdictionRegulatoryScanner:
             _seen.add(key)
             _deduped.append(hit)
         for hit in _deduped[:3]:
+            # Year + pillar are propagated downstream so risk_scorer can apply
+            # time-decay (e.g. Dieselgate 2015 should not weigh as much as a
+            # 2025 ruling) and claim-relevance gating against the company's
+            # current claim pillar.
             rows.append({
                 "jurisdiction": hit.get("jurisdiction", "Global"),
                 "framework": "Active Enforcement / Litigation",
@@ -260,6 +264,9 @@ class MultiJurisdictionRegulatoryScanner:
                 "material_misstatement_risk": True,
                 "evidence_url": hit.get("url"),
                 "remediation_required": "Provide court-compliant remediation and disclosure updates",
+                "incident_year": hit.get("year"),
+                "incident_pillar": hit.get("pillar") or self._infer_litigation_pillar(hit),
+                "is_active": True,
             })
 
         return rows
@@ -480,6 +487,39 @@ class MultiJurisdictionRegulatoryScanner:
         # that arbitrarily stamps Global frameworks with a regional label
         # (e.g. "UK GHG Protocol Corporate Standard"). Default to Global.
         return "Global"
+
+    def _infer_litigation_pillar(self, hit: Dict[str, Any]) -> Optional[str]:
+        """Best-effort pillar classification for an enforcement record.
+
+        Used so risk_scorer can apply claim-relevance gating (e.g. a 2015
+        Dieselgate governance scandal should weigh less against a 2025
+        climate-target claim than against a current governance claim).
+        Returns one of "environmental" | "social" | "governance" | None.
+        """
+        text = " ".join(
+            str(hit.get(k, "") or "")
+            for k in ("summary", "title", "snippet", "url")
+        ).lower()
+        if not text:
+            return None
+        env_kws = ("climate", "emission", "carbon", "ghg", "pollution",
+                   "fossil", "greenhouse", "scope 1", "scope 2", "scope 3",
+                   "deforestation", "biodiversity", "water", "spill", "methane")
+        soc_kws = ("labor", "labour", "human rights", "diversity", "discrim",
+                   "harassment", "safety", "child labor", "supplier", "wage")
+        gov_kws = ("fraud", "bribery", "corruption", "accounting", "audit",
+                   "disclosure", "tax", "antitrust", "insider", "compliance",
+                   "governance", "non-compliance", "violation", "settlement",
+                   "dieselgate", "emissions cheating", "defeat device")
+        scores = {
+            "environmental": sum(1 for k in env_kws if k in text),
+            "social":        sum(1 for k in soc_kws if k in text),
+            "governance":    sum(1 for k in gov_kws if k in text),
+        }
+        top = max(scores.items(), key=lambda kv: kv[1])
+        if top[1] == 0:
+            return None
+        return top[0]
 
     def _litigation_hits(self, company: str, evidence: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Detect documented litigation/enforcement against the company.

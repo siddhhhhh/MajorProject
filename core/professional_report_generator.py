@@ -13,6 +13,10 @@ from core.carbon_validator import CarbonDataValidator
 from typing import Dict, Any, List, Tuple, Set, Optional
 from core.safe_utils import safe_get, safe_number, parse_source_name, normalize_industry_label, normalize_industry_key, get_reliability_tier
 from core.report_schema import ReportPayload, EvidenceItem, EvidenceRoleCount, PeerEntry, CredibilityTierCount, FactGraphSummary, NewsItem
+from core.report_consistency_validator import (
+    validate_report as _validate_report_consistency,
+    ReportConsistencyError,
+)
 from pydantic import ValidationError
 
 logger = logging.getLogger(__name__)
@@ -457,6 +461,37 @@ class ProfessionalReportGenerator:
             return f"{float(value):.1f}{suffix}"
         return f"N/A{suffix}" if suffix else "N/A"
 
+    def _confidence_precision(self, confidence_pct: Any) -> Tuple[int, bool]:
+        """Map confidence% to (decimal places, provisional_flag).
+
+        Below 60% the report should not show sub-decimal precision. Between
+        60-80% one decimal looks defensible. Above 80% the existing .1f is
+        kept. The provisional flag is true whenever confidence < 60% so
+        renderers can append a tag (e.g. " (provisional)") next to the
+        number without forcing every call site to know the threshold.
+        """
+        try:
+            v = float(confidence_pct)
+        except (TypeError, ValueError):
+            return 1, False
+        if v <= 1.0:  # caller passed a 0-1 ratio
+            v = v * 100.0
+        if v < 60.0:
+            return 0, True
+        if v < 80.0:
+            return 0, False
+        return 1, False
+
+    def _fmt_score_conf(self, value: Any, confidence_pct: Any, suffix: str = "") -> str:
+        """Render a score at precision dictated by confidence; tag if provisional."""
+        if not isinstance(value, (int, float)):
+            return f"N/A{suffix}" if suffix else "N/A"
+        decimals, provisional = self._confidence_precision(confidence_pct)
+        rendered = f"{float(value):.{decimals}f}{suffix}"
+        if provisional:
+            rendered = f"{rendered} (provisional)"
+        return rendered
+
     def _resolve_floor_label(self, carbon_validation: Any, industry_label: str) -> str:
         """Resolve a printable industry label for fallback carbon estimates."""
         floor_used = carbon_validation.get("floor_used") if isinstance(carbon_validation, dict) else None
@@ -701,28 +736,31 @@ class ProfessionalReportGenerator:
         return pct_label if order[pct_label] <= order[q] else q
 
     def _rating_from_esg_score(self, esg_score: Any) -> str:
+        # Canonical bins — kept in lock-step with
+        # ``agents.risk_scorer.esg_score_to_rating`` and
+        # ``core.report_consistency_validator.canonical_rating`` so the three
+        # never drift apart.
         if not isinstance(esg_score, (int, float)):
             return "BBB"
         v = float(esg_score)
-        if v >= 85:
+        if v >= 90:
             return "AAA"
-        if v >= 75:
+        if v >= 85:
             return "AA"
-        if v >= 65:
+        if v >= 75:
             return "A"
-        if v >= 55:
+        if v >= 60:
             return "BBB"
-        if v >= 45:
+        if v >= 50:
             return "BB"
         if v >= 35:
             return "B"
-        if v >= 20:
-            return "CCC"
-        return "C"
+        return "CCC"
 
     def _risk_band(self, score: float) -> str:
-        if score >= 75:
-            return "CRITICAL"
+        # MSCI-style 3-band scale (LOW / MODERATE / HIGH). CRITICAL was
+        # collapsed into HIGH May-2026 per design call — splitting HIGH
+        # further added confusion without changing decision behaviour.
         if score >= 60:
             return "HIGH"
         if score >= 40:
@@ -781,23 +819,32 @@ class ProfessionalReportGenerator:
         if len(workflow) > 300:
             workflow = workflow[:297] + "..."
 
-        # ── Scores/ratings: trust report_consistency first ──────────────────
+        # ── Scores/ratings: report_consistency is the SOLE source of truth ──
+        # Direct reads from `scores` are forbidden here — they bypassed the
+        # canonical resolver and produced the May-2026 inversion bugs
+        # (Volkswagen BBB-at-ESG=35, the silent ESG=100-GW fallback).
         _rc = structured.get("report_consistency", {}) if isinstance(structured.get("report_consistency"), dict) else {}
         if _rc:
             gw_score = float(_rc.get("final_gw_calibrated", 55.0))
             esg_score = float(_rc.get("final_esg_display", 50.0))
             rating = str(_rc.get("final_rating", "BBB"))
             band = str(_rc.get("final_band", "MODERATE")).upper()
+            esg_basis = str(_rc.get("esg_basis", "")).lower()
         else:
-            # Fallback: old derivation for backward compatibility
-            gw_score = self._safe_float(scores.get("greenwashingriskscore"), 55.0)
-            esg_score = scores.get("esg_score")
-            if not isinstance(esg_score, (int, float)):
-                esg_score = max(0.0, min(100.0, 100.0 - gw_score))
-            rating = str(scores.get("ratinggrade") or scores.get("rating_grade") or scores.get("esg_rating") or self._rating_from_esg_score(esg_score))
-            band = str(scores.get("risklevel") or scores.get("risk_level") or self._risk_band(gw_score)).upper()
-            if rating.upper() in {"CCC", "C"} and band in {"LOW", "MODERATE"}:
-                band = "HIGH"
+            # Defensive path only: an upstream caller skipped
+            # _build_structured_report. We reconstruct via the resolver to
+            # keep the contract intact instead of re-deriving in line.
+            risk_results = scores.get("raw") if isinstance(scores.get("raw"), dict) else {}
+            _rs = self._resolve_score_basis(scores, risk_results or {})
+            gw_score = float(_rs["gw_calibrated"])
+            esg_score = float(_rs["display_esg_score"])
+            rating = str(_rs["rating"])
+            band = str(_rs["band"]).upper()
+            esg_basis = str(_rs.get("esg_basis", "")).lower()
+        if esg_basis == "insufficient_data":
+            # Header rendering layer should suppress the ESG number; we keep
+            # the float for layout but flag the structured field downstream.
+            quality["esg_basis_insufficient_data"] = True
         conf_raw = scores.get("confidence")
         conf_pct = float(conf_raw * 100) if isinstance(conf_raw, (int, float)) and conf_raw <= 1 else self._safe_float(conf_raw, 0.0)
         if conf_pct <= 0:
@@ -2773,7 +2820,8 @@ class ProfessionalReportGenerator:
                 _budget_yrs = None
 
             if _budget_yrs is not None and _budget_yrs <= 1.0:
-                _risk_signal = "CRITICAL"
+                # MSCI-style 3-band scale collapses CRITICAL into HIGH.
+                _risk_signal = "HIGH"
                 _risk_basis = (
                     f"carbon budget {_budget_yrs:.1f} yrs remaining at current trajectory — "
                     f"IPCC pathway exhausted before target year"
@@ -4148,48 +4196,168 @@ class ProfessionalReportGenerator:
         }
 
     def _resolve_score_basis(self, scores, risk_results):
-        """Single arbitration point for ESG display score, rating basis, GW raw/calibrated, band."""
+        """Single arbitration point for ESG display score, rating, GW raw/calibrated, band.
+
+        Invariants enforced here (see ``core.report_consistency_validator``):
+          * ``rating`` is a pure function of ``display_esg_score``. Stale
+            upstream rating fields are NEVER carried through — they are
+            recorded under ``stale_rating_overridden`` for traceability.
+          * ``band`` is on the high-score-means-higher-risk scale derived
+            from the calibrated GW headline. Any escalation above that floor
+            (e.g. low-ESG triggering HIGH) is recorded as an
+            ``applied_caps`` row so V2 in the validator passes.
+          * ``esg_basis`` records WHERE the displayed ESG came from so the
+            ``ESG = 100 - GW`` inverse fallback can never run silently.
+          * ``applied_caps`` lists every override that mutated the headline
+            number or band (calibration delta, low-ESG band escalation,
+            future hard-cap floors).
+        """
+        applied_caps: List[Dict[str, Any]] = []
+
         pillar_scores = scores.get("pillar_scores", {}) if isinstance(scores.get("pillar_scores"), dict) else {}
         display_esg = pillar_scores.get("displayesgscore")
+        esg_basis = "pillar_displayesgscore"
         if display_esg is None:
             display_esg = pillar_scores.get("overall_esg_score")
+            esg_basis = "pillar_overall_score"
         if display_esg is None:
             display_esg = scores.get("esg_score")
+            esg_basis = "scores_esg_score"
         if display_esg is None:
             display_esg = risk_results.get("esg_score")
-        display_esg = float(display_esg) if isinstance(display_esg, (int, float)) else 50.0
-        rating = str(
-            scores.get("esg_rating") or risk_results.get("ratinggrade")
-            or risk_results.get("rating_grade") or self._rating_from_esg_score(display_esg)
+            esg_basis = "risk_results_esg_score"
+        if not isinstance(display_esg, (int, float)):
+            display_esg = 50.0
+            esg_basis = "insufficient_data"
+        display_esg = float(display_esg)
+
+        # Rating is ALWAYS recomputed. If a stale field disagrees, log it for
+        # the audit trail; do not let it through.
+        canonical_rating = self._rating_from_esg_score(display_esg)
+        stale_rating = (
+            scores.get("esg_rating")
+            or risk_results.get("ratinggrade")
+            or risk_results.get("rating_grade")
         )
+        rating = canonical_rating
+        stale_rating_overridden = None
+        if isinstance(stale_rating, str) and stale_rating.strip() and stale_rating.strip().upper() != canonical_rating:
+            stale_rating_overridden = stale_rating.strip().upper()
+
         gw_calibrated = float(scores.get("greenwashingriskscore", 55.0))
-        gw_raw = float(
+        gw_raw_val = (
             risk_results.get("greenwashingscoreraw")
             or risk_results.get("greenwashing_score_raw")
-            or gw_calibrated
         )
-        band = str(
-            scores.get("risk_level") or risk_results.get("risklevel")
-            or risk_results.get("risk_level") or self._risk_band(gw_calibrated)
-        ).upper()
-        if rating.upper() in {"CCC", "C"} and band in {"LOW", "MODERATE"}:
-            band = "HIGH"
-        # Floor the band against the calibrated greenwashing score so an upstream
-        # label can never UNDERSTATE risk relative to the headline number. e.g.
-        # GW=90 must surface as CRITICAL even if a stale risk_level field said
-        # MODERATE. Upstream is allowed to ESCALATE the band (CCC override above).
+        gw_raw = float(gw_raw_val) if isinstance(gw_raw_val, (int, float)) else gw_calibrated
+        gw_delta = gw_calibrated - gw_raw
+
+        # Calibration / floor delta is an applied cap if non-trivial, so V5
+        # in the validator can reconcile.
+        if abs(gw_delta) >= 0.5:
+            applied_caps.append({
+                "cap": "greenwashing_calibration_or_floor",
+                "affects": "gw_score",
+                "original_value": round(gw_raw, 1),
+                "displayed_value": round(gw_calibrated, 1),
+                "delta": round(gw_delta, 2),
+                "reason": (
+                    "calibrator and/or sector floor mutated raw GW; see "
+                    "agents.risk_scorer hard caps and ml_models.score_calibrator"
+                ),
+            })
+
+        # Band starts on the canonical risk scale derived from the headline
+        # GW number. We then allow ONE form of escalation: a CCC/B rating
+        # forces the band up, because an ESG laggard cannot honestly carry
+        # a LOW/MODERATE risk label.
         gw_floor_band = self._risk_band(gw_calibrated)
-        order = {"LOW": 0, "MODERATE": 1, "HIGH": 2, "CRITICAL": 3}
-        if order.get(gw_floor_band, 0) > order.get(band, 0):
-            band = gw_floor_band
+        band = gw_floor_band
+
+        # Stale upstream band fields are no longer trusted; they are read
+        # only to record divergence in the audit trail.
+        upstream_band_raw = (
+            scores.get("risk_level")
+            or risk_results.get("risklevel")
+            or risk_results.get("risk_level")
+        )
+        upstream_band = str(upstream_band_raw).strip().upper() if upstream_band_raw else None
+        # MSCI-style 3-band order. CRITICAL collapsed into HIGH May-2026.
+        order = {"LOW": 0, "MODERATE": 1, "HIGH": 2}
+
+        if rating.upper() in {"CCC", "C", "B"} and order.get(band, 0) < order["HIGH"]:
+            applied_caps.append({
+                "cap": "low_rating_band_escalation",
+                "affects": "band",
+                "original_value": band,
+                "displayed_value": "HIGH",
+                "rating": rating,
+                "reason": (
+                    f"rating {rating} (ESG={display_esg:.1f}) cannot honestly "
+                    f"present as {band}; band escalated to HIGH"
+                ),
+            })
+            band = "HIGH"
+
+        # Merge any applied_hard_caps from the bucket-model GW result into
+        # the resolver-level applied_caps list so the report layer + V5/V6
+        # validators see a single canonical ledger of every override.
+        gw_formula_obj = risk_results.get("greenwashingformula") or risk_results.get("greenwashing_formula") or {}
+        if isinstance(gw_formula_obj, dict):
+            for cap_row in (gw_formula_obj.get("applied_hard_caps") or []):
+                if isinstance(cap_row, dict):
+                    cap_copy = dict(cap_row)
+                    cap_copy.setdefault("source", "risk_scorer.greenwashingformula")
+                    applied_caps.append(cap_copy)
+
+        # Verdict qualifier (audit fix: confidence-language coupling).
+        # When confidence is below 60% the headline must be hedged. Renderers
+        # use this to prefix labels with "Indicative …" instead of asserting
+        # a hard verdict on weak data.
+        conf_raw = scores.get("confidence")
+        try:
+            conf_pct = (
+                float(conf_raw) * 100.0
+                if isinstance(conf_raw, (int, float)) and float(conf_raw) <= 1.0
+                else float(conf_raw)
+                if isinstance(conf_raw, (int, float))
+                else 0.0
+            )
+        except (TypeError, ValueError):
+            conf_pct = 0.0
+        if conf_pct > 0 and conf_pct < 60.0:
+            verdict_qualifier = "indicative"
+        else:
+            verdict_qualifier = "definitive"
+        # Headline text is band + qualifier (renderer-agnostic).
+        if verdict_qualifier == "indicative" and band == "HIGH":
+            verdict_label = "Indicative high-risk signal"
+        else:
+            verdict_label = {
+                "LOW": "Low risk",
+                "MODERATE": "Moderate risk",
+                "HIGH": "High risk",
+            }.get(band, band)
+
         return {
             "display_esg_score": round(display_esg, 1),
             "rating_basis_score": round(display_esg, 1),
             "rating": rating,
+            "rating_canonical": canonical_rating,
+            "stale_rating_overridden": stale_rating_overridden,
+            "esg_basis": esg_basis,
             "band": band,
+            "band_scale": "high_score_means_higher_risk",
+            "headline_axis": "greenwashing",
+            "gw_floor_band": gw_floor_band,
+            "upstream_band_overridden": upstream_band if upstream_band and upstream_band != band else None,
             "gw_raw": round(gw_raw, 1),
             "gw_calibrated": round(gw_calibrated, 1),
-            "gw_delta": round(gw_calibrated - gw_raw, 1),
+            "gw_delta": round(gw_delta, 1),
+            "applied_caps": applied_caps,
+            "verdict_qualifier": verdict_qualifier,
+            "verdict_label": verdict_label,
+            "confidence_pct_at_resolve": round(conf_pct, 1),
         }
 
     def _resolve_benchmark_provenance(self, risk_results, state):
@@ -4412,7 +4580,7 @@ class ProfessionalReportGenerator:
         calibration["render_status"] = calibration_render_status
         # ── End canonical resolvers ───────────────────────────────────────
 
-        return {
+        structured = {
             "metadata": {
                 "timestamp_dt": analysis_timestamp,
                 "report_id": report_id,
@@ -4445,8 +4613,74 @@ class ProfessionalReportGenerator:
                 "final_abstain_recommended": resolved_decision["abstain_recommended"],
                 "final_calibration_label": calibration_render_status,
                 "wba_adjustment_allowed": resolved_benchmarks["wba_adjustment_allowed"],
+                # Polarity + provenance metadata (added May-2026 audit fixes)
+                "esg_basis": resolved_scores.get("esg_basis"),
+                "band_scale": resolved_scores.get("band_scale"),
+                "headline_axis": resolved_scores.get("headline_axis"),
+                "gw_floor_band": resolved_scores.get("gw_floor_band"),
+                "rating_canonical": resolved_scores.get("rating_canonical"),
+                "stale_rating_overridden": resolved_scores.get("stale_rating_overridden"),
+                "upstream_band_overridden": resolved_scores.get("upstream_band_overridden"),
+                "applied_caps": resolved_scores.get("applied_caps", []),
+                # Confidence-language coupling (V8). Renderer prefixes
+                # band labels with "Indicative …" when qualifier=indicative.
+                "verdict_qualifier": resolved_scores.get("verdict_qualifier"),
+                "verdict_label": resolved_scores.get("verdict_label"),
+                "confidence_pct": resolved_scores.get("confidence_pct_at_resolve"),
             },
         }
+
+        # ── Pre-export consistency gate ───────────────────────────────────
+        # Runs after the structured dict is fully assembled. Critical
+        # violations block export unless ALLOW_INCONSISTENT_EXPORT=1.
+        # Always written to a sidecar JSON so the audit trail survives.
+        try:
+            consistency = _validate_report_consistency(structured)
+        except Exception as exc:  # never let validation crash a real run
+            logger.exception("report consistency validator raised: %s", exc)
+            consistency = None
+
+        if consistency is not None:
+            structured["report_consistency"]["validation"] = consistency.as_dict()
+            if not consistency.ok:
+                self._write_consistency_sidecar(report_id, consistency, structured)
+                logger.warning(
+                    "[consistency-gate] %s rule(s) tripped on %s: %s",
+                    len(consistency.violations), company, consistency.summary(),
+                )
+                if not os.environ.get("ALLOW_INCONSISTENT_EXPORT"):
+                    raise ReportConsistencyError(consistency)
+            elif consistency.warnings:
+                logger.info(
+                    "[consistency-gate] %s warning(s) on %s: %s",
+                    len(consistency.warnings), company,
+                    ", ".join(w.rule_id for w in consistency.warnings),
+                )
+
+        return structured
+
+    def _write_consistency_sidecar(self, report_id: str, result, structured: Dict[str, Any]) -> None:
+        """Persist a violations sidecar so failed exports are debuggable.
+
+        Best-effort — any IO error is logged but never re-raised, so a disk
+        problem cannot mask a consistency failure.
+        """
+        try:
+            out_dir = os.environ.get("ESG_REPORTS_DIR", "reports")
+            os.makedirs(out_dir, exist_ok=True)
+            path = os.path.join(out_dir, f"{report_id}_consistency_violations.json")
+            payload = {
+                "report_id": report_id,
+                "company": (structured.get("company") or {}).get("name"),
+                "validated_at": datetime.utcnow().isoformat() + "Z",
+                "result": result.as_dict(),
+                "report_consistency": structured.get("report_consistency", {}),
+            }
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(payload, fh, indent=2, default=str)
+            logger.warning("[consistency-gate] sidecar written: %s", path)
+        except Exception as exc:
+            logger.error("[consistency-gate] failed to write sidecar: %s", exc)
 
     def _extract_core_scoring(self, state: Dict[str, Any]) -> Dict[str, Any]:
         agent_outputs = state.get("agent_outputs") or []
@@ -4521,10 +4755,41 @@ class ProfessionalReportGenerator:
         confidence_level = risk_scorer_result.get("confidence_level")
         industry = risk_scorer_result.get("industry") or state.get("industry")
 
+        # Surface the GW-formula breakdown so V5 in the consistency
+        # validator can reconcile displayed GW against αC + βR + γD + δT.
+        gw_formula = (
+            risk_scorer_result.get("greenwashingformula")
+            or risk_scorer_result.get("greenwashing_formula")
+            or {}
+        )
+        if not isinstance(gw_formula, dict):
+            gw_formula = {}
+        formula_components = gw_formula.get("formula_components") or {}
+        if not isinstance(formula_components, dict):
+            formula_components = {}
+        greenwashing_components = {
+            "alpha_term": formula_components.get("alpha_term"),
+            "beta_term":  formula_components.get("beta_term"),
+            "gamma_term": formula_components.get("gamma_term"),
+            "delta_term": formula_components.get("delta_term"),
+            "raw_weighted_sum": formula_components.get("raw_weighted_sum"),
+            "clamp_delta": formula_components.get("clamp_delta"),
+            "sigma_provenance": formula_components.get("sigma_provenance"),
+            "sigma_n_peers": formula_components.get("sigma_n_peers"),
+            "industry_sigma": formula_components.get("industry_sigma"),
+            "R_raw": formula_components.get("R_raw"),
+            "R_after_decay": formula_components.get("R_after_decay"),
+            "enforcement_adjustment": formula_components.get("enforcement_adjustment"),
+            "r_components": formula_components.get("r_components") or [],
+            "claim_pillar": formula_components.get("claim_pillar"),
+            "weights": gw_formula.get("weights"),
+        }
+
         return {
             "esg_rating": esg_rating,
             "risk_level": risk_level,
             "greenwashingriskscore": float(greenwashingriskscore),
+            "greenwashing_components": greenwashing_components,
             "confidence": confidence,
             "confidence_level": confidence_level,
             "industry": industry,
