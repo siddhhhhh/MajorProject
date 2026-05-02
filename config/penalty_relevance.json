@@ -1,0 +1,33 @@
+{
+  "_doc": "Claim-pillar x incident-pillar relevance matrix. Encodes how strongly an incident in one pillar should weigh against a claim in another pillar. 1.0 = full weight (same pillar); 0.5 = half weight (related); 0.2 = quarter weight (unrelated). Used by core/penalty_decay.py to gate penalty contributions before they enter the regulatory_R / controversy aggregation. Designed to fix the audit finding 'Dieselgate dominating climate-target claims' — a governance scandal should not flatten an environmental claim to the same extent as an environmental incident would.",
+  "version": 1,
+  "default_weight_when_unknown": 0.7,
+  "matrix": {
+    "environmental": {
+      "environmental": 1.0,
+      "social":        0.4,
+      "governance":    0.5
+    },
+    "social": {
+      "environmental": 0.4,
+      "social":        1.0,
+      "governance":    0.6
+    },
+    "governance": {
+      "environmental": 0.5,
+      "social":        0.6,
+      "governance":    1.0
+    }
+  },
+  "decay_tau_years_by_pillar": {
+    "environmental": 8.0,
+    "social":        6.0,
+    "governance":    4.0
+  },
+  "active_enforcement_decay_override": 1.0,
+  "rationale": {
+    "environmental_tau_8": "Climate / pollution incidents have long memory; investor concern persists past a decade.",
+    "governance_tau_4": "Governance scandals lose informational value faster as boards / leadership turn over.",
+    "active_override":   "An active lawsuit is by definition unresolved — no decay applied until it settles."
+  }
+}
