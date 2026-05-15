@@ -14,7 +14,10 @@ class ModelConfig:
     model_id:     str
     json_mode:    bool  = False
     max_tokens:   int   = 1000
-    temperature:  float = 0.1   # low temperature for ESG — determinism matters
+    # Default temperature=0.0 for reproducibility. ESG analysis is judgment
+    # work, not creative writing — determinism > diversity. Individual
+    # entries can override if they truly need exploratory sampling.
+    temperature:  float = 0.0
     context_note: str   = ""    # why this model was chosen
 
 # Helper constructors for readability
@@ -31,11 +34,27 @@ def OR(model, **kw):
 # ROUTING TABLE
 # Format: "agent_name": [primary, fallback_1, fallback_2]
 # First model tried = primary. On rate-limit/error → next.
+#
+# PINNING POLICY (for inter-LLM reproducibility):
+#   PINNED   — model_id contains a version tag that's stable across time.
+#              Examples: "llama-3.3-70b-versatile", "llama-3.1-8b-instant",
+#              "qwen-3-235b-a22b-instruct-2507", "mistral-small-3.1-24b-...".
+#   FLOATING — model_id is an alias the provider can re-point silently.
+#              Examples: "gemini-2.0-flash" (Google rolls minor revisions),
+#              ":free" tags on OpenRouter (latest snapshot of that tier),
+#              "gemini-2.5-pro-preview" (preview channel).
+#
+# Floating IDs are kept because they're the only zero-cost path on
+# OpenRouter / Google. The audit log records the exact model_id sent on
+# every call so a divergence between two runs can be traced even when the
+# alias resolves differently on each side. Production deployments that
+# need stronger reproducibility should swap the FLOATING entries for the
+# paid equivalent of the same version.
 # ═══════════════════════════════════════════════════════════
 # Global OR fallback aliases — use these throughout
-OR_REASONING = OR("meta-llama/llama-3.3-70b-instruct:free", max_tokens=2000)
-OR_JSON      = OR("mistralai/mistral-small-3.1-24b-instruct:free", json_mode=True, max_tokens=2000)
-OR_GENERAL   = OR("google/gemma-3-27b-it:free", max_tokens=2000)
+OR_REASONING = OR("meta-llama/llama-3.3-70b-instruct:free", max_tokens=2000)  # FLOATING (:free)
+OR_JSON      = OR("mistralai/mistral-small-3.1-24b-instruct:free", json_mode=True, max_tokens=2000)  # PINNED (3.1-24b)
+OR_GENERAL   = OR("google/gemma-3-27b-it:free", max_tokens=2000)  # FLOATING (:free)
 
 ROUTING_TABLE: dict[str, list[ModelConfig]] = {
 
@@ -241,6 +260,59 @@ def get_primary_model_config(agent_name: str) -> ModelConfig:
     if not chain:
         raise ValueError(f"No routing chain configured for agent '{agent_name}'.")
     return chain[0]
+
+
+# ═══════════════════════════════════════════════════════════
+# ROUTING OVERRIDE — used by the variance diagnostic harness
+# ═══════════════════════════════════════════════════════════
+# When non-None, every agent's effective chain is replaced by this map.
+# Two shapes are supported:
+#   {"_all_": Provider.GEMINI}        → force every call to the chain entry
+#                                       whose provider matches; if none match
+#                                       in the original chain, fall through.
+#   {agent_name: [ModelConfig, ...]}  → per-agent explicit override.
+# Set/reset by harness code. Production code should leave it None.
+ROUTING_OVERRIDE: Optional[Dict[str, Any]] = None
+
+
+def set_routing_override(override: Optional[Dict[str, Any]]) -> None:
+    """Install or clear a routing override. Used by the variance harness."""
+    global ROUTING_OVERRIDE
+    ROUTING_OVERRIDE = override
+
+
+def get_effective_chain(agent_name: str) -> List[ModelConfig]:
+    """Return the model chain to use for this agent, honoring any active
+    ROUTING_OVERRIDE. Falls back to ROUTING_TABLE when no override applies.
+    """
+    base_chain = ROUTING_TABLE.get(agent_name)
+    if not base_chain:
+        raise ValueError(f"No routing chain configured for agent '{agent_name}'.")
+    if ROUTING_OVERRIDE is None:
+        return base_chain
+
+    # Per-agent override wins.
+    if agent_name in ROUTING_OVERRIDE:
+        ov = ROUTING_OVERRIDE[agent_name]
+        if isinstance(ov, list):
+            return ov
+        if isinstance(ov, ModelConfig):
+            return [ov]
+
+    # Provider-wide override: filter the base chain to only models from
+    # the forced provider. If none match, append a Gemini-flash safety
+    # net so the call still proceeds (and the audit log records the swap).
+    forced = ROUTING_OVERRIDE.get("_all_")
+    if isinstance(forced, Provider):
+        filtered = [c for c in base_chain if c.provider == forced]
+        if filtered:
+            return filtered
+        # No entry for forced provider in this chain; return the base
+        # chain unchanged so the agent still works, and the audit log
+        # will show the actual provider used.
+        return base_chain
+
+    return base_chain
 
 
 def render_chat_messages_as_prompt(messages: List[Any]) -> tuple[str | None, str]:

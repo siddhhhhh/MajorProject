@@ -1,0 +1,391 @@
+{
+  "suite": "minimal",
+  "providers": [
+    "groq",
+    "cerebras"
+  ],
+  "results": [
+    {
+      "probe_name": "claim_classification_net_zero",
+      "provider": "groq",
+      "model_id": "llama-3.1-8b-instant",
+      "raw_response": "{\n  \"claim_type\": \"NET_ZERO\",\n   \"target_year\": 2050,\n   \"is_quantified\": true\n}",
+      "response_hash": "ca828a77c341cba3",
+      "parsed_value": 2050,
+      "error": null,
+      "latency_ms": 315.6293000211008
+    },
+    {
+      "probe_name": "claim_classification_net_zero",
+      "provider": "cerebras",
+      "model_id": "llama3.1-8b",
+      "raw_response": "{\"claim_type\": \"NET_ZERO\", \"target_year\": 2050, \"is_quantified\": true}",
+      "response_hash": "fdf62cc65aa1767d",
+      "parsed_value": 2050,
+      "error": null,
+      "latency_ms": 632.1286000020336
+    },
+    {
+      "probe_name": "sentiment_microsoft",
+      "provider": "groq",
+      "model_id": "meta-llama/llama-4-scout-17b-16e-instruct",
+      "raw_response": "{\"sentiment\": \"POSITIVE\", \"confidence\": 0.7}",
+      "response_hash": "7767f6a85642d12d",
+      "parsed_value": "POSITIVE",
+      "error": null,
+      "latency_ms": 395.81419999012724
+    },
+    {
+      "probe_name": "sentiment_microsoft",
+      "provider": "cerebras",
+      "model_id": "llama3.1-8b",
+      "raw_response": "{\n  \"sentiment\": \"POSITIVE\",\n  \"confidence\": 0.8\n}",
+      "response_hash": "bd53a6907538fa11",
+      "parsed_value": "POSITIVE",
+      "error": null,
+      "latency_ms": 348.20760000729933
+    },
+    {
+      "probe_name": "credibility_evidence",
+      "provider": "groq",
+      "model_id": "llama-3.1-8b-instant",
+      "raw_response": "{\n  \"credibility\": 5,\n   \"reason\": \"Both the company's sustainability report and Reuters report are based on audited filings, providing high credibility.\"\n}",
+      "response_hash": "0f0373995147d0a9",
+      "parsed_value": 5,
+      "error": null,
+      "latency_ms": 226.0447999869939
+    },
+    {
+      "probe_name": "credibility_evidence",
+      "provider": "cerebras",
+      "model_id": "llama3.1-8b",
+      "raw_response": "{\"credibility\": 5, \"reason\": \"Multiple independent sources (PwC and Reuters) confirm the same information, and the report is audited.\"}",
+      "response_hash": "3e567b7bb546b82c",
+      "parsed_value": 5,
+      "error": null,
+      "latency_ms": 348.2739000173751
+    },
+    {
+      "probe_name": "climatebert_classification",
+      "provider": "groq",
+      "model_id": "llama-3.1-8b-instant",
+      "raw_response": "{\n  \"category\": \"TARGET\",\n   \"specificity\": \"QUANTIFIED\"\n}",
+      "response_hash": "48222d798ba6e1d7",
+      "parsed_value": "TARGET",
+      "error": null,
+      "latency_ms": 108.83040001499467
+    },
+    {
+      "probe_name": "climatebert_classification",
+      "provider": "cerebras",
+      "model_id": "llama3.1-8b",
+      "raw_response": "{\"category\": \"TARGET\", \"specificity\": \"QUANTIFIED\"}",
+      "response_hash": "116b68fa7a24902d",
+      "parsed_value": "TARGET",
+      "error": null,
+      "latency_ms": 323.86639999458566
+    },
+    {
+      "probe_name": "esg_mismatch_check",
+      "provider": "groq",
+      "model_id": "llama-3.3-70b-versatile",
+      "raw_response": "{\n  \"match\": false,\n   \"mismatch_type\": \"CONTRADICTION\"\n}",
+      "response_hash": "534c85c505c20069",
+      "parsed_value": "CONTRADICTION",
+      "error": null,
+      "latency_ms": 345.02849998534657
+    },
+    {
+      "probe_name": "esg_mismatch_check",
+      "provider": "cerebras",
+      "model_id": "qwen-3-235b-a22b-instruct-2507",
+      "raw_response": "{\"match\": false, \"mismatch_type\": \"CONTRADICTION\"}",
+      "response_hash": "553bb20dd5e9f379",
+      "parsed_value": "CONTRADICTION",
+      "error": null,
+      "latency_ms": 342.48789999401197
+    },
+    {
+      "probe_name": "temporal_consistency_target",
+      "provider": "groq",
+      "model_id": "qwen/qwen3-32b",
+      "raw_response": "{\"consistent\": false, \"issue\": \"The 2024 statement reduces the 2030 Scope 1 reduction target from 50% to 30%, contradicting the earlier commitment for the same timeframe.\"}",
+      "response_hash": "22d96b3dd4b828f0",
+      "parsed_value": false,
+      "error": null,
+      "latency_ms": 619.6605000004638
+    },
+    {
+      "probe_name": "temporal_consistency_target",
+      "provider": "cerebras",
+      "model_id": "llama3.1-8b",
+      "raw_response": "{\"consistent\": false, \"issue\": \"The 2020 statement commits to a 50% reduction, but the 2024 statement commits to a 30% reduction, which is not consistent with the original commitment.\"}",
+      "response_hash": "77fea97ab1498592",
+      "parsed_value": false,
+      "error": null,
+      "latency_ms": 324.9853999877814
+    },
+    {
+      "probe_name": "promise_extraction_jpm",
+      "provider": "groq",
+      "model_id": "llama-3.3-70b-versatile",
+      "raw_response": "{\n  \"promises\": [\n       {\n           \"text\": \"achieve carbon-neutral operations\",\n           \"target_year\": 2030,\n           \"quantified\": false\n       },\n       {\n           \"text\": \"reduce financed-emissions intensity 25%\",\n           \"target_year\": 2030,\n           \"quantified\": true\n       },\n       {\n           \"text\": \"align $1T in sustainable finance\",\n           \"target_year\": 2030,\n           \"quantified\": true\n       }\n   ]\n}",
+      "response_hash": "4ef9a3b82a427702",
+      "parsed_value": [
+        {
+          "text": "achieve carbon-neutral operations",
+          "target_year": 2030,
+          "quantified": false
+        },
+        {
+          "text": "reduce financed-emissions intensity 25%",
+          "target_year": 2030,
+          "quantified": true
+        },
+        {
+          "text": "align $1T in sustainable finance",
+          "target_year": 2030,
+          "quantified": true
+        }
+      ],
+      "error": null,
+      "latency_ms": 362.79439998907037
+    },
+    {
+      "probe_name": "promise_extraction_jpm",
+      "provider": "cerebras",
+      "model_id": "qwen-3-235b-a22b-instruct-2507",
+      "raw_response": "{\"promises\": [{\"text\": \"achieve carbon-neutral operations\", \"target_year\": 2030, \"quantified\": true}, {\"text\": \"reduce financed-emissions intensity 25%\", \"target_year\": 2030, \"quantified\": true}, {\"text\": \"align $1T in sustainable finance\", \"target_year\": 2030, \"quantified\": true}]}",
+      "response_hash": "4cfbe61d7a42e197",
+      "parsed_value": [
+        {
+          "text": "achieve carbon-neutral operations",
+          "target_year": 2030,
+          "quantified": true
+        },
+        {
+          "text": "reduce financed-emissions intensity 25%",
+          "target_year": 2030,
+          "quantified": true
+        },
+        {
+          "text": "align $1T in sustainable finance",
+          "target_year": 2030,
+          "quantified": true
+        }
+      ],
+      "error": null,
+      "latency_ms": 362.30979999527335
+    },
+    {
+      "probe_name": "confidence_score_basic",
+      "provider": "groq",
+      "model_id": "llama-3.1-8b-instant",
+      "raw_response": "{\n  \"confidence\": 85\n}",
+      "response_hash": "10a44670a9f0d9c1",
+      "parsed_value": 85,
+      "error": null,
+      "latency_ms": 94.5380000048317
+    },
+    {
+      "probe_name": "confidence_score_basic",
+      "provider": "cerebras",
+      "model_id": "llama3.1-8b",
+      "raw_response": "{\"confidence\": 80}",
+      "response_hash": "f49a58d0fd768ba9",
+      "parsed_value": 80,
+      "error": null,
+      "latency_ms": 49638.482400012435
+    }
+  ],
+  "aggregate": {
+    "summary": {
+      "hash_agreement_rate": 0.0,
+      "categorical_value_agreement_rate": 0.833,
+      "numeric_avg_spread": 2.5,
+      "numeric_max_spread": 5.0,
+      "n_probes": 8,
+      "n_results": 16
+    },
+    "per_probe": [
+      {
+        "probe": "claim_classification_net_zero",
+        "kind": "categorical",
+        "n_providers": 2,
+        "hash_identical": false,
+        "parsed_values": {
+          "groq": 2050,
+          "cerebras": 2050
+        },
+        "value_agreement": true,
+        "model_ids": {
+          "groq": "llama-3.1-8b-instant",
+          "cerebras": "llama3.1-8b"
+        }
+      },
+      {
+        "probe": "sentiment_microsoft",
+        "kind": "categorical",
+        "n_providers": 2,
+        "hash_identical": false,
+        "parsed_values": {
+          "groq": "POSITIVE",
+          "cerebras": "POSITIVE"
+        },
+        "value_agreement": true,
+        "model_ids": {
+          "groq": "meta-llama/llama-4-scout-17b-16e-instruct",
+          "cerebras": "llama3.1-8b"
+        }
+      },
+      {
+        "probe": "credibility_evidence",
+        "kind": "numeric",
+        "n_providers": 2,
+        "hash_identical": false,
+        "parsed_values": {
+          "groq": 5,
+          "cerebras": 5
+        },
+        "value_agreement": true,
+        "model_ids": {
+          "groq": "llama-3.1-8b-instant",
+          "cerebras": "llama3.1-8b"
+        },
+        "numeric_min": 5.0,
+        "numeric_max": 5.0,
+        "numeric_spread": 0.0,
+        "numeric_mean": 5.0,
+        "numeric_rel_spread_pct": 0.0
+      },
+      {
+        "probe": "climatebert_classification",
+        "kind": "categorical",
+        "n_providers": 2,
+        "hash_identical": false,
+        "parsed_values": {
+          "groq": "TARGET",
+          "cerebras": "TARGET"
+        },
+        "value_agreement": true,
+        "model_ids": {
+          "groq": "llama-3.1-8b-instant",
+          "cerebras": "llama3.1-8b"
+        }
+      },
+      {
+        "probe": "esg_mismatch_check",
+        "kind": "categorical",
+        "n_providers": 2,
+        "hash_identical": false,
+        "parsed_values": {
+          "groq": "CONTRADICTION",
+          "cerebras": "CONTRADICTION"
+        },
+        "value_agreement": true,
+        "model_ids": {
+          "groq": "llama-3.3-70b-versatile",
+          "cerebras": "qwen-3-235b-a22b-instruct-2507"
+        }
+      },
+      {
+        "probe": "temporal_consistency_target",
+        "kind": "categorical",
+        "n_providers": 2,
+        "hash_identical": false,
+        "parsed_values": {
+          "groq": false,
+          "cerebras": false
+        },
+        "value_agreement": true,
+        "model_ids": {
+          "groq": "qwen/qwen3-32b",
+          "cerebras": "llama3.1-8b"
+        }
+      },
+      {
+        "probe": "promise_extraction_jpm",
+        "kind": "categorical",
+        "n_providers": 2,
+        "hash_identical": false,
+        "parsed_values": {
+          "groq": [
+            {
+              "text": "achieve carbon-neutral operations",
+              "target_year": 2030,
+              "quantified": false
+            },
+            {
+              "text": "reduce financed-emissions intensity 25%",
+              "target_year": 2030,
+              "quantified": true
+            },
+            {
+              "text": "align $1T in sustainable finance",
+              "target_year": 2030,
+              "quantified": true
+            }
+          ],
+          "cerebras": [
+            {
+              "text": "achieve carbon-neutral operations",
+              "target_year": 2030,
+              "quantified": true
+            },
+            {
+              "text": "reduce financed-emissions intensity 25%",
+              "target_year": 2030,
+              "quantified": true
+            },
+            {
+              "text": "align $1T in sustainable finance",
+              "target_year": 2030,
+              "quantified": true
+            }
+          ]
+        },
+        "value_agreement": false,
+        "model_ids": {
+          "groq": "llama-3.3-70b-versatile",
+          "cerebras": "qwen-3-235b-a22b-instruct-2507"
+        }
+      },
+      {
+        "probe": "confidence_score_basic",
+        "kind": "numeric",
+        "n_providers": 2,
+        "hash_identical": false,
+        "parsed_values": {
+          "groq": 85,
+          "cerebras": 80
+        },
+        "value_agreement": false,
+        "model_ids": {
+          "groq": "llama-3.1-8b-instant",
+          "cerebras": "llama3.1-8b"
+        },
+        "numeric_min": 80.0,
+        "numeric_max": 85.0,
+        "numeric_spread": 5.0,
+        "numeric_mean": 82.5,
+        "numeric_rel_spread_pct": 6.0606060606060606
+      }
+    ]
+  },
+  "projected_gw_impact": {
+    "projected_gw_upper_bound_points": 6.0,
+    "contributions": [
+      {
+        "probe": "promise_extraction_jpm",
+        "contribution_gw_points": 5.0
+      },
+      {
+        "probe": "confidence_score_basic",
+        "contribution_gw_points": 1.0
+      }
+    ],
+    "insufficient_probes": [],
+    "method": "Upper bound. Each diverging probe contributes its full GW weight; in practice the bucket model's averaging and capping reduces this. Probes with <2 successful provider responses are excluded as 'insufficient data' rather than treated as agreement."
+  },
+  "timestamp_utc": "2026-05-15T05:47:45.531858+00:00"
+}

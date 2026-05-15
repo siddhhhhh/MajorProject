@@ -1,7 +1,9 @@
-import asyncio, logging, os, json
+import asyncio, logging, os, json, time
 from core.llm_clients import cerebras, groq_client, openrouter, gemini_client
 from core.llm_router  import ROUTING_TABLE, NO_LLM_AGENTS, Provider, ModelConfig
+from core.llm_router  import get_effective_chain
 import core.llm_cache as cache
+from core.llm_audit  import log_call as _audit_log
 
 logger = logging.getLogger(__name__)
 MAX_RETRIES  = int(os.getenv("MAX_RETRIES", "3"))
@@ -55,18 +57,28 @@ async def call_llm(
             f"Add it to ROUTING_TABLE in llm_router.py."
         )
 
-    # Cache check
+    # Cache check — keyed on (agent, prompt); model-agnostic so the cache
+    # survives routing-override runs from the variance harness.
     if use_cache:
         hit = cache.get(agent, prompt)
         if hit:
             logger.debug("Cache hit: agent=%s", agent)
+            _audit_log(
+                agent=agent, provider="cache", model_id="cache",
+                prompt=prompt, response=hit, system=system,
+                latency_ms=0.0, cache_hit=True,
+            )
             return hit
 
-    model_chain = ROUTING_TABLE[agent]
+    # get_effective_chain consults ROUTING_OVERRIDE first (used by the
+    # variance diagnostic harness to force a specific provider), then
+    # falls back to ROUTING_TABLE[agent].
+    model_chain = get_effective_chain(agent)
     last_error  = None
 
     for config in model_chain:
         for attempt in range(MAX_RETRIES):
+            t0 = time.perf_counter()
             try:
                 logger.info("Trying %s/%s for agent=%s (attempt %d)",
                             config.provider.value, config.model_id,
@@ -74,16 +86,35 @@ async def call_llm(
 
                 result = await _dispatch(config, prompt, system, pdf_bytes)
 
+                latency_ms = (time.perf_counter() - t0) * 1000.0
                 if use_cache:
                     cache.set(agent, prompt, result)
 
                 logger.info("Success: %s/%s agent=%s",
                             config.provider.value, config.model_id, agent)
+                _audit_log(
+                    agent=agent, provider=config.provider.value,
+                    model_id=config.model_id,
+                    prompt=prompt, response=result, system=system,
+                    latency_ms=latency_ms, cache_hit=False,
+                    extra={"attempt": attempt + 1,
+                           "temperature": config.temperature,
+                           "json_mode": config.json_mode},
+                )
                 return result
 
             except Exception as e:
                 last_error = e
                 err = str(e).lower()
+                latency_ms = (time.perf_counter() - t0) * 1000.0
+                _audit_log(
+                    agent=agent, provider=config.provider.value,
+                    model_id=config.model_id,
+                    prompt=prompt, response=None, system=system,
+                    latency_ms=latency_ms, cache_hit=False,
+                    error=str(e)[:200],
+                    extra={"attempt": attempt + 1},
+                )
 
                 if any(x in err for x in SKIP_ERRORS):
                     logger.warning("Skip error on %s/%s: %s — next model",

@@ -1,0 +1,271 @@
+{
+  "suite": "minimal",
+  "providers": [
+    "groq",
+    "gemini",
+    "cerebras"
+  ],
+  "results": [
+    {
+      "probe_name": "claim_classification_net_zero",
+      "provider": "groq",
+      "model_id": "llama-3.1-8b-instant",
+      "raw_response": "{\n  \"claim_type\": \"NET_ZERO\",\n   \"target_year\": 2050,\n   \"is_quantified\": true\n}",
+      "response_hash": "ca828a77c341cba3",
+      "parsed_value": 2050,
+      "error": null,
+      "latency_ms": 378.9286999963224
+    },
+    {
+      "probe_name": "claim_classification_net_zero",
+      "provider": "gemini",
+      "model_id": "(none in chain)",
+      "raw_response": "",
+      "response_hash": "",
+      "parsed_value": null,
+      "error": "No gemini entry in agent='claim_extractor' chain",
+      "latency_ms": 0.0
+    },
+    {
+      "probe_name": "claim_classification_net_zero",
+      "provider": "cerebras",
+      "model_id": "llama3.1-8b",
+      "raw_response": "{\"claim_type\": \"NET_ZERO\", \"target_year\": 2050, \"is_quantified\": true}",
+      "response_hash": "fdf62cc65aa1767d",
+      "parsed_value": 2050,
+      "error": null,
+      "latency_ms": 728.1823999946937
+    },
+    {
+      "probe_name": "contradiction_count_vw",
+      "provider": "groq",
+      "model_id": "llama-3.3-70b-versatile",
+      "raw_response": "{\"contradiction\": true, \"severity\": \"HIGH\", \"explanation\": \"The company's goal to be carbon-neutral by 2050 contradicts with its recent involvement in emissions cheating scandal, indicating a gap between its environmental commitments and actual practices.\"}",
+      "response_hash": "f2b368b876f0238e",
+      "parsed_value": "HIGH",
+      "error": null,
+      "latency_ms": 420.12419999809936
+    },
+    {
+      "probe_name": "contradiction_count_vw",
+      "provider": "gemini",
+      "model_id": "gemini-2.0-flash",
+      "raw_response": "",
+      "response_hash": "",
+      "parsed_value": null,
+      "error": "All providers failed for agent='contradiction_analysis'. Chain tried: ['gemini-2.0-flash']. Last error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, ple",
+      "latency_ms": 14503.138500003843
+    },
+    {
+      "probe_name": "contradiction_count_vw",
+      "provider": "cerebras",
+      "model_id": "(none in chain)",
+      "raw_response": "",
+      "response_hash": "",
+      "parsed_value": null,
+      "error": "No cerebras entry in agent='contradiction_analysis' chain",
+      "latency_ms": 0.0
+    },
+    {
+      "probe_name": "greenwashing_score_jpm",
+      "provider": "groq",
+      "model_id": "llama-3.3-70b-versatile",
+      "raw_response": "{\n  \"risk_score\": 80,\n   \"label\": \"HIGH\",\n   \"top_signals\": [\n      \"incongruence between net-zero commitment and large-scale fossil-fuel financing\",\n      \"recent withdrawal of NZBA membership, potentially indicating lack of credible action\"\n   ]\n}",
+      "response_hash": "42e1408659adb743",
+      "parsed_value": 80,
+      "error": null,
+      "latency_ms": 563.9370999997482
+    },
+    {
+      "probe_name": "greenwashing_score_jpm",
+      "provider": "gemini",
+      "model_id": "gemini-2.0-flash",
+      "raw_response": "",
+      "response_hash": "",
+      "parsed_value": null,
+      "error": "All providers failed for agent='greenwishing_detection'. Chain tried: ['gemini-2.0-flash']. Last error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, ple",
+      "latency_ms": 14471.914599998854
+    },
+    {
+      "probe_name": "greenwashing_score_jpm",
+      "provider": "cerebras",
+      "model_id": "(none in chain)",
+      "raw_response": "",
+      "response_hash": "",
+      "parsed_value": null,
+      "error": "No cerebras entry in agent='greenwishing_detection' chain",
+      "latency_ms": 0.0
+    },
+    {
+      "probe_name": "carbon_extraction_vedanta",
+      "provider": "groq",
+      "model_id": "llama-3.3-70b-versatile",
+      "raw_response": "{\n  \"scope1\": 63324,\n   \"scope2\": 3594,\n   \"scope3\": 45802,\n   \"year\": 2025,\n   \"unit_in_source\": \"ktCO2e\"\n}",
+      "response_hash": "b86cc7ab0f02128b",
+      "parsed_value": 63324,
+      "error": null,
+      "latency_ms": 300.63340000924654
+    },
+    {
+      "probe_name": "carbon_extraction_vedanta",
+      "provider": "gemini",
+      "model_id": "gemini-2.0-flash",
+      "raw_response": "",
+      "response_hash": "",
+      "parsed_value": null,
+      "error": "All providers failed for agent='carbon_extraction'. Chain tried: ['gemini-2.0-flash']. Last error: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please c",
+      "latency_ms": 14464.208499994129
+    },
+    {
+      "probe_name": "carbon_extraction_vedanta",
+      "provider": "cerebras",
+      "model_id": "(none in chain)",
+      "raw_response": "",
+      "response_hash": "",
+      "parsed_value": null,
+      "error": "No cerebras entry in agent='carbon_extraction' chain",
+      "latency_ms": 0.0
+    },
+    {
+      "probe_name": "sentiment_microsoft",
+      "provider": "groq",
+      "model_id": "meta-llama/llama-4-scout-17b-16e-instruct",
+      "raw_response": "{\"sentiment\": \"POSITIVE\", \"confidence\": 0.7}",
+      "response_hash": "7767f6a85642d12d",
+      "parsed_value": "POSITIVE",
+      "error": null,
+      "latency_ms": 145.8905000181403
+    },
+    {
+      "probe_name": "sentiment_microsoft",
+      "provider": "gemini",
+      "model_id": "(none in chain)",
+      "raw_response": "",
+      "response_hash": "",
+      "parsed_value": null,
+      "error": "No gemini entry in agent='sentiment_analysis' chain",
+      "latency_ms": 0.0
+    },
+    {
+      "probe_name": "sentiment_microsoft",
+      "provider": "cerebras",
+      "model_id": "llama3.1-8b",
+      "raw_response": "{\n  \"sentiment\": \"POSITIVE\",\n  \"confidence\": 0.8\n}",
+      "response_hash": "bd53a6907538fa11",
+      "parsed_value": "POSITIVE",
+      "error": null,
+      "latency_ms": 309.8508999974001
+    },
+    {
+      "probe_name": "regulatory_compliance_brsr",
+      "provider": "groq",
+      "model_id": "qwen/qwen3-32b",
+      "raw_response": "{\"compliant\": false, \"gap\": \"The disclosure does not meet BRSR Principle 6 Scope 3 requirements as it excludes several Scope 3 categories (1, 4, 9, 11, 12) without justification. BRSR requires reporting all material Scope 3 categories, and the absence of a materiality assessment or rationale for exclusions creates a compliance gap.\"}",
+      "response_hash": "f101bf288d1d87d2",
+      "parsed_value": false,
+      "error": null,
+      "latency_ms": 4353.942499990808
+    },
+    {
+      "probe_name": "regulatory_compliance_brsr",
+      "provider": "gemini",
+      "model_id": "(none in chain)",
+      "raw_response": "",
+      "response_hash": "",
+      "parsed_value": null,
+      "error": "No gemini entry in agent='regulatory_scanning' chain",
+      "latency_ms": 0.0
+    },
+    {
+      "probe_name": "regulatory_compliance_brsr",
+      "provider": "cerebras",
+      "model_id": "(none in chain)",
+      "raw_response": "",
+      "response_hash": "",
+      "parsed_value": null,
+      "error": "No cerebras entry in agent='regulatory_scanning' chain",
+      "latency_ms": 0.0
+    }
+  ],
+  "aggregate": {
+    "summary": {
+      "hash_agreement_rate": 0.0,
+      "categorical_value_agreement_rate": 1.0,
+      "numeric_avg_spread": null,
+      "numeric_max_spread": null,
+      "n_probes": 6,
+      "n_results": 18
+    },
+    "per_probe": [
+      {
+        "probe": "claim_classification_net_zero",
+        "kind": "categorical",
+        "n_providers": 2,
+        "hash_identical": false,
+        "parsed_values": {
+          "groq": 2050,
+          "cerebras": 2050
+        },
+        "value_agreement": true,
+        "model_ids": {
+          "groq": "llama-3.1-8b-instant",
+          "cerebras": "llama3.1-8b"
+        }
+      },
+      {
+        "probe": "contradiction_count_vw",
+        "kind": "categorical",
+        "status": "insufficient_responses",
+        "n_providers": 1
+      },
+      {
+        "probe": "greenwashing_score_jpm",
+        "kind": "numeric",
+        "status": "insufficient_responses",
+        "n_providers": 1
+      },
+      {
+        "probe": "carbon_extraction_vedanta",
+        "kind": "numeric",
+        "status": "insufficient_responses",
+        "n_providers": 1
+      },
+      {
+        "probe": "sentiment_microsoft",
+        "kind": "categorical",
+        "n_providers": 2,
+        "hash_identical": false,
+        "parsed_values": {
+          "groq": "POSITIVE",
+          "cerebras": "POSITIVE"
+        },
+        "value_agreement": true,
+        "model_ids": {
+          "groq": "meta-llama/llama-4-scout-17b-16e-instruct",
+          "cerebras": "llama3.1-8b"
+        }
+      },
+      {
+        "probe": "regulatory_compliance_brsr",
+        "kind": "categorical",
+        "status": "insufficient_responses",
+        "n_providers": 1
+      }
+    ]
+  },
+  "projected_gw_impact": {
+    "projected_gw_upper_bound_points": 7.0,
+    "contributions": [
+      {
+        "probe": "claim_classification_net_zero",
+        "contribution_gw_points": 5.0
+      },
+      {
+        "probe": "sentiment_microsoft",
+        "contribution_gw_points": 2.0
+      }
+    ],
+    "method": "Upper bound. Each diverging probe contributes its full GW weight; in practice the bucket model's averaging and capping reduces this. Treat as worst-case headline-variance budget."
+  },
+  "timestamp_utc": "2026-05-15T05:42:29.558537+00:00"
+}
