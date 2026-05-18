@@ -9,6 +9,16 @@ class CarbonDataValidator:
 
     MAX_ACCEPTABLE_DATA_AGE_YEARS = 3  # reject data older than this
 
+    # Auto-correction guard. A raw 2.0 from PDF noise must NEVER be promoted
+    # to "2.0 in kt = 2,000 tCO2e" or "2.0 in Mt = 2,000,000 tCO2e".
+    # Genuine reports with kt/Mt suffixes get normalised at extraction time
+    # (see CarbonExtractor._normalize_units), so when we reach this fallback
+    # the unit suffix was either missing or unrecognised — i.e. the value is
+    # likely a parser artefact, not a unit mismatch. We only auto-correct
+    # when the original value is large enough that a real disclosure quoted
+    # in kt/Mt would plausibly use it (≥ 10).
+    MIN_AUTO_CORRECT_VALUE = 10.0
+
     def _resolve_floor_key(self, industry: str, floors: dict) -> str:
         """Resolve the best floor key for an industry with safe matching."""
         industry = str(industry or "").strip()
@@ -126,6 +136,19 @@ class CarbonDataValidator:
                 return value_num, None
 
             floor_min = float(floors.get("scope1_min", 100))
+
+            # Bound auto-correction. A raw 2.0 from PDF parser noise must
+            # not be promoted to 2,000 (kt) or 2,000,000 (Mt). Real
+            # disclosures quoted in kt/Mt get unit-normalised at extraction
+            # time; sub-MIN values reaching this fallback are almost always
+            # parser artefacts.
+            if value_num < self.MIN_AUTO_CORRECT_VALUE:
+                result["validation"]["warnings"].append(
+                    f"{label} value {value_num} is too small to auto-correct "
+                    f"(below MIN_AUTO_CORRECT_VALUE={self.MIN_AUTO_CORRECT_VALUE}). "
+                    "Likely a parser artefact — leaving as-is for floor rejection."
+                )
+                return value_num, None
 
             # ktCO2e -> tCO2e
             if value_num < floor_min and value_num * 1_000 >= floor_min * 0.1:

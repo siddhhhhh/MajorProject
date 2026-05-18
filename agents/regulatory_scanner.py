@@ -41,66 +41,23 @@ SBTI_CACHE_DAYS = 7
 
 
 def get_applicable_frameworks(company: str, industry: str, country: str) -> list[str]:
-    """Return framework display names based on company, industry, and country."""
-    company_upper = (company or "").upper()
-    country_code = (country or "").upper()
+    """Return framework display names — delegates to the JSON registry.
 
-    frameworks = []
+    Edit data/regulatory_frameworks.json to change applicability rules. The
+    registry handles country_codes + company_name_hints + industry filters;
+    no code change needed to add/retire frameworks or shift jurisdiction.
 
-    is_indian = country_code in ("IN", "INDIA") or any(ex in company_upper for ex in ("NSE", "BSE"))
-    if is_indian:
-        frameworks.extend(
-            [
-                "SEBI BRSR (Business Responsibility and Sustainability Report)",
-                "MCA Companies Act (CSR Rules)",
-                "CPCB Environmental Compliance",
-                "RBI Green Finance Framework",
-                "India PAT Scheme (Perform, Achieve and Trade)",
-            ]
-        )
-
-    if country_code in EU_COUNTRIES:
-        frameworks.extend(
-            [
-                "EU Corporate Sustainability Reporting Directive",
-                "EU Taxonomy Regulation",
-                "EU Sustainable Finance Disclosure Regulation",
-            ]
-        )
-
-    if country_code in UK_COUNTRIES or "LONDON" in company_upper:
-        frameworks.extend(
-            [
-                "FCA Anti-Greenwashing Rule",
-                "UK TCFD-Aligned Disclosure Requirements",
-            ]
-        )
-
-    if country_code in US_COUNTRIES:
-        frameworks.extend(
-            [
-                "SEC Climate Disclosure Rule",
-                "FTC Green Guides",
-            ]
-        )
-
-    frameworks.extend(
-        [
-            "GHG Protocol Corporate Standard",
-            "GRI Sustainability Reporting Standards",
-            "CDP (Carbon Disclosure Project)",
-            "Science Based Targets initiative",
-        ]
+    Returns scanner-canonical names (matching `_initialize_regulations` reg
+    names where a `scanner_reg_id` link is set in the JSON). Frameworks
+    without a scanner_reg_id will still appear in this list but the scanner
+    will not produce a scoring row for them (no claim rules to evaluate).
+    """
+    from core.regulatory_registry import get_applicable_frameworks as _registry_applicable
+    return _registry_applicable(
+        country_code=(country or ""),
+        company_name=(company or ""),
+        industry=(industry or ""),
     )
-
-    return list(dict.fromkeys(frameworks))
-
-
-FRAMEWORK_NAME_ALIASES = {
-    "MCA Companies Act (CSR Rules)": "MCA_COMPANIES_ACT",
-    "SEC Climate Disclosure Rule": "SEC_CLIMATE",
-    "UK TCFD-Aligned Disclosure Requirements": "UK_TCFD",
-}
 
 
 def calculate_compliance_score(compliance_results: list[dict]) -> dict:
@@ -717,9 +674,16 @@ class RegulatoryHorizonScanner:
                                         company: str,
                                         industry: str,
                                         country: Optional[str] = None) -> List[str]:
-        """Identify regulations applicable to the claim"""
-        
-        applicable = []
+        """Identify regulations applicable to the claim.
+
+        Phase A: pull jurisdiction-applicable frameworks from the JSON
+        registry (single source of truth) and map them to scanner_reg_id.
+        Phase B: scan all remaining scanner regs whose jurisdiction matches
+        and add ones whose claim_validation_rules pattern hits the claim.
+        """
+        from core.regulatory_registry import get_applicable_framework_objects
+
+        applicable: list[str] = []
 
         country_code = (country or "").upper()
         company_upper = (company or "").upper()
@@ -733,19 +697,17 @@ class RegulatoryHorizonScanner:
             elif jurisdiction == "US":
                 country_code = "US"
 
-        framework_names = get_applicable_frameworks(company, industry, country_code)
-        reg_ids_by_name = {
-            reg.get("name"): reg_id
-            for reg_id, reg in self.regulations.items()
-        }
-
-        for framework_name in framework_names:
-            reg_id = reg_ids_by_name.get(framework_name)
-            if not reg_id:
-                reg_id = FRAMEWORK_NAME_ALIASES.get(framework_name)
-            if reg_id:
+        # Phase A: registry-driven applicability (Gap 1 fix).
+        for fw in get_applicable_framework_objects(
+            country_code=country_code,
+            company_name=company,
+            industry=industry,
+        ):
+            reg_id = fw.get("scanner_reg_id")
+            if reg_id and reg_id in self.regulations:
                 applicable.append(reg_id)
 
+        # Phase B: jurisdiction-allowed regs whose rules match the claim text.
         allowed_jurisdictions = {"Global"}
         if country_code in ("IN", "INDIA") or any(ex in company_upper for ex in ("NSE", "BSE")):
             allowed_jurisdictions.add("India")
@@ -755,20 +717,32 @@ class RegulatoryHorizonScanner:
             allowed_jurisdictions.add("United Kingdom")
         if country_code in US_COUNTRIES:
             allowed_jurisdictions.add("United States")
-        
-        # Check claim content for additional applicable regulations
+
         for reg_id, reg_data in self.regulations.items():
             if reg_id in applicable:
                 continue
             if reg_data.get("jurisdiction") not in allowed_jurisdictions:
                 continue
-                
-            for rule in reg_data.get("claim_validation_rules", []):
+            rules = self._get_claim_rules(reg_id, reg_data)
+            for rule in rules:
                 if re.search(rule["pattern"], claim_text, re.IGNORECASE):
                     applicable.append(reg_id)
                     break
-        
-        return list(set(applicable))
+
+        return list(dict.fromkeys(applicable))
+
+    def _get_claim_rules(self, reg_id: str, reg_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Read claim_validation_rules from the JSON registry first; fall back
+        to the in-memory dict (Gap 2 fix). Empty registry rules → fall back
+        rather than treating the framework as having no rules."""
+        try:
+            from core.regulatory_registry import get_claim_validation_rules
+            rules = get_claim_validation_rules(reg_id)
+            if rules:
+                return rules
+        except Exception:
+            pass
+        return reg_data.get("claim_validation_rules", []) or []
     
     def _check_regulation_compliance(self, reg_id: str, claim: Dict[str, Any],
                                      evidence_text: str, company: str = "",
@@ -782,9 +756,11 @@ class RegulatoryHorizonScanner:
         violations = []
         requirements_met = []
         requirements_unverified = []
-        
-        # Check claim validation rules
-        for rule in reg.get("claim_validation_rules", []):
+
+        # Check claim validation rules — prefer JSON registry, fall back to
+        # the in-memory dict (Gap 2 fix). Both shapes are {pattern, requirement}.
+        rules = self._get_claim_rules(reg_id, reg)
+        for rule in rules:
             pattern = rule["pattern"]
             requirement = rule["requirement"]
             

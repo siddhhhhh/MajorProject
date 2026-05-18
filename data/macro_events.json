@@ -1,0 +1,208 @@
+{
+  "version": "v2",
+  "maintained_by": "ESGLens — curated geopolitical / macro context ledger",
+  "notes": [
+    "This file is HAND-MAINTAINED. Add events that materially affect cross-company ESG metrics (oil, shipping, aviation, energy mix).",
+    "industry_exposure values are editorial judgments grounded in publicly reported channel impact (longer routes, sanctions, fuel substitution).",
+    "Scoring formula is NOT adjusted from this file — it's read for display + counterfactual scenarios only.",
+    "v2: added live_signals[] block per event (Gap 3). Each signal carries a baseline, an optional current reading, and a calibration_band that scales exposure when the signal drifts outside the band. Default state is `current: null` meaning the curated exposure is used as-is — no live signal provider is wired in by default."
+  ],
+  "events": [
+    {
+      "event_id": "iran_us_israel_war_2026",
+      "name": "Iran-US-Israel conflict (2026)",
+      "start_date": "2026-02-28",
+      "end_date": null,
+      "type": "armed_conflict",
+      "geographic_scope": ["IRN", "ISR", "USA", "LBN", "Gulf_states", "Strait_of_Hormuz", "Red_Sea"],
+      "channels": [
+        {"channel": "oil_price",         "magnitude": "high",   "direction": "up",
+         "note": "Hormuz toll mechanism + supply disruption"},
+        {"channel": "shipping_routes",   "magnitude": "high",   "direction": "rerouted",
+         "note": "Strait of Hormuz access restricted; Red Sea / Suez avoidance forces longer routes"},
+        {"channel": "aviation_routes",   "magnitude": "high",   "direction": "longer",
+         "note": "Gulf overflight bans add 1–3 hours per flight = +15–25% fuel burn for affected carriers"},
+        {"channel": "energy_security",   "magnitude": "high",   "direction": "fossil_substitution",
+         "note": "Importer countries fall back on coal / diesel; renewable procurement pauses"},
+        {"channel": "fossil_finance",    "magnitude": "high",   "direction": "up",
+         "note": "Windfall profits + record fossil investment despite net-zero pledges"}
+      ],
+      "industry_exposure": {
+        "oil_and_gas":                 0.90,
+        "aviation":                    0.85,
+        "airlines":                    0.85,
+        "shipping":                    0.85,
+        "maritime":                    0.85,
+        "automotive":                  0.60,
+        "banking_financial_services":  0.65,
+        "financial_services":          0.65,
+        "banking":                     0.65,
+        "insurance":                   0.55,
+        "mining":                      0.45,
+        "metals_and_mining":           0.45,
+        "manufacturing":               0.55,
+        "iron_and_steel":              0.55,
+        "aluminum":                    0.50,
+        "cement":                      0.50,
+        "chemicals":                   0.55,
+        "utilities":                   0.55,
+        "power_generation":            0.55,
+        "retail":                      0.35,
+        "consumer_goods":              0.35,
+        "pharmaceuticals":             0.25,
+        "healthcare":                  0.25,
+        "technology":                  0.15,
+        "software":                    0.10,
+        "default":                     0.30
+      },
+      "sources": [
+        "https://en.wikipedia.org/wiki/2026_Iran_war",
+        "https://commonslibrary.parliament.uk/research-briefings/cbp-10521/",
+        "https://commonslibrary.parliament.uk/research-briefings/cbp-10637/"
+      ],
+      "live_signals": [
+        {
+          "signal_id": "brent_crude_usd",
+          "type": "commodity_price",
+          "baseline_value": 80.0,
+          "baseline_date": "2026-02-28",
+          "current_value": null,
+          "current_as_of": null,
+          "calibration_band": {"high_threshold": 100.0, "high_multiplier": 1.15, "low_threshold": 60.0, "low_multiplier": 0.85},
+          "source_hint": "EIA series PET.RBRTE.D (free API)"
+        },
+        {
+          "signal_id": "gdelt_event_count_iran",
+          "type": "news_event_count",
+          "baseline_value": 1000,
+          "baseline_date": "2026-02-28",
+          "current_value": null,
+          "current_as_of": null,
+          "calibration_band": {"high_threshold": 3000, "high_multiplier": 1.10, "low_threshold": 300, "low_multiplier": 0.90},
+          "source_hint": "GDELT GKG 2.0 (free API), filter by actor Iran/Israel"
+        }
+      ]
+    },
+    {
+      "event_id": "covid_supply_chain_2020_2022",
+      "name": "COVID-19 supply-chain disruption",
+      "start_date": "2020-03-01",
+      "end_date": "2022-12-31",
+      "type": "pandemic_supply_shock",
+      "geographic_scope": ["GLOBAL"],
+      "channels": [
+        {"channel": "shipping_routes",   "magnitude": "high",   "direction": "congested",
+         "note": "Container port congestion, equipment shortages, ~3-6x freight rates"},
+        {"channel": "manufacturing",     "magnitude": "high",   "direction": "disrupted",
+         "note": "Factory shutdowns, semiconductor shortage, scope-3 reroutes"},
+        {"channel": "aviation_routes",   "magnitude": "high",   "direction": "collapsed",
+         "note": "Passenger aviation collapsed; cargo conversion increased per-tonne emissions"},
+        {"channel": "energy_security",   "magnitude": "medium", "direction": "demand_collapse",
+         "note": "Initial demand collapse, then rebound shock — net Scope 1-2 distortions"}
+      ],
+      "industry_exposure": {
+        "automotive":                  0.85,
+        "consumer_goods":              0.75,
+        "retail":                      0.70,
+        "manufacturing":               0.75,
+        "iron_and_steel":              0.65,
+        "aluminum":                    0.65,
+        "chemicals":                   0.60,
+        "aviation":                    0.95,
+        "airlines":                    0.95,
+        "shipping":                    0.85,
+        "maritime":                    0.85,
+        "oil_and_gas":                 0.55,
+        "mining":                      0.55,
+        "metals_and_mining":           0.55,
+        "pharmaceuticals":             0.40,
+        "healthcare":                  0.35,
+        "technology":                  0.45,
+        "software":                    0.20,
+        "banking_financial_services":  0.30,
+        "financial_services":          0.30,
+        "banking":                     0.30,
+        "insurance":                   0.25,
+        "utilities":                   0.35,
+        "power_generation":            0.35,
+        "default":                     0.40
+      },
+      "sources": [
+        "https://www.iea.org/reports/global-energy-review-co2-emissions-in-2021-2",
+        "https://www.weforum.org/agenda/2022/03/supply-chain-disruptions/"
+      ],
+      "live_signals": [
+        {
+          "signal_id": "baltic_dry_index",
+          "type": "freight_index",
+          "baseline_value": 1500,
+          "baseline_date": "2020-03-01",
+          "current_value": null,
+          "current_as_of": null,
+          "calibration_band": {"high_threshold": 4000, "high_multiplier": 1.20, "low_threshold": 800, "low_multiplier": 0.85},
+          "source_hint": "Baltic Exchange (public daily print, scraped via Lloyd's List free tier)"
+        }
+      ]
+    },
+    {
+      "event_id": "eu_energy_crisis_2022",
+      "name": "EU energy crisis (Russia-Ukraine fallout)",
+      "start_date": "2022-02-24",
+      "end_date": "2023-12-31",
+      "type": "energy_shock",
+      "geographic_scope": ["EU", "RUS", "UKR", "GBR", "DEU", "ITA", "FRA"],
+      "channels": [
+        {"channel": "oil_price",         "magnitude": "high",   "direction": "up",
+         "note": "Brent up >40% peak; gas TTF up 5-10x at peak"},
+        {"channel": "energy_security",   "magnitude": "high",   "direction": "fossil_substitution",
+         "note": "Coal re-firing across Germany, Netherlands, Austria; LNG procurement scramble"},
+        {"channel": "fossil_finance",    "magnitude": "medium", "direction": "up",
+         "note": "Reopened thermal capacity; ESG-screened funds quietly relaxed exclusions"}
+      ],
+      "industry_exposure": {
+        "oil_and_gas":                 0.85,
+        "utilities":                   0.85,
+        "power_generation":            0.85,
+        "chemicals":                   0.75,
+        "iron_and_steel":              0.70,
+        "aluminum":                    0.70,
+        "cement":                      0.65,
+        "manufacturing":               0.60,
+        "automotive":                  0.55,
+        "banking_financial_services":  0.45,
+        "financial_services":          0.45,
+        "banking":                     0.45,
+        "insurance":                   0.40,
+        "mining":                      0.50,
+        "metals_and_mining":           0.50,
+        "shipping":                    0.55,
+        "maritime":                    0.55,
+        "aviation":                    0.55,
+        "airlines":                    0.55,
+        "retail":                      0.40,
+        "consumer_goods":              0.40,
+        "pharmaceuticals":             0.30,
+        "healthcare":                  0.25,
+        "technology":                  0.20,
+        "software":                    0.15,
+        "default":                     0.35
+      },
+      "sources": [
+        "https://www.iea.org/reports/world-energy-outlook-2022",
+        "https://en.wikipedia.org/wiki/2021%E2%80%932023_global_energy_crisis"
+      ],
+      "live_signals": [
+        {
+          "signal_id": "ttf_gas_eur_mwh",
+          "type": "commodity_price",
+          "baseline_value": 30.0,
+          "baseline_date": "2022-02-24",
+          "current_value": null,
+          "current_as_of": null,
+          "calibration_band": {"high_threshold": 80.0, "high_multiplier": 1.25, "low_threshold": 20.0, "low_multiplier": 0.85},
+          "source_hint": "ICE TTF Dutch front-month (public daily settle)"
+        }
+      ]
+    }
+  ]
+}

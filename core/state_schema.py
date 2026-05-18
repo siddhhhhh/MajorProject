@@ -70,6 +70,23 @@ class ESGState(TypedDict):
     indian_financials: Optional[Dict[str, Any]]  # Revenue, profit from Screener/Yahoo/NSE
     company_reports: Optional[Dict[str, Any]]  # PDF reports with extracted ESG metrics
     carbon_extraction: Optional[Dict[str, Any]]  # Scope 1/2/3 carbon analysis
+    emissions_verification: Optional[Dict[str, Any]]  # Climate TRACE satellite-derived cross-check (A2)
+    abstention_analysis: Optional[Dict[str, Any]]  # SURE-RAG per-sub-claim abstention decisions (A4)
+    entity_record: Optional[Dict[str, Any]]  # Canonical entity (LEI, country_iso3, aliases) from F1
+    company_lei: Optional[str]  # Convenience accessor; mirrors entity_record.lei
+    evidence_graph: Optional[Dict[str, Any]]  # F3 typed evidence graph (JSON adjacency)
+    financed_emissions: Optional[Dict[str, Any]]  # PCAF financed emissions for banks (P2)
+    gdelt_events: Optional[Dict[str, Any]]  # GDELT adverse-event stream (P3)
+    litigation_resolved: Optional[Dict[str, Any]]  # CourtListener + Indian Kanoon dockets (P4)
+    regulatory_cross_ref: Optional[Dict[str, Any]]  # EPA ECHO × EDGAR XBRL integrity signal (P5)
+    subsidiary_walk: Optional[Dict[str, Any]]  # Subsidiary footprint via GLEIF (P6)
+    promise_tracking: Optional[Dict[str, Any]]  # Longitudinal promise ledger output (P7)
+    cross_pillar_contradictions: Optional[Dict[str, Any]]  # Cross-pillar synthesis (P8)
+    a3cg_triplets: Optional[Dict[str, Any]]  # A3CG aspect-action-outcome triplets (P9)
+    kg_rag_retrieval: Optional[Dict[str, Any]]  # KG-RAG 2-hop graph retrieval per claim (P10)
+    multimodal_extraction: Optional[Dict[str, Any]]  # Multimodal table/chart extraction (P11)
+    macro_context: Optional[Dict[str, Any]]  # Geopolitical / macro events active during analysis (M1)
+    regulatory_registry_snapshot: Optional[Dict[str, Any]]  # Active framework registry version + status digest (Reg-A)
     external_esg_data: Optional[Dict[str, Any]]  # WBA/WRI benchmark enrichment used in risk scoring
     fact_graph: Optional[Dict[str, Any]]  # Justification-centric ESG fact graph
     fact_graph_path: Optional[str]  # Persisted JSON artifact for the fact graph

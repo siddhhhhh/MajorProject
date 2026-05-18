@@ -456,17 +456,103 @@ class ESGGreenwashingDetectorLangGraph:
             if q not in dd_questions:
                 dd_questions.append(q)
 
+        # LLM-variance bands from the canonical scores dict (Section 5).
+        gw_band = rendered_scores.get("greenwashing_band")
+        esg_band = rendered_scores.get("esg_band")
+        confidence_band = rendered_scores.get("confidence_band")
+        band_meta = rendered_scores.get("band_meta")
+
+        headline_block = {
+            "greenwashing_risk_score": gw_score,
+            "esg_score": esg_score,
+            "risk_band": risk_band,
+            "confidence_pct": confidence_pct,
+        }
+        if gw_band:
+            headline_block["greenwashing_risk_score_band"] = gw_band
+        if esg_band:
+            headline_block["esg_score_band"] = esg_band
+        if confidence_band:
+            headline_block["confidence_pct_band"] = confidence_band
+        if band_meta:
+            headline_block["band_meta"] = band_meta
+
+        # Emissions verification (Climate TRACE) — surfaced on the brief so
+        # diligence readers see the inflation/underreport flag without
+        # opening the full report.
+        emissions_verif_raw = result.get("emissions_verification") or {}
+        if not isinstance(emissions_verif_raw, dict):
+            emissions_verif_raw = {}
+        emissions_verif_brief = {
+            "status": emissions_verif_raw.get("status"),
+            "disclosed_scope1_tco2e": emissions_verif_raw.get("disclosed_scope1_tco2e"),
+            "observed_scope1_tco2e_assets": emissions_verif_raw.get("observed_scope1_tco2e_assets"),
+            "ratio_disclosed_over_observed_assets": emissions_verif_raw.get(
+                "ratio_disclosed_over_observed_assets"
+            ),
+            "matched_asset_count": len(emissions_verif_raw.get("matched_assets") or []),
+            "rationale": emissions_verif_raw.get("rationale"),
+            "source": "climate-trace",
+        } if emissions_verif_raw.get("status") else None
+
+        # Score attribution top-N for the brief — diligence "why this score"
+        # in one glance. Falls back to live decompose() if export didn't
+        # pre-compute it.
+        attribution_brief = None
+        try:
+            attr = rendered.get("score_attribution")
+            if not isinstance(attr, dict) or not attr or attr.get("error"):
+                from core.score_attribution import decompose
+                attr = decompose(rendered if rendered else result)
+            attribution_brief = {
+                "top_positive": [
+                    {"name": c.get("display_name"),
+                     "delta": c.get("delta"),
+                     "category": c.get("category")}
+                    for c in (attr.get("top_contributors_positive") or [])[:5]
+                ],
+                "top_negative": [
+                    {"name": c.get("display_name"),
+                     "delta": c.get("delta"),
+                     "category": c.get("category")}
+                    for c in (attr.get("top_contributors_negative") or [])[:3]
+                ],
+                "totals": attr.get("totals"),
+                "reconciles": attr.get("reconciles"),
+            }
+        except Exception as _att_exc:
+            attribution_brief = {"error": str(_att_exc)[:160]}
+
         return {
             "schema_version": "1.0",
             "company": company_name,
             "report_id": rendered.get("report_id") or verdict.get("report_id"),
             "generated_utc": datetime.utcnow().isoformat(timespec="seconds") + "Z",
-            "headline": {
-                "greenwashing_risk_score": gw_score,
-                "esg_score": esg_score,
-                "risk_band": risk_band,
-                "confidence_pct": confidence_pct,
-            },
+            "headline": headline_block,
+            "emissions_verification": emissions_verif_brief,
+            "score_attribution": attribution_brief,
+            "abstention_summary": (
+                {
+                    "total_subclaims": (rendered.get("abstention_analysis") or {}).get("total_subclaims"),
+                    "abstained_count": (rendered.get("abstention_analysis") or {}).get("abstained_count"),
+                    "abstention_rate_pct": (rendered.get("abstention_analysis") or {}).get("abstention_rate_pct"),
+                }
+                if isinstance(rendered.get("abstention_analysis"), dict) else None
+            ),
+            "counterfactual_scenarios": (
+                [
+                    {
+                        "name": s.get("name"),
+                        "description": s.get("description"),
+                        "new_headline_gw": (s.get("result") or {}).get("new_headline_gw"),
+                        "delta": (s.get("result") or {}).get("delta"),
+                        "new_band": (s.get("result") or {}).get("new_band"),
+                    }
+                    for s in (rendered.get("counterfactual") or {}).get("prebaked_scenarios") or []
+                ]
+                if isinstance(rendered.get("counterfactual"), dict) else []
+            ),
+            "entity_record": rendered_scores.get("entity_record") or rendered.get("entity_record"),
             "carbon_snapshot": {
                 "scope1_tco2e": (emissions.get("scope1") or {}).get("value") if isinstance(emissions.get("scope1"), dict) else None,
                 "scope2_tco2e": (emissions.get("scope2") or {}).get("value") if isinstance(emissions.get("scope2"), dict) else None,

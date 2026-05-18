@@ -57,10 +57,11 @@ async def call_llm(
             f"Add it to ROUTING_TABLE in llm_router.py."
         )
 
-    # Cache check — keyed on (agent, prompt); model-agnostic so the cache
-    # survives routing-override runs from the variance harness.
+    # Cache check — keyed on (agent, prompt, system, pdf_bytes). Model-agnostic
+    # so the cache survives routing-override runs from the variance harness.
+    # System is included so prompt revisions invalidate stale entries.
     if use_cache:
-        hit = cache.get(agent, prompt)
+        hit = cache.get(agent, prompt, system=system, pdf_bytes=pdf_bytes)
         if hit:
             logger.debug("Cache hit: agent=%s", agent)
             _audit_log(
@@ -88,7 +89,7 @@ async def call_llm(
 
                 latency_ms = (time.perf_counter() - t0) * 1000.0
                 if use_cache:
-                    cache.set(agent, prompt, result)
+                    cache.set(agent, prompt, result, system=system, pdf_bytes=pdf_bytes)
 
                 logger.info("Success: %s/%s agent=%s",
                             config.provider.value, config.model_id, agent)

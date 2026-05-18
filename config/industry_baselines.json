@@ -30,7 +30,7 @@
   "industry_baseline_risk": {
     "oil_and_gas": {
       "baseline": 75,
-      "source": "MSCI ESG Industry Materiality Map 2024",
+      "source": "ESGLens industry materiality reference (calibrated against public sector materiality maps)",
       "rationale": "High carbon intensity, environmental impact, regulatory scrutiny",
       "baseline_esg": 45,
       "baseline_env": 35,
@@ -42,7 +42,7 @@
     },
     "coal": {
       "baseline": 80,
-      "source": "MSCI ESG Industry Materiality Map 2024",
+      "source": "ESGLens industry materiality reference (calibrated against public sector materiality maps)",
       "rationale": "Highest carbon intensity, phase-out pressure, stranded assets",
       "baseline_esg": 38,
       "baseline_env": 28,
@@ -54,7 +54,7 @@
     },
     "mining": {
       "baseline": 70,
-      "source": "MSCI ESG Industry Materiality Map 2024",
+      "source": "ESGLens industry materiality reference (calibrated against public sector materiality maps)",
       "rationale": "Environmental degradation, water usage, community displacement",
       "baseline_esg": 46,
       "baseline_env": 38,
@@ -66,7 +66,7 @@
     },
     "chemicals": {
       "baseline": 65,
-      "source": "MSCI ESG Industry Materiality Map 2024",
+      "source": "ESGLens industry materiality reference (calibrated against public sector materiality maps)",
       "rationale": "Toxic waste, pollution, chemical safety concerns",
       "baseline_esg": 50,
       "baseline_env": 42,
@@ -78,7 +78,7 @@
     },
     "aviation": {
       "baseline": 70,
-      "source": "MSCI ESG Industry Materiality Map 2024",
+      "source": "ESGLens industry materiality reference (calibrated against public sector materiality maps)",
       "rationale": "High emissions, hard-to-abate sector, noise pollution",
       "baseline_esg": 48,
       "baseline_env": 40,
@@ -90,7 +90,7 @@
     },
     "automotive": {
       "baseline": 60,
-      "source": "MSCI ESG Industry Materiality Map 2024",
+      "source": "ESGLens industry materiality reference (calibrated against public sector materiality maps)",
       "rationale": "Supply chain complexity, emissions transition challenges",
       "baseline_esg": 58,
       "baseline_env": 55,
@@ -102,7 +102,7 @@
     },
     "fast_fashion": {
       "baseline": 65,
-      "source": "MSCI ESG Industry Materiality Map 2024",
+      "source": "ESGLens industry materiality reference (calibrated against public sector materiality maps)",
       "rationale": "Labor practices, waste, water usage, microplastics",
       "baseline_esg": 52,
       "baseline_env": 48,
@@ -114,7 +114,7 @@
     },
     "tobacco": {
       "baseline": 75,
-      "source": "MSCI ESG Industry Materiality Map 2024",
+      "source": "ESGLens industry materiality reference (calibrated against public sector materiality maps)",
       "rationale": "Public health impact, marketing ethics, addiction",
       "baseline_esg": 35,
       "baseline_env": 45,
@@ -126,7 +126,7 @@
     },
     "defense": {
       "baseline": 60,
-      "source": "MSCI ESG Industry Materiality Map 2024",
+      "source": "ESGLens industry materiality reference (calibrated against public sector materiality maps)",
       "rationale": "Weapons proliferation, ethical concerns, dual-use technology",
       "baseline_esg": 48,
       "baseline_env": 52,
@@ -138,7 +138,7 @@
     },
     "consumer_goods": {
       "baseline": 50,
-      "source": "MSCI ESG Industry Materiality Map 2024",
+      "source": "ESGLens industry materiality reference (calibrated against public sector materiality maps)",
       "rationale": "Packaging waste, supply chain transparency",
       "baseline_esg": 56,
       "baseline_env": 54,
@@ -150,7 +150,7 @@
     },
     "retail": {
       "baseline": 45,
-      "source": "MSCI ESG Industry Materiality Map 2024",
+      "source": "ESGLens industry materiality reference (calibrated against public sector materiality maps)",
       "rationale": "Labor practices, scope 3 emissions, waste management",
       "baseline_esg": 54,
       "baseline_env": 52,
@@ -162,7 +162,7 @@
     },
     "food_beverage": {
       "baseline": 50,
-      "source": "MSCI ESG Industry Materiality Map 2024",
+      "source": "ESGLens industry materiality reference (calibrated against public sector materiality maps)",
       "rationale": "Water usage, agricultural supply chains, nutrition",
       "baseline_esg": 54,
       "baseline_env": 52,
@@ -174,7 +174,7 @@
     },
     "pharmaceuticals": {
       "baseline": 55,
-      "source": "MSCI ESG Industry Materiality Map 2024",
+      "source": "ESGLens industry materiality reference (calibrated against public sector materiality maps)",
       "rationale": "Drug pricing, clinical trial ethics, access to medicine",
       "baseline_esg": 58,
       "baseline_env": 55,
@@ -186,7 +186,7 @@
     },
     "banking": {
       "baseline": 50,
-      "source": "MSCI ESG Industry Materiality Map 2024",
+      "source": "ESGLens industry materiality reference (calibrated against public sector materiality maps)",
       "rationale": "Fossil fuel financing, financial inclusion, data privacy",
       "baseline_esg": 58,
       "baseline_env": 54,
@@ -198,7 +198,7 @@
     },
     "real_estate": {
       "baseline": 45,
-      "source": "MSCI ESG Industry Materiality Map 2024",
+      "source": "ESGLens industry materiality reference (calibrated against public sector materiality maps)",
       "rationale": "Energy efficiency, tenant wellbeing, gentrification",
       "baseline_esg": 56,
       "baseline_env": 58,
@@ -210,7 +210,7 @@
     },
     "transportation": {
       "baseline": 55,
-      "source": "MSCI ESG Industry Materiality Map 2024",
+      "source": "ESGLens industry materiality reference (calibrated against public sector materiality maps)",
       "rationale": "Emissions, safety, infrastructure impact",
       "baseline_esg": 52,
       "baseline_env": 48,
@@ -222,7 +222,7 @@
     },
     "hospitality": {
       "baseline": 45,
-      "source": "MSCI ESG Industry Materiality Map 2024",
+      "source": "ESGLens industry materiality reference (calibrated against public sector materiality maps)",
       "rationale": "Labor practices, water usage, waste",
       "baseline_esg": 54,
       "baseline_env": 52,
@@ -234,7 +234,7 @@
     },
     "technology": {
       "baseline": 35,
-      "source": "MSCI ESG Industry Materiality Map 2024",
+      "source": "ESGLens industry materiality reference (calibrated against public sector materiality maps)",
       "rationale": "Data privacy, e-waste, labor conditions in supply chain",
       "baseline_esg": 68,
       "baseline_env": 65,
@@ -246,7 +246,7 @@
     },
     "software": {
       "baseline": 30,
-      "source": "MSCI ESG Industry Materiality Map 2024",
+      "source": "ESGLens industry materiality reference (calibrated against public sector materiality maps)",
       "rationale": "Lower environmental footprint, data security focus",
       "baseline_esg": 72,
       "baseline_env": 70,
@@ -258,7 +258,7 @@
     },
     "healthcare_services": {
       "baseline": 35,
-      "source": "MSCI ESG Industry Materiality Map 2024",
+      "source": "ESGLens industry materiality reference (calibrated against public sector materiality maps)",
       "rationale": "Patient care quality, data privacy, healthcare access",
       "baseline_esg": 62,
       "baseline_env": 58,
@@ -270,7 +270,7 @@
     },
     "telecommunications": {
       "baseline": 40,
-      "source": "MSCI ESG Industry Materiality Map 2024",
+      "source": "ESGLens industry materiality reference (calibrated against public sector materiality maps)",
       "rationale": "Digital divide, data privacy, infrastructure emissions",
       "baseline_esg": 60,
       "baseline_env": 56,
@@ -282,7 +282,7 @@
     },
     "renewable_energy": {
       "baseline": 25,
-      "source": "MSCI ESG Industry Materiality Map 2024",
+      "source": "ESGLens industry materiality reference (calibrated against public sector materiality maps)",
       "rationale": "Positive climate impact, some land use concerns",
       "baseline_esg": 72,
       "baseline_env": 78,
@@ -294,7 +294,7 @@
     },
     "education": {
       "baseline": 30,
-      "source": "MSCI ESG Industry Materiality Map 2024",
+      "source": "ESGLens industry materiality reference (calibrated against public sector materiality maps)",
       "rationale": "Access equity, student outcomes, fair pricing",
       "baseline_esg": 65,
       "baseline_env": 60,

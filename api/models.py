@@ -132,6 +132,14 @@ class ESGReport(BaseModel):
     risk_level: str              # HIGH / MODERATE / LOW
     confidence: float = 0.0     # 0-100
 
+    # LLM-variance confidence bands [low, high]. Empty list when no
+    # variance harness has been run yet — frontend should treat absence
+    # the same as no band data.
+    esg_score_band: List[float] = []
+    greenwashing_band: List[float] = []
+    confidence_band: List[float] = []
+    band_meta: Dict[str, Any] = {}
+
     # Pillars
     environmental: PillarScore
     social: PillarScore
@@ -183,6 +191,41 @@ class ESGReport(BaseModel):
     fact_graph_motifs: Dict[str, Any] = {}
     # Per-retriever yield tally so silent-failure sources are visible.
     retriever_tally: Dict[str, int] = {}
+    # Climate TRACE emissions verification (Section 8C). Empty when the
+    # verifier did not run for this report.
+    emissions_verification: Dict[str, Any] = {}
+    # SURE-RAG abstention analysis (Section 3C). Per-sub-claim
+    # INSUFFICIENT_EVIDENCE / PROCEED decisions + aggregate counts.
+    abstention_analysis: Dict[str, Any] = {}
+    # Counterfactual (P1): pre-baked scenarios + leverage ranking.
+    counterfactual: Dict[str, Any] = {}
+    # F1: canonical entity record (LEI + country + aliases). Empty when
+    # the resolver couldn't find a match.
+    entity_record: Dict[str, Any] = {}
+    company_lei: Optional[str] = None
+    # P2: PCAF financed emissions (financial-services only).
+    financed_emissions: Dict[str, Any] = {}
+    # P3: GDELT real-time event stream (decay-weighted adverse coverage).
+    gdelt_events: Dict[str, Any] = {}
+    # P4: Litigation resolver (CourtListener + Indian Kanoon).
+    litigation_resolved: Dict[str, Any] = {}
+    # P5: Regulatory cross-ref (EPA ECHO × EDGAR XBRL).
+    regulatory_cross_ref: Dict[str, Any] = {}
+    # P6: Subsidiary footprint walk (GLEIF + Climate TRACE).
+    subsidiary_walk: Dict[str, Any] = {}
+    # P7: Longitudinal promise ledger output.
+    promise_tracking: Dict[str, Any] = {}
+    # P8: Cross-pillar contradiction synthesis.
+    cross_pillar_contradictions: Dict[str, Any] = {}
+    # P9: A3CG aspect-action-outcome triplets.
+    a3cg_triplets: Dict[str, Any] = {}
+    # P10: KG-RAG 2-hop retrieval per claim.
+    kg_rag_retrieval: Dict[str, Any] = {}
+    # P11: Multimodal vision extraction (tables/charts).
+    multimodal_extraction: Dict[str, Any] = {}
+    # M1: Macro / geopolitical context active during analysis. Display +
+    # counterfactual layer only — never alters the headline score.
+    macro_context: Dict[str, Any] = {}
 
 
 # ── Request models ────────────────────────────────────────────────────────────

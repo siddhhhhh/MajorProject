@@ -325,8 +325,18 @@ def normalize_industry_label(raw: Any) -> str:
 
 
 def normalize_industry_key(raw: Any) -> str:
-    """Convert display/internal industry values to a canonical persistence key."""
+    """Convert display/internal industry values to a canonical persistence key.
+
+    Returned form is space-separated, all-lowercase, no "&" / "_" / slashes.
+    Downstream `industry_comparator.py` does ``.replace(' ', '_')`` on this
+    value to derive the snake_case key it uses against industry_baselines.json
+    (e.g. ``food_beverage``, ``pharmaceuticals``). Keep aliases in sync with
+    BOTH ``data/peer_database.json`` keys (space-form) and
+    ``config/industry_baselines.json`` keys (underscore-form).
+    """
     key = str(raw or "general").strip().lower().replace("_", " ").replace("&", " and ")
+    # Strip slashes (so "Healthcare / Pharma" -> "healthcare   pharma" -> "healthcare pharma")
+    key = key.replace("/", " ").replace("\\", " ")
     key = " ".join(key.split())
 
     aliases = {
@@ -343,5 +353,27 @@ def normalize_industry_key(raw: Any) -> str:
         "retail": "retail",
         "utilities": "utilities",
         "general": "general",
+        # Food & Beverage variants (Nestle case)
+        "food and beverage": "food beverage",
+        "food beverage": "food beverage",
+        "f and b": "food beverage",
+        "beverage": "food beverage",
+        "food": "food beverage",
+        # Pharma variants (Pfizer case). Map "Healthcare / Pharma" and
+        # "Pharmaceuticals" to the same key so peer_database.json
+        # "pharmaceuticals" cohort + industry_baselines.json
+        # "pharmaceuticals" config both resolve.
+        "pharma": "pharmaceuticals",
+        "pharmaceuticals": "pharmaceuticals",
+        "pharmaceutical": "pharmaceuticals",
+        "healthcare pharma": "pharmaceuticals",
+        "healthcare and pharma": "pharmaceuticals",
+        "pharma and biotech": "pharmaceuticals",
+        "biotech": "pharmaceuticals",
+        # Telecom / IT services normalisation
+        "telecom": "telecom",
+        "telecommunications": "telecom",
+        "it services": "it services",
+        "it": "it services",
     }
     return aliases.get(key, key)

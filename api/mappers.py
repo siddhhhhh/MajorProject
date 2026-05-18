@@ -987,6 +987,21 @@ def map_report_to_schema(raw: Dict, report_id: str) -> ESGReport:
         focus_industry=industry or sector,
     )
 
+    # LLM-variance bands attached to the canonical scores dict in
+    # professional_report_generator. Surfaced through to the API so the
+    # frontend can render "55 [49-61]" on the headline.
+    _gw_band_raw = scores.get("greenwashing_band") or []
+    _esg_band_raw = scores.get("esg_band") or []
+    _conf_band_raw = scores.get("confidence_band") or []
+    _band_meta = scores.get("band_meta") or {}
+    def _coerce_band(b: Any) -> List[float]:
+        if isinstance(b, (list, tuple)) and len(b) == 2:
+            try:
+                return [float(b[0]), float(b[1])]
+            except (TypeError, ValueError):
+                return []
+        return []
+
     report = ESGReport(
         id=report_id,
         company=company,
@@ -998,6 +1013,10 @@ def map_report_to_schema(raw: Dict, report_id: str) -> ESGReport:
         rating_grade=rating_grade,
         risk_level=risk_level_raw,
         confidence=confidence,
+        esg_score_band=_coerce_band(_esg_band_raw),
+        greenwashing_band=_coerce_band(_gw_band_raw),
+        confidence_band=_coerce_band(_conf_band_raw),
+        band_meta=_band_meta if isinstance(_band_meta, dict) else {},
         environmental=_map_pillar(pillars.get("environmental")),
         social=_map_pillar(pillars.get("social")),
         governance=_map_pillar(pillars.get("governance")),
@@ -1025,6 +1044,82 @@ def map_report_to_schema(raw: Dict, report_id: str) -> ESGReport:
         kg_drift=kg_drift_block,
         fact_graph_motifs=fact_graph_motifs_block,
         retriever_tally=retriever_tally_block,
+        emissions_verification=(
+            raw.get("emissions_verification")
+            if isinstance(raw.get("emissions_verification"), dict)
+            else {}
+        ),
+        abstention_analysis=(
+            raw.get("abstention_analysis")
+            if isinstance(raw.get("abstention_analysis"), dict)
+            else {}
+        ),
+        counterfactual=(
+            raw.get("counterfactual")
+            if isinstance(raw.get("counterfactual"), dict)
+            else {}
+        ),
+        entity_record=(
+            raw.get("entity_record")
+            if isinstance(raw.get("entity_record"), dict)
+            else {}
+        ),
+        company_lei=raw.get("company_lei"),
+        financed_emissions=(
+            raw.get("financed_emissions")
+            if isinstance(raw.get("financed_emissions"), dict)
+            else {}
+        ),
+        gdelt_events=(
+            raw.get("gdelt_events")
+            if isinstance(raw.get("gdelt_events"), dict)
+            else {}
+        ),
+        litigation_resolved=(
+            raw.get("litigation_resolved")
+            if isinstance(raw.get("litigation_resolved"), dict)
+            else {}
+        ),
+        regulatory_cross_ref=(
+            raw.get("regulatory_cross_ref")
+            if isinstance(raw.get("regulatory_cross_ref"), dict)
+            else {}
+        ),
+        subsidiary_walk=(
+            raw.get("subsidiary_walk")
+            if isinstance(raw.get("subsidiary_walk"), dict)
+            else {}
+        ),
+        promise_tracking=(
+            raw.get("promise_tracking")
+            if isinstance(raw.get("promise_tracking"), dict)
+            else {}
+        ),
+        cross_pillar_contradictions=(
+            raw.get("cross_pillar_contradictions")
+            if isinstance(raw.get("cross_pillar_contradictions"), dict)
+            else {}
+        ),
+        a3cg_triplets=(
+            raw.get("a3cg_triplets")
+            if isinstance(raw.get("a3cg_triplets"), dict)
+            else {}
+        ),
+        kg_rag_retrieval=(
+            raw.get("kg_rag_retrieval")
+            if isinstance(raw.get("kg_rag_retrieval"), dict)
+            else {}
+        ),
+        multimodal_extraction=(
+            raw.get("multimodal_extraction")
+            if isinstance(raw.get("multimodal_extraction"), dict)
+            else {}
+        ),
+        macro_context=(
+            raw.get("macro_context")
+            if isinstance(raw.get("macro_context"), dict)
+            else {}
+        ),
     )
     
     from api.validation_layer import apply_final_validation

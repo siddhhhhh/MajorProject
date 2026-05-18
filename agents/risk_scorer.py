@@ -1,6 +1,6 @@
 """
 Final Risk Scorer & ESG Rating Specialist
-Industry-adjusted risk scoring matching MSCI/Sustainalytics methodology
+Industry-adjusted risk scoring using a 7-band letter-grade scheme
 100% Dynamic - All data loaded from config files
 """
 
@@ -89,7 +89,7 @@ class RiskScorer:
     @staticmethod
     def esg_score_to_rating(esg_score: float) -> tuple:
         """
-        Convert ESG score (0-100) to MSCI-style rating and risk level
+        Convert ESG score (0-100) to a 7-band letter rating and risk level
 
         Args:
             esg_score: Overall ESG score from 0-100
@@ -97,7 +97,7 @@ class RiskScorer:
         Returns:
             tuple: (rating_grade, risk_level)
 
-        Rating Scale (MSCI-style):
+        Rating Scale (7-band: AAA … CCC):
             AAA: 90-100  (ESG Leaders)
             AA:  85-89   (ESG Leaders)
             A:   75-84   (Above Average)
@@ -220,29 +220,29 @@ class RiskScorer:
 
         default_config = {
             "industry_baseline_risk": {
-                "oil_and_gas": {"baseline": 75, "source": "MSCI ESG 2024", "rationale": "High carbon intensity"},
-                "coal": {"baseline": 80, "source": "MSCI ESG 2024", "rationale": "Highest emissions"},
-                "mining": {"baseline": 70, "source": "MSCI ESG 2024", "rationale": "Environmental degradation"},
-                "chemicals": {"baseline": 65, "source": "MSCI ESG 2024", "rationale": "Toxic waste"},
-                "aviation": {"baseline": 70, "source": "MSCI ESG 2024", "rationale": "High emissions"},
-                "automotive": {"baseline": 60, "source": "MSCI ESG 2024", "rationale": "Transition challenges"},
-                "fast_fashion": {"baseline": 65, "source": "MSCI ESG 2024", "rationale": "Labor & waste"},
-                "tobacco": {"baseline": 75, "source": "MSCI ESG 2024", "rationale": "Public health"},
-                "defense": {"baseline": 60, "source": "MSCI ESG 2024", "rationale": "Ethical concerns"},
-                "consumer_goods": {"baseline": 50, "source": "MSCI ESG 2024", "rationale": "Packaging waste"},
-                "retail": {"baseline": 45, "source": "MSCI ESG 2024", "rationale": "Labor practices"},
-                "food_beverage": {"baseline": 50, "source": "MSCI ESG 2024", "rationale": "Water usage"},
-                "pharmaceuticals": {"baseline": 55, "source": "MSCI ESG 2024", "rationale": "Drug pricing"},
-                "banking": {"baseline": 50, "source": "MSCI ESG 2024", "rationale": "Fossil fuel financing"},
-                "real_estate": {"baseline": 45, "source": "MSCI ESG 2024", "rationale": "Energy efficiency"},
-                "transportation": {"baseline": 55, "source": "MSCI ESG 2024", "rationale": "Emissions"},
-                "hospitality": {"baseline": 45, "source": "MSCI ESG 2024", "rationale": "Water & waste"},
-                "technology": {"baseline": 35, "source": "MSCI ESG 2024", "rationale": "Data privacy"},
-                "software": {"baseline": 30, "source": "MSCI ESG 2024", "rationale": "Low footprint"},
-                "healthcare_services": {"baseline": 35, "source": "MSCI ESG 2024", "rationale": "Patient care"},
-                "telecommunications": {"baseline": 40, "source": "MSCI ESG 2024", "rationale": "Digital divide"},
-                "renewable_energy": {"baseline": 25, "source": "MSCI ESG 2024", "rationale": "Positive impact"},
-                "education": {"baseline": 30, "source": "MSCI ESG 2024", "rationale": "Access equity"},
+                "oil_and_gas": {"baseline": 75, "source": "ESGLens industry materiality reference", "rationale": "High carbon intensity"},
+                "coal": {"baseline": 80, "source": "ESGLens industry materiality reference", "rationale": "Highest emissions"},
+                "mining": {"baseline": 70, "source": "ESGLens industry materiality reference", "rationale": "Environmental degradation"},
+                "chemicals": {"baseline": 65, "source": "ESGLens industry materiality reference", "rationale": "Toxic waste"},
+                "aviation": {"baseline": 70, "source": "ESGLens industry materiality reference", "rationale": "High emissions"},
+                "automotive": {"baseline": 60, "source": "ESGLens industry materiality reference", "rationale": "Transition challenges"},
+                "fast_fashion": {"baseline": 65, "source": "ESGLens industry materiality reference", "rationale": "Labor & waste"},
+                "tobacco": {"baseline": 75, "source": "ESGLens industry materiality reference", "rationale": "Public health"},
+                "defense": {"baseline": 60, "source": "ESGLens industry materiality reference", "rationale": "Ethical concerns"},
+                "consumer_goods": {"baseline": 50, "source": "ESGLens industry materiality reference", "rationale": "Packaging waste"},
+                "retail": {"baseline": 45, "source": "ESGLens industry materiality reference", "rationale": "Labor practices"},
+                "food_beverage": {"baseline": 50, "source": "ESGLens industry materiality reference", "rationale": "Water usage"},
+                "pharmaceuticals": {"baseline": 55, "source": "ESGLens industry materiality reference", "rationale": "Drug pricing"},
+                "banking": {"baseline": 50, "source": "ESGLens industry materiality reference", "rationale": "Fossil fuel financing"},
+                "real_estate": {"baseline": 45, "source": "ESGLens industry materiality reference", "rationale": "Energy efficiency"},
+                "transportation": {"baseline": 55, "source": "ESGLens industry materiality reference", "rationale": "Emissions"},
+                "hospitality": {"baseline": 45, "source": "ESGLens industry materiality reference", "rationale": "Water & waste"},
+                "technology": {"baseline": 35, "source": "ESGLens industry materiality reference", "rationale": "Data privacy"},
+                "software": {"baseline": 30, "source": "ESGLens industry materiality reference", "rationale": "Low footprint"},
+                "healthcare_services": {"baseline": 35, "source": "ESGLens industry materiality reference", "rationale": "Patient care"},
+                "telecommunications": {"baseline": 40, "source": "ESGLens industry materiality reference", "rationale": "Digital divide"},
+                "renewable_energy": {"baseline": 25, "source": "ESGLens industry materiality reference", "rationale": "Positive impact"},
+                "education": {"baseline": 30, "source": "ESGLens industry materiality reference", "rationale": "Access equity"},
                 "unknown": {"baseline": 50, "source": "Default", "rationale": "Insufficient data"}
             },
             "component_weights": {
@@ -1348,7 +1348,7 @@ class RiskScorer:
     def calculate_final_score(self, company: str, all_analyses: Dict[str, Any]) -> Dict[str, Any]:
         """
         Calculate final ESG score with PILLAR-PRIMARY approach
-        ESG pillar scores are the PRIMARY rating source (MSCI-aligned)
+        ESG pillar scores are the PRIMARY rating source
         ML is used only for refinement in MODERATE range (50-74 ESG)
         """
 
@@ -1434,14 +1434,14 @@ class RiskScorer:
         print(f"   Governance: {pillar_scores['governance_score']}/100")
         print(f"   Overall ESG: {overall_esg_score}/100")
 
-        # Step 0.5: Convert ESG score to MSCI-style rating (PRIMARY METHOD)
+        # Step 0.5: Convert ESG score to 7-band letter rating (PRIMARY METHOD)
         rating_grade, risk_level = self.esg_score_to_rating(overall_esg_score)
         # NOTE: Greenwashing risk is NO LONGER derived from ESG. It will be
         # computed independently via calculate_greenwashing_score() after
         # pillar_factors are built.  We initialise to 50 as a placeholder.
         greenwashing_risk = 50.0
 
-        print(f"\n⭐ MSCI-Style Rating from ESG Score:")
+        print(f"\n⭐ ESG Letter Rating from ESG Score:")
         print(f"   ESG Score: {overall_esg_score}/100")
         print(f"   Rating Grade: {rating_grade}")
         print(f"   Risk Level: {risk_level}")
@@ -2704,7 +2704,7 @@ class RiskScorer:
         return result
 
     def _greenwashing_label(self, score: float) -> str:
-        # MSCI-style 3-band scale (HIGH / MEDIUM / LOW). CRITICAL collapsed
+        # 3-band risk scale (HIGH / MEDIUM / LOW). CRITICAL collapsed
         # into HIGH May-2026.
         if score >= 60:
             return "HIGH"
@@ -2726,6 +2726,90 @@ class RiskScorer:
                 total += 7
                 applied_rules.append("internal_contradiction>30:+7")
 
+        # Emissions verification (Climate TRACE satellite ground truth).
+        # The verifier emits a ledger_delta in {12, 6, -4, 0}; we treat it
+        # as a structural penalty so it appears in the ledger row and
+        # propagates to the final headline GW score.
+        emissions_verif = all_analyses.get("emissions_verification", {})
+        if isinstance(emissions_verif, dict):
+            ev_delta = float(emissions_verif.get("ledger_delta") or 0.0)
+            ev_status = str(emissions_verif.get("status") or "")
+            if abs(ev_delta) >= 0.01:
+                total += ev_delta
+                applied_rules.append(f"climate_trace:{ev_status}:{ev_delta:+.1f}")
+
+        # P2: PCAF financed emissions (financial-services companies). The
+        # agent emits a ledger_delta in {+8, +3, 0, -4} reflecting peer
+        # intensity position (P75 / median / P25).
+        financed_em = all_analyses.get("financed_emissions", {})
+        if isinstance(financed_em, dict):
+            fe_delta = float(financed_em.get("ledger_delta") or 0.0)
+            fe_pos = str(financed_em.get("benchmark_position") or "")
+            if abs(fe_delta) >= 0.01:
+                total += fe_delta
+                applied_rules.append(f"pcaf:{fe_pos}:{fe_delta:+.1f}")
+
+        # P3: GDELT adverse-event stream. Ledger delta in {0, 1, 3, 6}
+        # mapped from decay-weighted event intensity.
+        gdelt = all_analyses.get("gdelt_events", {})
+        if isinstance(gdelt, dict):
+            gd_delta = float(gdelt.get("ledger_delta") or 0.0)
+            gd_status = str(gdelt.get("status") or "")
+            if abs(gd_delta) >= 0.01:
+                total += gd_delta
+                applied_rules.append(f"gdelt:{gd_status}:{gd_delta:+.1f}")
+
+        # P4: Litigation resolver (CourtListener + Indian Kanoon). Replaces
+        # the flat enforcement counter — settled cases now down-weighted.
+        lit = all_analyses.get("litigation_resolved", {})
+        if isinstance(lit, dict):
+            lit_delta = float(lit.get("ledger_delta") or 0.0)
+            lit_status = str(lit.get("status") or "")
+            if abs(lit_delta) >= 0.01:
+                total += lit_delta
+                applied_rules.append(f"litigation:{lit_status}:{lit_delta:+.1f}")
+
+        # P5: Regulatory cross-ref (EPA ECHO × EDGAR). Integrity flag from
+        # fines/capex ratio. {+5, 0, -2}.
+        rcr = all_analyses.get("regulatory_cross_ref", {})
+        if isinstance(rcr, dict):
+            rcr_delta = float(rcr.get("ledger_delta") or 0.0)
+            rcr_flag = str(rcr.get("integrity_flag") or "")
+            if abs(rcr_delta) >= 0.01:
+                total += rcr_delta
+                applied_rules.append(f"reg_cross_ref:{rcr_flag}:{rcr_delta:+.1f}")
+
+        # P6: Subsidiary coverage. Penalty when group disclosure plausibly
+        # under-represents subsidiary emissions. {+5, +2, +1, -1}.
+        sw = all_analyses.get("subsidiary_walk", {})
+        if isinstance(sw, dict):
+            sw_delta = float(sw.get("ledger_delta") or 0.0)
+            sw_status = str(sw.get("status") or "")
+            if abs(sw_delta) >= 0.01:
+                total += sw_delta
+                applied_rules.append(f"subsidiary:{sw_status}:{sw_delta:+.1f}")
+
+        # P7: Promise tracker. Degradation score -> ledger delta {-2..+8}.
+        pt = all_analyses.get("promise_tracking", {})
+        if isinstance(pt, dict):
+            pt_delta = float(pt.get("ledger_delta") or 0.0)
+            pt_counts = pt.get("status_counts") or {}
+            if abs(pt_delta) >= 0.01:
+                total += pt_delta
+                applied_rules.append(
+                    f"promise:degradation_{pt.get('promise_degradation_score', 0)}:{pt_delta:+.1f}"
+                )
+
+        # P8: Cross-pillar contradictions. Up to +12 pts when E claims clash
+        # with S/G adverse signals.
+        cps = all_analyses.get("cross_pillar_contradictions", {})
+        if isinstance(cps, dict):
+            cps_delta = float(cps.get("ledger_delta") or 0.0)
+            cps_count = int(cps.get("contradiction_count") or 0)
+            if abs(cps_delta) >= 0.01:
+                total += cps_delta
+                applied_rules.append(f"cross_pillar:count_{cps_count}:{cps_delta:+.1f}")
+
         commitment_ledger = all_analyses.get("commitment_ledger", {})
         if isinstance(commitment_ledger, dict):
             degradation = float(commitment_ledger.get("promise_degradation_score", 0.0) or 0.0)
@@ -2737,12 +2821,44 @@ class RiskScorer:
         if isinstance(pathway, dict):
             gap_pct = float(pathway.get("pathway_gap_pct", 0.0) or 0.0)
             status = str(pathway.get("alignment_status", "")).lower()
+
+            # Guard: a pathway gap computed from industry-estimate fallback
+            # data is meaningless — the underlying Scope figures aren't real
+            # company numbers. Suppress the +20 structural penalty in that
+            # case. Without this gate we contaminated both the Nestle and
+            # Pfizer cold-start headlines with a +20 penalty driven by a
+            # hallucinated Scope value.
+            carbon = all_analyses.get("carbon_extraction") or all_analyses.get("carbon_data") or {}
+            extraction_failed = False
+            if isinstance(carbon, dict):
+                if carbon.get("extraction_successful") is False:
+                    extraction_failed = True
+                # Some upstream call sites flatten emissions inside carbon
+                # itself; also check the source string for the fallback tag.
+                emissions = carbon.get("emissions") or carbon
+                if isinstance(emissions, dict):
+                    for scope_key in ("scope1", "scope2", "scope3"):
+                        sd = emissions.get(scope_key) if isinstance(emissions.get(scope_key), dict) else None
+                        if sd and "all primary sources failed" in str(sd.get("source") or "").lower():
+                            extraction_failed = True
+                            break
+
             if gap_pct > 30:
-                total += 20
-                applied_rules.append("pathway_gap_pct>30:+20")
+                if extraction_failed:
+                    applied_rules.append(
+                        "pathway_gap_pct>30:SUPPRESSED(extraction_failed — underlying Scope data is industry-estimate fallback)"
+                    )
+                else:
+                    total += 20
+                    applied_rules.append("pathway_gap_pct>30:+20")
             if status == "physically_impossible":
-                total += 35
-                applied_rules.append("alignment_status=physically_impossible:+35")
+                if extraction_failed:
+                    applied_rules.append(
+                        "alignment_status=physically_impossible:SUPPRESSED(extraction_failed)"
+                    )
+                else:
+                    total += 35
+                    applied_rules.append("alignment_status=physically_impossible:+35")
 
         triangulation = all_analyses.get("adversarial_triangulation", {})
         if isinstance(triangulation, dict):
@@ -2980,7 +3096,7 @@ class RiskScorer:
     def _identify_industry(self, company: str, analyses: Dict) -> str:
         """
         Identify company's industry - 100% DYNAMIC (NO HARDCODED FALLBACKS)
-        Uses LLM to classify into predefined MSCI-based categories
+        Uses LLM to classify into predefined sector categories
         """
 
         # Get list of valid industries from config
@@ -3262,7 +3378,7 @@ Industry:"""
         """
         DEPRECATED: Use esg_score_to_rating() instead
         This method kept for backward compatibility
-        Converts risk score to ESG score and uses MSCI-aligned rating
+        Converts risk score to ESG score and uses 7-band letter rating
         """
         # Convert risk to ESG score
         esg_score = 100 - risk_score
@@ -3348,7 +3464,7 @@ Industry:"""
         except Exception:
             pass
         
-        industry_context = f"Industry context: {industry.replace('_', ' ').title()} materiality weighting applied (MSCI-style)."
+        industry_context = f"Industry context: {industry.replace('_', ' ').title()} materiality weighting applied."
         
         # Ensure at least one positive or industry context is included when reasons are sparse.
         if positives and len(reasons) < 3:

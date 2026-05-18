@@ -335,6 +335,146 @@ def _extract_latest_methodology_year(rows: list[dict[str, Any]]) -> int | None:
     return max(years) if years else None
 
 
+# ---------------------------------------------------------------------------
+# Alias resolution — WBA records often use the company's pre-rebrand name or
+# a shorter form. "TotalEnergies SE" misses; "Total" hits. Same for
+# Meta/Facebook, Alphabet/Google, X/Twitter. We try a ranked list of
+# candidates before giving up.
+# ---------------------------------------------------------------------------
+_CORPORATE_SUFFIXES: tuple[str, ...] = (
+    " SE", " AG", " plc", " PLC", " Plc", " Ltd", " Ltd.", " Limited",
+    " Inc", " Inc.", " Incorporated", " LLC", " L.L.C.", " NV", " N.V.",
+    " SA", " S.A.", " S.p.A.", " SpA", " SAS", " S.A.S.", " GmbH", " AB",
+    " ASA", " AS", " A/S", " Corp", " Corp.", " Corporation",
+    " Holdings", " Holding", " Group", " & Co", " Co.", " Co",
+    " Company", " Pty Ltd", " (Holdings)", " S.E.",
+)
+
+# Known major rebrands. Keep this small and well-justified — every entry is
+# verified against the historical record (year of rename in comment).
+_KNOWN_REBRANDS: dict[str, tuple[str, ...]] = {
+    "totalenergies": ("Total", "TotalEnergies", "Total SA", "Total S.A."),  # 2021
+    "meta": ("Facebook", "Meta", "Meta Platforms"),                          # 2021
+    "alphabet": ("Google", "Alphabet"),                                      # 2015
+    "x corp": ("Twitter", "X Corp", "X"),                                    # 2023
+    "warner bros discovery": ("WarnerMedia", "Discovery", "Warner Bros"),    # 2022
+    "kraft heinz": ("Kraft", "Heinz", "Kraft Heinz"),                        # 2015
+    "international business machines": ("IBM", "International Business Machines"),
+    "jpmorgan chase": ("JPMorgan", "JP Morgan", "Chase", "JPMorgan Chase"),
+    "berkshire hathaway": ("Berkshire", "Berkshire Hathaway"),
+    "exxonmobil": ("Exxon", "Mobil", "ExxonMobil", "Exxon Mobil"),
+}
+
+
+def _camelcase_split(name: str) -> list[str]:
+    """Split a CamelCase name into space-separated tokens.
+
+    ``TotalEnergies`` -> ``["Total", "Energies"]``
+    ``IBM`` -> ``["IBM"]``
+    """
+    if not name:
+        return []
+    # Match either a Capital+lowercase run, or an all-caps run, or a lowercase run.
+    return re.findall(r"[A-Z][a-z]+|[A-Z]+(?=[A-Z][a-z]|\b)|[a-z]+", name) or [name]
+
+
+def generate_company_aliases(name: str) -> list[str]:
+    """Return ranked candidate names to try against a registry, most-specific
+    first. Pure function (no I/O). Exposed for unit testing."""
+    raw = (name or "").strip()
+    if not raw:
+        return []
+
+    seen: set[str] = set()
+    ordered: list[str] = []
+
+    def _add(c: str) -> None:
+        c2 = re.sub(r"\s+", " ", (c or "")).strip(" ,.")
+        if c2 and c2.lower() not in seen:
+            seen.add(c2.lower())
+            ordered.append(c2)
+
+    _add(raw)
+
+    # Strip corporate suffixes, possibly multiple (e.g. "X Corp Holdings").
+    stripped = raw
+    changed = True
+    while changed:
+        changed = False
+        for sfx in _CORPORATE_SUFFIXES:
+            if stripped.lower().endswith(sfx.lower()):
+                stripped = stripped[: -len(sfx)].rstrip(" ,.")
+                changed = True
+                break
+    if stripped and stripped.lower() != raw.lower():
+        _add(stripped)
+
+    # Known rebrands — match either by canonical key or any of its aliases.
+    low = stripped.lower()
+    for key, aliases in _KNOWN_REBRANDS.items():
+        if key in low or any(a.lower() in low for a in aliases):
+            for a in aliases:
+                _add(a)
+
+    # CamelCase split (e.g. "TotalEnergies" -> "Total Energies", "Total").
+    parts = _camelcase_split(stripped)
+    if len(parts) >= 2 and any(len(p) >= 3 for p in parts):
+        _add(" ".join(parts))
+        if len(parts[0]) >= 3:
+            _add(parts[0])
+
+    return ordered
+
+
+def get_wba_company_assessment_with_aliases(
+    company_name: str,
+    api_key: str | None = None,
+    *,
+    max_aliases: int = 6,
+) -> dict[str, Any]:
+    """Wrapper around :func:`get_wba_company_assessment` that tries multiple
+    alias candidates (corporate suffix stripped, known rebrands, CamelCase
+    split) before giving up. Returns on the first successful match.
+
+    The returned dict carries:
+      - ``query_company_name`` — the original input
+      - ``query_attempts`` — number of aliases tried (1-based)
+      - ``aliases_tried`` — full ranked list, for diagnostics
+    """
+    aliases = generate_company_aliases(company_name)[:max_aliases]
+    if not aliases:
+        return {
+            "found": False,
+            "company_name": company_name,
+            "error": "Empty company name — no aliases generated",
+            "query_company_name": company_name,
+            "query_attempts": 0,
+            "aliases_tried": [],
+        }
+
+    last_result: dict[str, Any] | None = None
+    for idx, alias in enumerate(aliases, start=1):
+        result = get_wba_company_assessment(alias, api_key=api_key)
+        result["query_company_name"] = company_name
+        result["query_attempts"] = idx
+        result["aliases_tried"] = aliases
+        if result.get("found"):
+            if alias != company_name:
+                logger.info(
+                    "WBA: matched '%s' via alias '%s' (attempt %d/%d)",
+                    company_name, alias, idx, len(aliases),
+                )
+            return result
+        last_result = result
+
+    assert last_result is not None  # loop ran at least once
+    last_result["error"] = (
+        f"No WBA match for any alias of '{company_name}' "
+        f"(tried {len(aliases)}: {aliases})"
+    )
+    return last_result
+
+
 def get_wba_company_assessment(
     company_name: str,
     api_key: str | None = None,
@@ -1100,7 +1240,7 @@ def fill_missing_pillars(
             "missing" if social_missing else "present",
             "missing" if governance_missing else "present",
         )
-        wba = get_wba_company_assessment(company_name, api_key=wba_api_key)
+        wba = get_wba_company_assessment_with_aliases(company_name, api_key=wba_api_key)
 
         if wba["found"]:
             if social_missing and "social" in wba["scores"]:

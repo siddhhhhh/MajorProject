@@ -471,6 +471,24 @@ class MultiJurisdictionRegulatoryScanner:
 
     def _infer_framework_jurisdiction(self, framework: str, jurisdictions: List[str]) -> str:
         low = (framework or "").lower().strip()
+        # Phase 1 — consult the JSON registry. Single source of truth for
+        # jurisdiction; covers Indian frameworks (MCA, CPCB, RBI, BEE PAT)
+        # that the keyword fallback below would mislabel as "Global".
+        try:
+            from core.regulatory_registry import _by_name_or_id
+            fw = _by_name_or_id(framework)
+            if fw and fw.get("jurisdiction"):
+                j = str(fw["jurisdiction"]).strip()
+                # Map registry verbiage to the report's short labels.
+                if j == "United States":          return "US"
+                if j == "United Kingdom":         return "UK"
+                if j == "European Union":         return "EU"
+                if j.startswith("Global"):        return "Global"
+                return j  # India, Netherlands, etc.
+        except Exception:
+            pass
+
+        # Phase 2 — keyword fallback for things the registry doesn't know.
         if low in self.GLOBAL_FRAMEWORKS:
             return "Global"
         if "eu" in low or "csrd" in low or "sfdr" in low:
@@ -483,6 +501,8 @@ class MultiJurisdictionRegulatoryScanner:
             return "Netherlands"
         if "basel" in low:
             return "Basel"
+        if "sebi" in low or "brsr" in low or "mca companies" in low or "cpcb" in low or "rbi green" in low or "bee pat" in low or "nse" in low or "bse" in low:
+            return "India"
         # Unknown framework: do NOT fall through to ``jurisdictions[0]`` —
         # that arbitrarily stamps Global frameworks with a regional label
         # (e.g. "UK GHG Protocol Corporate Standard"). Default to Global.

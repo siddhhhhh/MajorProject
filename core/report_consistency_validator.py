@@ -58,7 +58,7 @@ _RATING_BINS = (
 )
 
 # Canonical headline-risk -> band bins. high_score_means_higher_risk.
-# MSCI-style 3-band scale (LOW / MODERATE / HIGH). CRITICAL was dropped
+# 3-band risk scale (LOW / MODERATE / HIGH). CRITICAL was dropped
 # May-2026 per design call — sub-categorising HIGH adds confusion without
 # adding decision value (a HIGH report is already an action trigger).
 _RISK_BAND_BINS = (

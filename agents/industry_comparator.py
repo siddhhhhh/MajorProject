@@ -889,7 +889,7 @@ Competitors:"""
         try:
             # Strategy 1: Try specific ESG rating queries
             query_strategies = [
-                f'"{peer}" ESG rating MSCI Sustainalytics 2024 2025',
+                f'"{peer}" ESG rating sustainability disclosure 2024 2025',
                 f'"{peer}" sustainability score CDP rating',
                 f'"{peer}" environmental social governance performance',
                 f'{peer} carbon emissions reduction target climate'

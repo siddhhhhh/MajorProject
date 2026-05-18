@@ -198,6 +198,72 @@ def get_report_artifacts(report_id: str):
     return _read_companion_artifacts(path)
 
 
+@router.post("/reports/{report_id}/counterfactual")
+def post_report_counterfactual(report_id: str, body: dict):
+    """Recompute the headline GW under user-supplied ledger overrides.
+
+    Body shape:
+      {
+        "overrides": [
+          {"label": str, "drop": true} | {"label": str, "set_value": number}
+        ]
+      }
+
+    Returns the RecomputeResult dict (see core/counterfactual.py).
+    """
+    raw, _ = _find_raw(report_id)
+    try:
+        from core.counterfactual import recompute_with_overrides
+        overrides = (body or {}).get("overrides") or []
+        if not isinstance(overrides, list):
+            raise HTTPException(
+                status_code=400,
+                detail="`overrides` must be a list of {label, drop|set_value} entries",
+            )
+        result = recompute_with_overrides(raw, overrides)
+        return result.to_dict()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Counterfactual failed: {e}")
+
+
+@router.get("/reports/{report_id}/leverage")
+def get_report_leverage(report_id: str, top_k: int = 5):
+    """Top-K leverage ranking — which ledger rows move the headline most.
+
+    Convenience endpoint so the frontend can render a "challenge these
+    rows first" list without iterating /counterfactual.
+    """
+    raw, _ = _find_raw(report_id)
+    try:
+        from core.counterfactual import leverage_ranking
+        return {"top_leverage": leverage_ranking(raw, top_k=top_k)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Leverage ranking failed: {e}")
+
+
+@router.get("/reports/{report_id}/attribution")
+def get_report_attribution(report_id: str):
+    """Score attribution / "why this score" decomposition.
+
+    Reads the ranked-contributor view derived from the score modifier ledger.
+    Falls back to live recomputation if the export didn't pre-compute it.
+    """
+    raw, _ = _find_raw(report_id)
+    attr = raw.get("score_attribution")
+    if not isinstance(attr, dict) or not attr or attr.get("error"):
+        try:
+            from core.score_attribution import decompose
+            attr = decompose(raw)
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Score attribution unavailable: {e}",
+            )
+    return attr
+
+
 @router.get("/reports/{report_id}/pdf")
 def get_report_pdf(report_id: str):
     """Generate and return an audit-ready PDF for the given report ID."""

@@ -100,11 +100,66 @@ def assess_complexity_node(state: ESGState) -> ESGState:
     CLEARS session cache at start of new analysis
     """
     company = state.get("company", "Unknown")
-    
+
     # CLEAR SESSION CACHE for new analysis (keeps disk cache for reuse)
     evidence_cache.clear_session_cache()
     print(f"\n🔄 Starting analysis for {company} - session cache cleared\n")
-    
+
+    # F1: Resolve canonical entity (LEI + country + aliases) at pipeline entry
+    # so every downstream consumer (Climate TRACE, GDELT, CourtListener, etc.)
+    # has a stable join key. Failure is non-fatal — state["entity_record"]
+    # stays None and consumers fall back to name-string lookups.
+    try:
+        from core.entity_resolver import resolve as _resolve_entity, record_to_dict
+        _rec = _resolve_entity(company)
+        if _rec is not None:
+            state["entity_record"] = record_to_dict(_rec)
+            state["company_lei"] = _rec.lei
+            print(f"   🔗 Resolved entity: {_rec.canonical_name} "
+                  f"(LEI={_rec.lei or 'unknown'}, country={_rec.country_iso3 or 'unknown'})")
+        else:
+            state["entity_record"] = None
+            state["company_lei"] = None
+            print(f"   ⚠️  Entity not in resolver index — falling back to name-string lookups")
+    except Exception as _ent_exc:
+        print(f"   ⚠️  Entity resolver failed: {_ent_exc}")
+        state["entity_record"] = None
+        state["company_lei"] = None
+
+    # M1: Stamp the curated macro / geopolitical context onto state. Read-only
+    # — does NOT change scoring; downstream report Section 12 + counterfactual
+    # consume it for display / what-if scenarios.
+    try:
+        from core.macro_context import surface_for_report as _macro_surface
+        state["macro_context"] = _macro_surface(state)
+        _mc = state["macro_context"]
+        if _mc.get("status") == "ACTIVE_EVENTS_PRESENT":
+            _names = [e.get("name") for e in (_mc.get("active_events") or [])]
+            _exp = (_mc.get("industry_exposure") or {}).get("aggregate_exposure", 0.0)
+            print(f"   🌐 Macro context: {len(_names)} active event(s) — "
+                  f"{', '.join(_names)} | industry exposure={_exp:.2f}")
+        else:
+            print(f"   🌐 Macro context: no active events for this date")
+    except Exception as _mc_exc:
+        print(f"   ⚠️  Macro context surface failed: {_mc_exc}")
+        state["macro_context"] = {"status": "ERROR", "error": str(_mc_exc)[:200]}
+
+    # Reg-A: Stamp the active regulatory-framework registry snapshot onto
+    # state. Reports become reproducible: future re-derivation can pin
+    # against `registry_version` even after the rules change.
+    try:
+        from core.regulatory_registry import snapshot_for_report as _reg_snap
+        state["regulatory_registry_snapshot"] = _reg_snap()
+        _rs = state["regulatory_registry_snapshot"]
+        print(f"   ⚖️  Regulatory registry: v={_rs.get('registry_version')} "
+              f"| {_rs.get('active_count')} active frameworks "
+              f"| status={_rs.get('status_counts')}")
+    except Exception as _rs_exc:
+        print(f"   ⚠️  Regulatory registry snapshot failed: {_rs_exc}")
+        state["regulatory_registry_snapshot"] = {
+            "status": "ERROR", "error": str(_rs_exc)[:200]
+        }
+
     supervisor = SupervisorAgent()
     return supervisor.assess_complexity(state)
 

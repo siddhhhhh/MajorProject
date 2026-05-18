@@ -78,6 +78,16 @@ function apiToReportData(api: ESGReport): ReportData {
     pillars: { e: api.environmental.score, s: api.social.score, g: api.governance.score },
     greenwashing: api.greenwashing.overall_score,
     confidence: api.confidence,
+    esgScoreBand: (api.esg_score_band && api.esg_score_band.length === 2)
+      ? [api.esg_score_band[0], api.esg_score_band[1]] as [number, number]
+      : undefined,
+    greenwashingBand: (api.greenwashing_band && api.greenwashing_band.length === 2)
+      ? [api.greenwashing_band[0], api.greenwashing_band[1]] as [number, number]
+      : undefined,
+    confidenceBand: (api.confidence_band && api.confidence_band.length === 2)
+      ? [api.confidence_band[0], api.confidence_band[1]] as [number, number]
+      : undefined,
+    bandMeta: api.band_meta,
     scope1: api.carbon.scope1,
     scope2: api.carbon.scope2,
     scope3: api.carbon.scope3,

@@ -549,45 +549,69 @@ async def fetch_cdp_evidence(company: str, session: httpx.AsyncClient) -> list[d
 
 
 async def fetch_sbti_registry_evidence(company: str, session: httpx.AsyncClient) -> list[dict]:
-    """Fetch SBTi registry evidence for target validation status."""
-    search_url = (
-        "https://sciencebasedtargets.org/companies-taking-action"
-        f"?search={quote(company)}"
-    )
-    results: list[dict] = []
+    """Fetch SBTi registry evidence for target validation status.
 
+    Delegates to ``utils.regulatory_fetchers.fetch_sbti_status`` so that the
+    retriever and the framework-status scanner share a single source of
+    truth (the cached SBTi CSV at data/sbti_company_cache.json, 14,743
+    entries). Prior to May-2026 this function scraped
+    ``sciencebasedtargets.org/companies-taking-action`` which returned 0
+    items for both Nestle and Pfizer despite both being present in the
+    cached registry (Nestlé under the accent form, Pfizer Inc.).
+
+    The ``session`` argument is preserved for call-site compatibility but
+    unused — fetch_sbti_status runs synchronously against the cache.
+    """
     try:
-        r = await session.get(search_url, timeout=FULL_TEXT_TIMEOUT_SECS)
-        if r.status_code == 200:
-            from bs4 import BeautifulSoup
+        from utils.regulatory_fetchers import fetch_sbti_status
+    except Exception as exc:
+        logger.warning("SBTi registry fetch import failed for %s: %s", company, exc)
+        return []
 
-            soup = BeautifulSoup(r.text, "html.parser")
-            page_text = " ".join(soup.get_text(" ", strip=True).split())
-            lower = page_text.lower()
-
-            status_tokens = []
-            for token in ["targets set", "committed", "net-zero target", "validated target", "science-based target"]:
-                if token in lower:
-                    status_tokens.append(token)
-
-            snippet = f"SBTi companies-taking-action listing for {company}."
-            if status_tokens:
-                snippet += " Signals detected: " + ", ".join(status_tokens[:3]) + "."
-
-            results.append({
-                "source_name": "Science Based Targets initiative",
-                "source": "Science Based Targets initiative",
-                "url": search_url,
-                "title": f"SBTi registry search: {company}",
-                "snippet": snippet,
-                "reliability_tier": "CDP / Third-Party Verified",
-                "stance": "Neutral",
-                "data_source_api": "SBTi Registry",
-                "source_type": "UK/EU Regulatory",
-            })
+    results: list[dict] = []
+    try:
+        # fetch_sbti_status is a blocking CSV lookup; run in a worker thread
+        # so we don't block the async retriever loop.
+        import asyncio
+        sbti = await asyncio.to_thread(fetch_sbti_status, company)
     except Exception as exc:
         logger.warning("SBTi registry fetch failed for %s: %s", company, exc)
+        return []
 
+    if not isinstance(sbti, dict):
+        return []
+
+    verified = sbti.get("verified")
+    evidence_text = str(sbti.get("evidence", "") or "")
+
+    # Map the SBTi verdict to a stance the retriever's downstream consumers
+    # already understand. "Commitment removed" is genuinely adverse coverage
+    # (the company HAD a target and abandoned it) → tag as Contradicting.
+    if verified is True:
+        stance = "Supporting"
+    elif verified is False:
+        stance = "Contradicting"
+    else:
+        stance = "Neutral"
+
+    snippet = f"SBTi registry lookup for {company}: " + (
+        evidence_text[:400] if evidence_text else "no signal."
+    )
+
+    results.append({
+        "source_name": "Science Based Targets initiative",
+        "source": "Science Based Targets initiative",
+        "url": sbti.get("url") or "https://sciencebasedtargets.org/download/excel",
+        "title": f"SBTi registry status: {company}",
+        "snippet": snippet,
+        "reliability_tier": "CDP / Third-Party Verified",
+        "stance": stance,
+        "data_source_api": "SBTi Registry (cached CSV)",
+        "source_type": "Verified ESG Data",
+        # Extra fields downstream consumers may pick up
+        "sbti_verified": verified,
+        "sbti_status_text": evidence_text,
+    })
     return results[:SBTI_FETCH_CAP]
 
 
@@ -863,6 +887,12 @@ async def fetch_company_ir(company: str, ticker: str, country: str, session: htt
 
 async def fetch_full_text(url: str, session: httpx.AsyncClient) -> str:
     """Fetches full article text from URL and returns cleaned capped content."""
+    # Skip URLs we already know are permanently broken. Reuters fallback
+    # path still runs because it doesn't actually re-hit the broken URL.
+    from core.dead_url_cache import is_dead as _url_is_dead, mark_dead as _url_mark_dead
+    if _url_is_dead(url) and "reuters.com/sustainability" not in (url or ""):
+        return ""
+
     async def _reuters_sustainability_fallback() -> str:
         try:
             rss_response = await session.get(
@@ -909,12 +939,14 @@ async def fetch_full_text(url: str, session: httpx.AsyncClient) -> str:
         if r.status_code != 200:
             if "reuters.com/sustainability" in (url or ""):
                 return await _reuters_sustainability_fallback()
+            _url_mark_dead(url, reason=str(r.status_code))
             return ""
 
         content_type = r.headers.get("content-type", "")
         if "html" not in content_type.lower():
             if "reuters.com/sustainability" in (url or ""):
                 return await _reuters_sustainability_fallback()
+            _url_mark_dead(url, reason="non_html", detail=content_type[:80])
             return ""
 
         from bs4 import BeautifulSoup
@@ -938,12 +970,20 @@ async def fetch_full_text(url: str, session: httpx.AsyncClient) -> str:
         if len(text) < FULL_TEXT_MIN_CHARS:
             if "reuters.com/sustainability" in (url or ""):
                 return await _reuters_sustainability_fallback()
+            _url_mark_dead(url, reason="too_short", detail=f"{len(text)}<{FULL_TEXT_MIN_CHARS}")
             return ""
         return text[:FULL_TEXT_MAX_CHARS]
     except Exception as exc:
         logger.debug("Full text fetch failed for %s: %s", url, exc)
         if "reuters.com/sustainability" in (url or ""):
             return await _reuters_sustainability_fallback()
+        # Classify exception so TTL bucket is right.
+        err_msg = str(exc).lower()
+        if "timeout" in err_msg or "timed out" in err_msg:
+            _url_mark_dead(url, reason="timeout", detail=str(exc)[:100])
+        elif "name or service not known" in err_msg or "nodename nor servname" in err_msg or "getaddrinfo failed" in err_msg:
+            _url_mark_dead(url, reason="dns", detail=str(exc)[:100])
+        # Any other exception we don't cache — could be transient client-side.
         return ""
 
 

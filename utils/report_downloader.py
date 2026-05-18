@@ -131,8 +131,11 @@ class ReportDownloaderService:
     Handles validation, caching, and storage
     """
     
-    # Download constraints
-    MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
+    # Download constraints. Cap raised from 100 MB → 300 MB because major
+    # issuers (oil supermajors, large banks) publish unified annuals in the
+    # 150-250 MB range; 100 MB caused TotalEnergies, Shell, JPMC primary PDFs
+    # to be silently skipped, cascading to "all frameworks UNCERTAIN".
+    MAX_FILE_SIZE = 300 * 1024 * 1024  # 300 MB
     TIMEOUT_SECONDS = 30
     MAX_RETRIES = 3
     REPORTS_DIR = "data/reports"
@@ -459,7 +462,7 @@ class ReportDownloaderService:
             file_size = int(content_length)
             
             if file_size > self.MAX_FILE_SIZE:
-                print(f"      ⚠️ File too large ({file_size / (1024*1024):.1f} MB > 100 MB), skipping")
+                print(f"      ⚠️ File too large ({file_size / (1024*1024):.1f} MB > {self.MAX_FILE_SIZE // (1024*1024)} MB), skipping")
                 return None
         
         # ====== GENERATE FILENAME ======
@@ -479,7 +482,7 @@ class ReportDownloaderService:
                 
                 # Periodic size check
                 if total_size > self.MAX_FILE_SIZE:
-                    print(f"      ⚠️ File exceeds 100 MB limit during download, aborting")
+                    print(f"      ⚠️ File exceeds {self.MAX_FILE_SIZE // (1024*1024)} MB limit during download, aborting")
                     return None
         
         # ====== WRITE TO DISK ======

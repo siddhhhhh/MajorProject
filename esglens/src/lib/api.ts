@@ -254,6 +254,12 @@ export interface ESGReport {
   rating_grade: string;
   risk_level: string;
   confidence: number;
+  // LLM-variance confidence bands [low, high] — empty array when no
+  // variance harness has been run.
+  esg_score_band?: number[];
+  greenwashing_band?: number[];
+  confidence_band?: number[];
+  band_meta?: Record<string, unknown>;
   environmental: PillarScore;
   social: PillarScore;
   governance: PillarScore;

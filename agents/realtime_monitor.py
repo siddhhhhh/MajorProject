@@ -190,20 +190,21 @@ class RealTimeMonitor:
     
     def _enrich_articles(self, articles: List[Dict]) -> List[Dict]:
         """Extract full content - BLOCKS problematic domains"""
+        from core.dead_url_cache import is_dead as _url_is_dead, mark_dead as _url_mark_dead
         enriched = []
-        
+
         # Blocklist - sites that block scraping or tarpit connections
         blocked_domains = [
-            'yahoo.com', 'finance.yahoo', 
+            'yahoo.com', 'finance.yahoo',
             'zhihu.com', 'baidu.com', 'weibo.com',  # Chinese sites
             'teslaaccessories.com',
             'mckinsey.com/~/med',  # Broken URLs
             'reuters.com', 'spglobal.com', 'bloomberg.com', 'wsj.com', 'ft.com', 'nytimes.com', 'seekingalpha.com'
         ]
-        
+
         for i, article in enumerate(articles):
+            url = (article or {}).get('url', '') if isinstance(article, dict) else ''
             try:
-                url = article.get('url', '')
                 if not url:
                     enriched.append(article)
                     continue
@@ -215,10 +216,14 @@ class RealTimeMonitor:
                     article['skip_reason'] = 'Blocked domain'
                     enriched.append(article)
                     continue
-            
-            # Rest of your existing code...
 
-                
+                # Skip URLs known to be permanently broken (404, DNS, etc.).
+                if _url_is_dead(url):
+                    article['extraction_skipped'] = True
+                    article['skip_reason'] = 'Cached as dead URL'
+                    enriched.append(article)
+                    continue
+
                 # Use newspaper3k with better headers and strict timeout
                 news_article = Article(url)
                 news_article.config.browser_user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -240,9 +245,14 @@ class RealTimeMonitor:
                 error_msg = str(e)
                 if '403' in error_msg or '503' in error_msg or 'Forbidden' in error_msg:
                     print(f"   ⚠️ Access blocked (article {i+1}): {error_msg[:100]}")
+                    _url_mark_dead(url, reason="403", detail=error_msg[:100])
+                elif '404' in error_msg or 'Not Found' in error_msg:
+                    _url_mark_dead(url, reason="404", detail=error_msg[:100])
+                elif 'timeout' in error_msg.lower() or 'timed out' in error_msg.lower():
+                    _url_mark_dead(url, reason="timeout", detail=error_msg[:100])
                 else:
                     print(f"   ⚠️ Extraction error (article {i+1}): {error_msg[:100]}")
-                
+
                 article['extraction_failed'] = True
                 article['extraction_error'] = error_msg[:200]
                 enriched.append(article)

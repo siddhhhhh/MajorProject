@@ -4,6 +4,7 @@ All agents use live API calls, not cached results
 """
 import sys
 import os
+import importlib.util
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
@@ -468,6 +469,85 @@ def claim_decomposition_node(state: ESGState) -> ESGState:
             }
 
     state["claim_decomposition"] = decomposition
+
+    # P7: Promise tracker — record each measurable sub-claim against the
+    # longitudinal promise ledger; statuses (NEW/IN_PROGRESS/MISSED/DELAYED)
+    # reach the structural-penalty layer via state["promise_tracking"].
+    try:
+        _pt_spec = importlib.util.spec_from_file_location(
+            "promise_tracker", "agents/promise_tracker.py",
+        )
+        _pt_mod = importlib.util.module_from_spec(_pt_spec)
+        _pt_spec.loader.exec_module(_pt_mod)
+        _pt_out = _pt_mod.run(
+            company_lei=state.get("company_lei"),
+            sub_claims=decomposition.get("sub_claims") or [],
+            report_id=state.get("report_id"),
+        )
+        state["promise_tracking"] = _pt_out
+        if _pt_out.get("tracked_promises"):
+            print(f"\n>>> PROMISE TRACKER")
+            print(f"    Tracked: {len(_pt_out.get('tracked_promises') or [])}")
+            print(f"    Status counts: {_pt_out.get('status_counts')}")
+            print(f"    Degradation score: {_pt_out.get('promise_degradation_score')}")
+            print(f"    Ledger delta: {_pt_out.get('ledger_delta', 0):+.1f} GW pts")
+            _pt_row = _pt_mod.build_ledger_row(_pt_out)
+            if _pt_row:
+                state.setdefault("scoremodifierledger", []).append(_pt_row)
+            state["agent_outputs"].append({
+                "agent": "promise_tracker",
+                "output": _pt_out,
+                "confidence": 0.85,
+                "timestamp": datetime.now().isoformat(),
+            })
+    except Exception as _pt_exc:
+        print(f"  [promise_tracker] skipped: {_pt_exc}")
+        state["promise_tracking"] = {"status": "ERROR", "error": str(_pt_exc)[:200]}
+
+    # P10: KG-RAG graph retrieval (feature-flagged with ESG_USE_KG_RAG).
+    if os.environ.get("ESG_USE_KG_RAG", "").lower() in ("1", "true", "yes"):
+        try:
+            from core.kg_rag import kg_rag_retrieve
+            _kg_out = kg_rag_retrieve(state)
+            state["kg_rag_retrieval"] = _kg_out
+            if _kg_out.get("status") == "COMPLETED":
+                print(f"\n>>> KG-RAG RETRIEVAL")
+                print(f"    Claims processed: {len(_kg_out.get('claims') or [])}")
+                print(f"    Total items retrieved: {_kg_out.get('total_items')}")
+        except Exception as _kg_exc:
+            print(f"  [kg_rag] skipped: {_kg_exc}")
+            state["kg_rag_retrieval"] = {"status": "ERROR", "error": str(_kg_exc)[:200]}
+
+    # P9: A3CG triplet extractor (feature-flagged with ESG_USE_A3CG).
+    if os.environ.get("ESG_USE_A3CG", "").lower() in ("1", "true", "yes"):
+        try:
+            _a3_spec = importlib.util.spec_from_file_location(
+                "a3cg_extractor", "agents/a3cg_extractor.py",
+            )
+            _a3_mod = importlib.util.module_from_spec(_a3_spec)
+            _a3_spec.loader.exec_module(_a3_mod)
+            _a3_triplets = _a3_mod.extract_for_claims(decomposition.get("sub_claims") or [])
+            state["a3cg_triplets"] = {
+                "triplets":          _a3_triplets,
+                "count":             len(_a3_triplets),
+                "extractor_version": "a3cg_v1",
+            }
+            if _a3_triplets:
+                print(f"\n>>> A3CG TRIPLETS")
+                print(f"    Extracted: {len(_a3_triplets)} typed (aspect, action, outcome) triplets")
+                for t in _a3_triplets[:3]:
+                    print(f"      [{t.get('evidence_class')}] aspect={t.get('aspect')} action={t.get('action')} "
+                          f"value={t.get('outcome_value')} year={t.get('outcome_year')}")
+                state["agent_outputs"].append({
+                    "agent": "a3cg_extractor",
+                    "output": state["a3cg_triplets"],
+                    "confidence": 0.80,
+                    "timestamp": datetime.now().isoformat(),
+                })
+        except Exception as _a3_exc:
+            print(f"  [a3cg_extractor] skipped: {_a3_exc}")
+            state["a3cg_triplets"] = {"status": "ERROR", "error": str(_a3_exc)[:200]}
+
     sub_claims = decomposition.get("sub_claims") if isinstance(decomposition.get("sub_claims"), list) else []
     if len(sub_claims) < 2 and len(str(claim_text).split()) >= 10:
         # Hard floor for long claims: force at least two atomic checks.
@@ -830,6 +910,166 @@ def carbon_extraction_node(state: ESGState) -> ESGState:
             "timestamp": datetime.now().isoformat()
         })
         state.setdefault("node_execution_order", []).append("Carbon Extraction")
+
+        # ── P11: Multimodal extraction (feature-flagged) ────────────────
+        if os.environ.get("ESG_USE_MULTIMODAL", "").lower() in ("1", "true", "yes"):
+            try:
+                _mm_spec = importlib.util.spec_from_file_location(
+                    "multimodal_extractor", "agents/multimodal_extractor.py",
+                )
+                _mm_mod = importlib.util.module_from_spec(_mm_spec)
+                _mm_spec.loader.exec_module(_mm_mod)
+                _mm_out = _mm_mod.run(state)
+                state["multimodal_extraction"] = _mm_out
+                if _mm_out.get("status") == "COMPLETED":
+                    print(f"\n>>> MULTIMODAL EXTRACTION")
+                    print(f"    Tables: {_mm_out.get('table_count', 0)}, "
+                          f"Chart facts: {_mm_out.get('fact_count', 0)}")
+            except Exception as _mm_exc:
+                print(f"  [multimodal_extractor] skipped: {_mm_exc}")
+                state["multimodal_extraction"] = {"status": "ERROR", "error": str(_mm_exc)[:200]}
+
+        # ── A2: Climate TRACE emissions verification ────────────────────
+        # Cross-check disclosed Scope 1 against satellite-derived emissions.
+        # Runs inline after carbon extraction so the verifier has the freshly
+        # extracted scope1 value. Result lives in state["emissions_verification"]
+        # and is also appended as a separate agent_output entry for the
+        # report generator to pick up.
+        try:
+            import importlib.util as _ilu
+            _spec = _ilu.spec_from_file_location(
+                "emissions_verifier", "agents/emissions_verifier.py"
+            )
+            _verifier_mod = _ilu.module_from_spec(_spec)
+            _spec.loader.exec_module(_verifier_mod)
+
+            disclosed_s1 = None
+            if isinstance(result, dict):
+                _em = result.get("emissions") or {}
+                _s1 = _em.get("scope1") or {}
+                if isinstance(_s1, dict):
+                    disclosed_s1 = _s1.get("value")
+
+            # Prefer the F1-resolved country (more reliable than name heuristic)
+            _entity = state.get("entity_record") or {}
+            _resolved_country = None
+            if isinstance(_entity, dict):
+                _iso3 = _entity.get("country_iso3")
+                # Climate TRACE accepts free-form country names; pass ISO3
+                # directly via the verifier's normalise_country pathway
+                _resolved_country = _iso3
+            verif = _verifier_mod.verify_emissions(
+                company=company,
+                industry=industry,
+                disclosed_scope1_tco2e=disclosed_s1,
+                country=(_resolved_country
+                         or state.get("country")
+                         or state.get("jurisdiction")),
+                year=2024,
+            )
+            state["emissions_verification"] = verif
+
+            _led_row = _verifier_mod.build_ledger_row(verif)
+            if _led_row:
+                state.setdefault("scoremodifierledger", []).append(_led_row)
+
+            print("\n>>> EMISSIONS VERIFICATION (Climate TRACE)")
+            print(f"    Status: {verif.get('status')}")
+            print(f"    Disclosed Scope 1: {(verif.get('disclosed_scope1_tco2e') or 0):,.0f} tCO2e")
+            _obs = verif.get("observed_scope1_tco2e_assets")
+            if _obs:
+                print(f"    Observed (assets):  {_obs:,.0f} tCO2e "
+                      f"(ratio={verif.get('ratio_disclosed_over_observed_assets')})")
+            _sec = verif.get("observed_sector_total_tco2e")
+            if _sec:
+                print(f"    Sector ceiling:    {_sec:,.0f} tCO2e")
+            print(f"    Ledger delta:      {verif.get('ledger_delta'):+.1f} GW pts")
+            print(f"    Rationale: {(verif.get('rationale') or '')[:200]}")
+
+            state["agent_outputs"].append({
+                "agent": "emissions_verification",
+                "output": verif,
+                "confidence": 0.95 if verif.get("status") not in
+                    ("NOT_APPLICABLE", "NOT_COVERED") else 0.5,
+                "timestamp": datetime.now().isoformat(),
+            })
+        except Exception as _verif_exc:
+            print(f"  [emissions_verifier] skipped: {_verif_exc}")
+            state["emissions_verification"] = {
+                "status": "NOT_COVERED",
+                "error": str(_verif_exc)[:200],
+            }
+
+        # ── P2: PCAF financed emissions (financial-services only) ────────
+        try:
+            _fe_spec = importlib.util.spec_from_file_location(
+                "financed_emissions", "agents/financed_emissions.py",
+            )
+            _fe_mod = importlib.util.module_from_spec(_fe_spec)
+            _fe_spec.loader.exec_module(_fe_mod)
+
+            _fe_out = _fe_mod.compute_financed_emissions(
+                company=company, industry=industry,
+            )
+            state["financed_emissions"] = _fe_out
+            if _fe_out.get("status") == "COMPUTED":
+                print("\n>>> FINANCED EMISSIONS (PCAF)")
+                print(f"    Total: {(_fe_out.get('total_financed_emissions_tco2e') or 0)/1e6:.2f} MtCO2e "
+                      f"across {len(_fe_out.get('rows', []))} counterparties")
+                print(f"    Intensity: {_fe_out.get('intensity_tco2e_per_usdm')} tCO2e/USDm  "
+                      f"({_fe_out.get('benchmark_position')})")
+                print(f"    Ledger delta: {_fe_out.get('ledger_delta'):+.1f} GW pts")
+
+                _fe_row = _fe_mod.build_ledger_row(_fe_out)
+                if _fe_row:
+                    state.setdefault("scoremodifierledger", []).append(_fe_row)
+
+                state["agent_outputs"].append({
+                    "agent": "financed_emissions",
+                    "output": _fe_out,
+                    "confidence": 0.85,
+                    "timestamp": datetime.now().isoformat(),
+                })
+        except Exception as _fe_exc:
+            print(f"  [financed_emissions] skipped: {_fe_exc}")
+            state["financed_emissions"] = {
+                "status": "NOT_APPLICABLE",
+                "error": str(_fe_exc)[:200],
+            }
+
+        # ── P6: Subsidiary KG walker ────────────────────────────────────
+        try:
+            _sw_spec = importlib.util.spec_from_file_location(
+                "subsidiary_walker", "agents/subsidiary_walker.py",
+            )
+            _sw_mod = importlib.util.module_from_spec(_sw_spec)
+            _sw_spec.loader.exec_module(_sw_mod)
+            _sw_out = _sw_mod.run(
+                company=company,
+                entity_record=state.get("entity_record"),
+                max_subsidiaries=10,
+            )
+            state["subsidiary_walk"] = _sw_out
+            print(f"\n>>> SUBSIDIARY WALKER (GLEIF + Climate TRACE)")
+            print(f"    Status: {_sw_out.get('status')}")
+            print(f"    Subsidiaries: {len(_sw_out.get('subsidiaries') or [])}")
+            print(f"    Coverage score: {_sw_out.get('subsidiary_coverage_score')}%")
+            print(f"    Aggregate subsidiary emissions: "
+                  f"{(_sw_out.get('total_subsidiary_emissions_tco2e') or 0)/1e6:.2f} MtCO2e")
+            print(f"    Ledger delta: {_sw_out.get('ledger_delta', 0):+.1f} GW pts")
+
+            _sw_row = _sw_mod.build_ledger_row(_sw_out)
+            if _sw_row:
+                state.setdefault("scoremodifierledger", []).append(_sw_row)
+            state["agent_outputs"].append({
+                "agent": "subsidiary_walker",
+                "output": _sw_out,
+                "confidence": 0.80 if _sw_out.get("status") != "NO_SUBSIDIARIES" else 0.4,
+                "timestamp": datetime.now().isoformat(),
+            })
+        except Exception as _sw_exc:
+            print(f"  [subsidiary_walker] skipped: {_sw_exc}")
+            state["subsidiary_walk"] = {"status": "ERROR", "error": str(_sw_exc)[:200]}
 
         print(f"{'✅ NODE COMPLETED':^70}")
 
@@ -1377,7 +1617,7 @@ def regulatory_scanning_node(state: ESGState) -> ESGState:
                         f"({unified_score:.0f}/100) — no real-data rows evaluated"
                     )
 
-                # MSCI-style 3-band scale (LOW / MODERATE / HIGH).
+                # 3-band risk scale (LOW / MODERATE / HIGH).
                 # CRITICAL was collapsed into HIGH May-2026 per design call.
                 if unified_score >= 75:
                     derived_risk = "LOW"
@@ -1385,6 +1625,34 @@ def regulatory_scanning_node(state: ESGState) -> ESGState:
                     derived_risk = "MODERATE"
                 else:
                     derived_risk = "HIGH"
+
+                # Reg-D: Confidence flag for volatile frameworks. Compute the
+                # share of *weight* coming from frameworks tagged
+                # `under_consultation` or `draft` in the registry, and surface
+                # a confidence adjustment + warning. The COMPLIANCE SCORE
+                # ITSELF IS NOT MODIFIED — only the confidence reflects rule
+                # volatility.
+                try:
+                    from core.regulatory_registry import volatility_share as _vol_share
+                    _eval_names = [
+                        fr.get("framework") for fr in unified_frameworks
+                        if isinstance(fr, dict) and fr.get("framework")
+                    ]
+                    _volatility = _vol_share(_eval_names)
+                    _conf_discount = round(0.3 * float(_volatility.get("volatile_share", 0.0)), 3)
+                    _conf_adjusted = max(0.5, round(1.0 - _conf_discount, 3))
+                    _volatility_warning = (
+                        f"Compliance confidence reduced to {_conf_adjusted} — "
+                        f"{int(_volatility.get('volatile_share', 0) * 100)}% of evaluated "
+                        f"framework weight ({_volatility.get('volatile_weight', 0)}/"
+                        f"{_volatility.get('total_weight', 0)}) comes from frameworks "
+                        f"under active consultation or draft revision: "
+                        f"{', '.join(_volatility.get('volatile_framework_ids') or []) or 'none'}."
+                    ) if _volatility.get("volatile_share", 0) > 0 else None
+                except Exception:
+                    _volatility = {"total_weight": 0.0, "volatile_weight": 0.0, "volatile_share": 0.0, "volatile_framework_ids": []}
+                    _conf_adjusted = 1.0
+                    _volatility_warning = None
 
                 result["compliance_result"] = {
                     "score": round(unified_score, 1),
@@ -1395,6 +1663,9 @@ def regulatory_scanning_node(state: ESGState) -> ESGState:
                     "real_data_evaluated": _evaluated,
                     "real_data_passed": _real_pass,
                     "real_data_failed": _real_fail,
+                    "framework_volatility":     _volatility,
+                    "compliance_confidence":    _conf_adjusted,
+                    "compliance_confidence_warning": _volatility_warning,
                 }
                 result["compliance_score"] = {
                     "score": result["compliance_result"]["score"],
@@ -1402,6 +1673,13 @@ def regulatory_scanning_node(state: ESGState) -> ESGState:
                     "gap_count": result["compliance_result"]["gap_count"],
                     "frameworks": result["compliance_result"]["frameworks"],
                     "jurisdiction": result["compliance_result"]["jurisdiction"],
+                    # Reg-D: surface volatility + confidence at the report-facing
+                    # location so Section 7B + the cross-version counterfactual
+                    # can see them (they read from scores.compliance, not from
+                    # agent_results[*].compliance_result).
+                    "framework_volatility":          result["compliance_result"].get("framework_volatility"),
+                    "compliance_confidence":         result["compliance_result"].get("compliance_confidence"),
+                    "compliance_confidence_warning": result["compliance_result"].get("compliance_confidence_warning"),
                 }
                 result["risk_level"] = result["compliance_result"]["risk_level"]
 
@@ -1515,6 +1793,119 @@ def regulatory_scanning_node(state: ESGState) -> ESGState:
             "timestamp": datetime.now().isoformat()
         })
         state.setdefault("node_execution_order", []).append("Regulatory Scanning")
+
+        # ── P3: GDELT adverse-event stream ──────────────────────────────
+        # Piggybacks on regulatory_scanning_node (both fetch external news/
+        # filings). Runs after compliance scan so the report ordering stays
+        # coherent.
+        try:
+            _gdelt_spec = importlib.util.spec_from_file_location(
+                "gdelt_events", "agents/gdelt_events.py",
+            )
+            _gdelt_mod = importlib.util.module_from_spec(_gdelt_spec)
+            _gdelt_spec.loader.exec_module(_gdelt_mod)
+            _gdelt_out = _gdelt_mod.run(
+                company=state.get("company", ""),
+                entity_record=state.get("entity_record"),
+                timespan="90day",
+                max_records=50,
+            )
+            state["gdelt_events"] = _gdelt_out
+            print(f"\n>>> GDELT EVENT STREAM")
+            print(f"    Events: {len(_gdelt_out.get('events') or [])}")
+            print(f"    Intensity: {_gdelt_out.get('decay_weighted_intensity')}")
+            print(f"    Status: {_gdelt_out.get('status')}")
+            print(f"    Ledger delta: {_gdelt_out.get('ledger_delta', 0):+.1f} GW pts")
+
+            _gdelt_row = _gdelt_mod.build_ledger_row(_gdelt_out)
+            if _gdelt_row:
+                state.setdefault("scoremodifierledger", []).append(_gdelt_row)
+
+            state["agent_outputs"].append({
+                "agent": "gdelt_events",
+                "output": _gdelt_out,
+                "confidence": 0.80 if _gdelt_out.get("status") != "ERROR" else 0.4,
+                "timestamp": datetime.now().isoformat(),
+            })
+        except Exception as _gdelt_exc:
+            print(f"  [gdelt_events] skipped: {_gdelt_exc}")
+            state["gdelt_events"] = {
+                "status": "ERROR",
+                "error": str(_gdelt_exc)[:200],
+            }
+
+        # ── P4: Litigation resolver (CourtListener + Indian Kanoon) ──────
+        try:
+            _lit_spec = importlib.util.spec_from_file_location(
+                "litigation_resolver", "agents/litigation_resolver.py",
+            )
+            _lit_mod = importlib.util.module_from_spec(_lit_spec)
+            _lit_spec.loader.exec_module(_lit_mod)
+            _lit_out = _lit_mod.run(
+                company=state.get("company", ""),
+                entity_record=state.get("entity_record"),
+                since_year=2018,
+            )
+            state["litigation_resolved"] = _lit_out
+            print(f"\n>>> LITIGATION RESOLVER")
+            print(f"    Status: {_lit_out.get('status')}")
+            print(f"    US cases: {len(_lit_out.get('us_cases') or [])}, "
+                  f"IN cases: {len(_lit_out.get('in_cases') or [])}")
+            print(f"    Counts: {_lit_out.get('status_counts')}")
+            print(f"    Ledger delta: {_lit_out.get('ledger_delta', 0):+.1f} GW pts")
+
+            _lit_row = _lit_mod.build_ledger_row(_lit_out)
+            if _lit_row:
+                state.setdefault("scoremodifierledger", []).append(_lit_row)
+            state["agent_outputs"].append({
+                "agent": "litigation_resolver",
+                "output": _lit_out,
+                "confidence": 0.85 if _lit_out.get("status") != "ERROR" else 0.4,
+                "timestamp": datetime.now().isoformat(),
+            })
+        except Exception as _lit_exc:
+            print(f"  [litigation_resolver] skipped: {_lit_exc}")
+            state["litigation_resolved"] = {
+                "status": "ERROR",
+                "error": str(_lit_exc)[:200],
+            }
+
+        # ── P5: EPA ECHO × EDGAR XBRL cross-ref (US-only) ────────────────
+        try:
+            _rcr_spec = importlib.util.spec_from_file_location(
+                "regulatory_cross_ref", "agents/regulatory_cross_ref.py",
+            )
+            _rcr_mod = importlib.util.module_from_spec(_rcr_spec)
+            _rcr_spec.loader.exec_module(_rcr_mod)
+            _rcr_out = _rcr_mod.run(
+                company=state.get("company", ""),
+                industry=state.get("industry", ""),
+                entity_record=state.get("entity_record"),
+                ticker=state.get("ticker") or state.get("symbol"),
+            )
+            state["regulatory_cross_ref"] = _rcr_out
+            print(f"\n>>> REGULATORY CROSS-REF (EPA ECHO × EDGAR)")
+            print(f"    Status: {_rcr_out.get('status')}")
+            print(f"    Fines: USD {_rcr_out.get('fines_total_usd', 0):,.0f}")
+            print(f"    Env capex: USD {_rcr_out.get('env_capex_total_usd', 0):,.0f}")
+            print(f"    Integrity flag: {_rcr_out.get('integrity_flag')}")
+            print(f"    Ledger delta: {_rcr_out.get('ledger_delta', 0):+.1f} GW pts")
+
+            _rcr_row = _rcr_mod.build_ledger_row(_rcr_out)
+            if _rcr_row:
+                state.setdefault("scoremodifierledger", []).append(_rcr_row)
+            state["agent_outputs"].append({
+                "agent": "regulatory_cross_ref",
+                "output": _rcr_out,
+                "confidence": 0.80 if _rcr_out.get("status") == "IN_ENGAGED" else 0.4,
+                "timestamp": datetime.now().isoformat(),
+            })
+        except Exception as _rcr_exc:
+            print(f"  [regulatory_cross_ref] skipped: {_rcr_exc}")
+            state["regulatory_cross_ref"] = {
+                "status": "ERROR",
+                "error": str(_rcr_exc)[:200],
+            }
 
         print(f"{'✅ NODE COMPLETED':^70}")
 
@@ -2051,6 +2442,34 @@ def contradiction_analysis_node(state: ESGState) -> ESGState:
             "confidence": 0.5
         })
 
+    # ── P8: Cross-pillar contradiction synthesis ───────────────────────────
+    # Runs after the in-pillar contradiction analyzer because it needs
+    # claim_decomposition + the social/governance/carbon outputs + GDELT
+    # + litigation + regulatory_cross_ref + subsidiary_walk in state.
+    try:
+        _cps_spec = importlib.util.spec_from_file_location(
+            "cross_pillar_synthesizer", "agents/cross_pillar_synthesizer.py",
+        )
+        _cps_mod = importlib.util.module_from_spec(_cps_spec)
+        _cps_spec.loader.exec_module(_cps_mod)
+        _cps_out = _cps_mod.synthesize(state)
+        state["cross_pillar_contradictions"] = _cps_out
+        print(f"\n>>> CROSS-PILLAR SYNTHESIS")
+        print(f"    Contradictions found: {_cps_out.get('contradiction_count', 0)}")
+        print(f"    Ledger delta: {_cps_out.get('ledger_delta', 0):+.1f} GW pts")
+        _cps_row = _cps_mod.build_ledger_row(_cps_out)
+        if _cps_row:
+            state.setdefault("scoremodifierledger", []).append(_cps_row)
+        state["agent_outputs"].append({
+            "agent": "cross_pillar_synthesizer",
+            "output": _cps_out,
+            "confidence": 0.80,
+            "timestamp": datetime.now().isoformat(),
+        })
+    except Exception as _cps_exc:
+        print(f"  [cross_pillar_synthesizer] skipped: {_cps_exc}")
+        state["cross_pillar_contradictions"] = {"status": "ERROR", "error": str(_cps_exc)[:200]}
+
     return state
 
 
@@ -2210,6 +2629,22 @@ def peer_comparison_node(state: ESGState) -> ESGState:
         state.setdefault("node_execution_order", []).append("Peer Comparison")
         print(f"❌ Peer Comparison: all tiers exhausted — emitting placeholder with FAILED flag")
         return state
+
+    # M1: Tag the peer-benchmark window with any active macro context so
+    # readers know the comparison is during a shared crisis (peers are
+    # exposed too — relative reads stay honest).
+    _macro = state.get("macro_context") if isinstance(state.get("macro_context"), dict) else {}
+    if _macro and _macro.get("status") == "ACTIVE_EVENTS_PRESENT":
+        result["analysis_window_macro_context"] = [
+            ev.get("event_id")
+            for ev in (_macro.get("active_events") or [])
+            if isinstance(ev, dict) and ev.get("event_id")
+        ]
+        result["analysis_window_macro_note"] = (
+            "Peers benchmarked during the same active macro window — relative "
+            "comparisons stay honest because peers face the same exogenous "
+            "exposure. See `macro_context` block for event details."
+        )
 
     state["agent_outputs"].append({
         "agent": "peer_comparison",
@@ -2995,6 +3430,15 @@ def _build_analyses_dict(state: ESGState) -> Dict[str, Any]:
         "peer_comparison": {},
         "industry_comparison": {},
         "carbon_extraction": state.get("carbon_extraction", {}),
+        "emissions_verification": state.get("emissions_verification", {}),
+        "financed_emissions": state.get("financed_emissions", {}),
+        "gdelt_events": state.get("gdelt_events", {}),
+        "litigation_resolved": state.get("litigation_resolved", {}),
+        "regulatory_cross_ref": state.get("regulatory_cross_ref", {}),
+        "subsidiary_walk": state.get("subsidiary_walk", {}),
+        "promise_tracking": state.get("promise_tracking", {}),
+        "cross_pillar_contradictions": state.get("cross_pillar_contradictions", {}),
+        "macro_context": state.get("macro_context", {}),
         "greenwishing_analysis": state.get("greenwishing_analysis", {}),
         "regulatory_compliance": state.get("regulatory_compliance", {}),
         "social_analysis": state.get("social_analysis", {}),

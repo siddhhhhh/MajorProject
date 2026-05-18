@@ -72,7 +72,24 @@ FRAMEWORK_CREDIBILITY_WEIGHTS: Dict[str, float] = {
 
 
 def get_framework_weight(framework: str) -> float:
-    """Return the credibility weight for a framework name (default 0.5 unknown)."""
+    """Return the credibility weight for a framework name (default 0.5 unknown).
+
+    Consults `core.regulatory_registry` first (data/regulatory_frameworks.json
+    — the authoritative versioned registry). Falls back to the hardcoded
+    FRAMEWORK_CREDIBILITY_WEIGHTS dict only if the registry can't resolve
+    the name (e.g., registry file missing, framework retired, fresh
+    install).
+    """
+    try:
+        from core.regulatory_registry import get_weight as _registry_weight
+        w = _registry_weight(framework)
+        # 0.5 is the registry's "unknown" sentinel — fall through to the
+        # legacy dict in that case so we don't silently demote a known
+        # framework when the registry is partially populated.
+        if w != 0.5:
+            return float(w)
+    except Exception:
+        pass
     return float(FRAMEWORK_CREDIBILITY_WEIGHTS.get(framework, 0.5))
 
 _SESSION: Optional[requests.Session] = None
@@ -172,10 +189,22 @@ def _cache_set(path: Path, data: dict) -> None:
 
 
 def _normalize_company_name(name: str) -> str:
-    """Lowercase, strip punctuation/legal suffixes for fuzzy matching."""
+    """Lowercase, strip punctuation/legal suffixes for fuzzy matching.
+
+    Unicode normalisation is applied first so "Nestlé" → "nestle" before
+    the ASCII-only regex strip runs. Without this, the regex maps "é" to
+    a single space, leaving "nestl " which never matches "nestle" via the
+    token-overlap path and silently dropped Nestle from the SBTi registry
+    (14,743 entries scanned, 0 hits) despite "Nestlé" being present.
+    """
     if not name:
         return ""
-    n = name.lower()
+    import unicodedata
+    # NFKD decomposes "é" into "e" + combining acute; encode ascii drops the
+    # combining mark. Works for "Nestlé" → "Nestle", "ABInBev" → "ABInBev",
+    # "Société Générale" → "Societe Generale", etc.
+    n = unicodedata.normalize("NFKD", str(name))
+    n = n.encode("ascii", "ignore").decode("ascii").lower()
     n = re.sub(r"[^a-z0-9 &]+", " ", n)
     n = re.sub(r"\b(inc|incorporated|ltd|limited|corp|corporation|plc|group|company|co|s\.a\.|sa|ag|nv|llc|llp|holdings|holding)\b", " ", n)
     n = re.sub(r"\s+", " ", n).strip()

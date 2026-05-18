@@ -187,6 +187,46 @@ Return JSON:
   "bias_confidence": [0-100]
 }}"""
 
+
+SOURCE_CREDIBILITY_BATCH_PROMPT = """ROLE: Source Credibility & Bias Detection Specialist
+GOAL: Assess reliability and bias of MULTIPLE information sources in a single pass.
+
+You will receive a list of indexed sources. Evaluate each one INDEPENDENTLY
+using the rubric below and return a single JSON object whose `evaluations`
+array contains one entry per input source, in the SAME ORDER, with the
+matching `index`.
+
+Credibility Scoring:
+- Peer-reviewed academic: 1.0
+- Government regulatory: 0.95
+- Established NGO: 0.90
+- Financial regulatory filing: 0.90
+- Investigative journalism: 0.80
+- General news: 0.70
+- Industry publication: 0.50
+- Company press release: 0.40
+- Sponsored content: 0.20
+
+For each source, detect:
+- Paid / sponsored content indicators
+- Bias direction (Pro-company / Neutral / Anti-company)
+- Conflicts of interest
+
+Return STRICT JSON in this exact shape (no markdown, no commentary):
+{{
+  "evaluations": [
+    {{
+      "index": 1,
+      "base_credibility": 0.0,
+      "adjustments": ["short reasons"],
+      "final_credibility_score": 0.0,
+      "paid_content_detected": false,
+      "bias_direction": "Neutral",
+      "bias_confidence": 0
+    }}
+  ]
+}}"""
+
 # Agent 5: Sentiment Analysis (already defined, just verify it's there)
 SENTIMENT_ANALYSIS_PROMPT = """ROLE: ESG Communication Sentiment & Linguistic Analysis Expert
 GOAL: Detect bias through sentiment and linguistic patterns

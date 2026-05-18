@@ -1,9 +1,10 @@
 import json
 import asyncio
 import os
+import re
 from typing import Dict, Any, List
 from core.evidence_cache import evidence_cache
-from config.agent_prompts import SOURCE_CREDIBILITY_PROMPT
+from config.agent_prompts import SOURCE_CREDIBILITY_PROMPT, SOURCE_CREDIBILITY_BATCH_PROMPT
 from core.llm_call import call_llm
 
 class CredibilityAnalyst:
@@ -30,25 +31,50 @@ class CredibilityAnalyst:
         Analyze credibility and bias of all evidence sources
         Works with evidence from cache (already fetched by EvidenceRetriever)
         """
-        
+
         print(f"\n{'='*60}")
         print(f"🔍 AGENT 4: {self.name}")
         print(f"{'='*60}")
         print(f"Analyzing {len(evidence)} sources...")
         print(f"📦 Using evidence from cache (zero additional API calls)")
-        
-        
-        source_analyses = []
-        credibility_scores = []
-        
-        for i, ev in enumerate(evidence, 1):
-            print(f"\r   Processing source {i}/{len(evidence)}...", end="", flush=True)
-            
-            analysis = self._analyze_single_source(ev, use_llm=i <= self.max_llm_sources)
+
+        # Split into LLM-eligible (first N) and heuristic-only. The same
+        # cap (`max_llm_sources`) the per-source path enforces.
+        llm_eligible = evidence[: self.max_llm_sources]
+        heuristic_only = evidence[self.max_llm_sources :]
+
+        # Single batched LLM call for the eligible slice — empty results
+        # if the call fails, in which case we fall through to per-source.
+        batched_results = self._batch_llm_credibility(llm_eligible)
+
+        source_analyses: List[Dict[str, Any]] = []
+        credibility_scores: List[float] = []
+
+        for i, ev in enumerate(llm_eligible):
+            llm_result = batched_results.get(i)
+            if llm_result is None:
+                # Batch produced no entry for this index — fall back to
+                # per-source LLM (which will also try heuristic on its own).
+                analysis = self._analyze_single_source(ev, use_llm=True)
+            else:
+                analysis = self._format_source_analysis(
+                    evidence=ev,
+                    source_name=ev.get("source_name", "Unknown"),
+                    source_type=ev.get("source_type", "Web Source"),
+                    url=ev.get("url", ""),
+                    llm_result=llm_result,
+                )
             source_analyses.append(analysis)
-            credibility_scores.append(analysis['final_credibility_score'])
-        
-        print(f"\n\n✅ Credibility analysis complete")
+            credibility_scores.append(analysis["final_credibility_score"])
+
+        for ev in heuristic_only:
+            analysis = self._analyze_single_source(ev, use_llm=False)
+            source_analyses.append(analysis)
+            credibility_scores.append(analysis["final_credibility_score"])
+
+        if batched_results:
+            print(f"   Batched LLM call: 1 request covered {len(batched_results)} sources")
+        print(f"\n✅ Credibility analysis complete")
         
         # Calculate aggregate metrics
         avg_credibility = sum(credibility_scores) / len(credibility_scores) if credibility_scores else 0
@@ -87,6 +113,86 @@ class CredibilityAnalyst:
             "credibility_warning": f"{low_credibility} of {len(evidence)} sources scored low credibility"
         }
     
+    def _batch_llm_credibility(
+        self, sources: List[Dict[str, Any]]
+    ) -> Dict[int, Dict[str, Any]]:
+        """One LLM call for up to `max_llm_sources` sources. Returns a
+        dict keyed by *list index* (0-based) so the caller can pair each
+        result with the original evidence dict. Empty dict on any failure
+        — the caller falls back to per-source LLM/heuristic.
+        """
+        if not sources:
+            return {}
+
+        # Render each source as a compact indexed block. Content cap of
+        # 1200 chars (down from 2000 per-source) so the batch fits well
+        # under typical 8k-input ceilings on the free Gemini tier.
+        per_source_content_cap = 1200
+        blocks = []
+        for i, ev in enumerate(sources, 1):
+            content = (
+                ev.get("full_text")
+                or ev.get("relevant_text")
+                or ev.get("snippet")
+                or ev.get("title")
+                or ""
+            )
+            blocks.append(
+                f"[{i}] SOURCE: {ev.get('source_name', 'Unknown')}\n"
+                f"    TYPE: {ev.get('source_type', 'Web Source')}\n"
+                f"    URL: {ev.get('url', '')}\n"
+                f"    CONTENT: {str(content)[:per_source_content_cap]}"
+            )
+        prompt = (
+            "Evaluate the following sources. Return one entry per source, "
+            "in order, with matching `index`.\n\n" + "\n\n".join(blocks)
+        )
+
+        try:
+            response = asyncio.run(
+                asyncio.wait_for(
+                    call_llm(
+                        "credibility_analysis",
+                        prompt,
+                        system=SOURCE_CREDIBILITY_BATCH_PROMPT,
+                    ),
+                    timeout=self.llm_timeout_seconds * 2,  # batch is heavier
+                )
+            )
+        except Exception as e:
+            print(f"      ⚠️ Batched credibility call failed: {e}")
+            return {}
+
+        if not response:
+            return {}
+
+        # Strip ``` fences then extract the outer JSON object.
+        cleaned = re.sub(r"```\s*json?\s*", "", response)
+        cleaned = re.sub(r"```\s*", "", cleaned)
+        start = cleaned.find("{")
+        end = cleaned.rfind("}") + 1
+        if start == -1 or end <= start:
+            print("      ⚠️ Batched credibility response had no JSON object")
+            return {}
+
+        try:
+            payload = json.loads(cleaned[start:end])
+        except json.JSONDecodeError as e:
+            print(f"      ⚠️ Batched credibility JSON parse failed: {e}")
+            return {}
+
+        evaluations = payload.get("evaluations") or []
+        out: Dict[int, Dict[str, Any]] = {}
+        for entry in evaluations:
+            if not isinstance(entry, dict):
+                continue
+            idx = entry.get("index")
+            if not isinstance(idx, int) or idx < 1 or idx > len(sources):
+                continue
+            entry["analysis_method"] = "llm_batched"
+            out[idx - 1] = entry  # back to 0-based for caller pairing
+        return out
+
     def _analyze_single_source(self, evidence: Dict[str, Any], use_llm: bool = True) -> Dict[str, Any]:
         """Analyze a single source for credibility and bias using LLM"""
         

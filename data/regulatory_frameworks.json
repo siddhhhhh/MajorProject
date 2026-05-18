@@ -1,0 +1,580 @@
+{
+  "schema_version": "1.1",
+  "registry_version": "2026-05-17.v2",
+  "maintained_by": "ESGLens — curated regulatory framework registry",
+  "notes": [
+    "HAND-MAINTAINED. Add / update / retire frameworks here. The pipeline reads weights, applicability, version, status, AND claim_validation_rules from this file at run time.",
+    "v1.1 adds: aliases[] for cross-naming, scanner_reg_id for the scanner's internal mapping, claim_validation_rules[] (Gap 2 — moved out of agents/regulatory_scanner.py::_initialize_regulations).",
+    "Layered status logic (SBTi registry guard, net-zero claim cross-check, carbon-validator override) stays in code — it's branching logic, not data.",
+    "When a framework changes: bump `version`, set previous one's `sunset_date`, add the new version row. Reports stay reproducible because each report stamps the registry_version it used."
+  ],
+  "frameworks": [
+    {
+      "framework_id": "sec_climate_disclosure_rule",
+      "name": "SEC Climate Disclosure Rule",
+      "aliases": ["SEC Climate Disclosure Rules", "SEC_CLIMATE"],
+      "scanner_reg_id": "SEC_CLIMATE",
+      "authority": "U.S. Securities and Exchange Commission",
+      "version": "2024.03",
+      "effective_date": "2024-03-06",
+      "sunset_date": null,
+      "status": "stable",
+      "weight": 1.0,
+      "jurisdiction": "United States",
+      "jurisdiction_applicability": {"country_codes": ["US", "USA"], "company_name_hints": []},
+      "industry_applicability": {"include": ["all"], "exclude": []},
+      "lookup_strategy": "sec_edgar_ticker",
+      "key_requirements": [
+        "Climate-related risk disclosure in 10-K filings",
+        "GHG emissions data (Scope 1, 2 for Large Accelerated Filers)",
+        "Board oversight of climate risk"
+      ],
+      "claim_validation_rules": [
+        {"pattern": "climate risk|transition plan", "requirement": "Must file with SEC Form 10-K"},
+        {"pattern": "net zero|emission reduction", "requirement": "Must disclose in SEC filings with material assumptions"}
+      ],
+      "source_url": "https://www.sec.gov/rules/final/2024/33-11275.pdf",
+      "last_reviewed": "2026-05-17",
+      "tier": 1
+    },
+    {
+      "framework_id": "ftc_green_guides",
+      "name": "FTC Green Guides",
+      "aliases": ["FTC_GREEN_GUIDES"],
+      "scanner_reg_id": "FTC_GREEN_GUIDES",
+      "authority": "U.S. Federal Trade Commission",
+      "version": "2012.10",
+      "effective_date": "2012-10-01",
+      "sunset_date": null,
+      "status": "under_consultation",
+      "status_note": "FTC publicly reopened the Green Guides review in 2022; updated version expected. Score against the current version with caution.",
+      "weight": 1.0,
+      "jurisdiction": "United States",
+      "jurisdiction_applicability": {"country_codes": ["US", "USA"], "company_name_hints": []},
+      "industry_applicability": {"include": ["all"], "exclude": []},
+      "lookup_strategy": "ftc_enforcement_database",
+      "key_requirements": [
+        "No vague claims (eco-friendly, green, sustainable) without substantiation",
+        "Carbon offset claims must be additional + verifiable",
+        "Recyclable / compostable claims must meet specified thresholds"
+      ],
+      "claim_validation_rules": [
+        {"pattern": "biodegradable|compostable", "requirement": "Must degrade within 1 year in customary disposal"},
+        {"pattern": "recyclable", "requirement": "Must be recyclable in substantial majority of communities"},
+        {"pattern": "carbon neutral|carbon offset", "requirement": "Must substantiate with reliable offsets"}
+      ],
+      "source_url": "https://www.ftc.gov/legal-library/browse/federal-register-notices/16-cfr-part-260-guides-use-environmental-marketing-claims",
+      "last_reviewed": "2026-05-17",
+      "tier": 1
+    },
+    {
+      "framework_id": "sebi_brsr_in",
+      "name": "SEBI BRSR (Business Responsibility and Sustainability Report)",
+      "aliases": ["SEBI BRSR (India)", "SEBI_BRSR", "SEBI BRSR"],
+      "scanner_reg_id": "SEBI_BRSR",
+      "authority": "Securities and Exchange Board of India",
+      "version": "2023.07",
+      "effective_date": "2023-07-12",
+      "sunset_date": null,
+      "status": "stable",
+      "weight": 1.0,
+      "jurisdiction": "India",
+      "jurisdiction_applicability": {"country_codes": ["IN", "IND", "INDIA"], "company_name_hints": ["NSE", "BSE"]},
+      "industry_applicability": {"include": ["all"], "exclude": []},
+      "lookup_strategy": "sebi_nse_bse_listed",
+      "key_requirements": [
+        "Top-1000 listed companies must file BRSR annually",
+        "9 principles covering ethics, sustainability, human rights, environment",
+        "BRSR Core for top-150 with assurance"
+      ],
+      "claim_validation_rules": [
+        {"pattern": "net zero|carbon neutral", "requirement": "Must disclose Scope 1, 2, 3 emissions with baseline"},
+        {"pattern": "renewable energy|clean energy", "requirement": "Must disclose % from renewable sources"},
+        {"pattern": "water positive|water neutral", "requirement": "Must disclose water withdrawal and recycling data"},
+        {"pattern": "zero waste|waste reduction", "requirement": "Must disclose waste by type and disposal method"}
+      ],
+      "source_url": "https://www.sebi.gov.in/legal/circulars/jul-2023/business-responsibility-and-sustainability-reporting-by-listed-entities_73848.html",
+      "last_reviewed": "2026-05-17",
+      "tier": 1
+    },
+    {
+      "framework_id": "mca_companies_act",
+      "name": "MCA Companies Act 2013 - ESG Provisions",
+      "aliases": ["MCA Companies Act (CSR Rules)", "MCA_COMPANIES_ACT"],
+      "scanner_reg_id": "MCA_COMPANIES_ACT",
+      "authority": "Ministry of Corporate Affairs, India",
+      "version": "Companies-Act-2013",
+      "effective_date": "2013-08-29",
+      "sunset_date": null,
+      "status": "stable",
+      "weight": 0.9,
+      "jurisdiction": "India",
+      "jurisdiction_applicability": {"country_codes": ["IN", "IND", "INDIA"], "company_name_hints": ["NSE", "BSE"]},
+      "industry_applicability": {"include": ["all"], "exclude": []},
+      "lookup_strategy": "mca_csr_filing",
+      "key_requirements": [
+        "Board Report must include CSR activities (Section 134)",
+        "CSR spending mandate - 2% of average net profits (Section 135)",
+        "Director responsibility for ESG oversight",
+        "Annual Return disclosure of energy conservation (Rule 8)",
+        "Secretarial Audit for listed companies"
+      ],
+      "claim_validation_rules": [
+        {"pattern": "csr|corporate social responsibility", "requirement": "Must have Board CSR committee, 2% spending mandate"},
+        {"pattern": "community investment|social impact", "requirement": "Must align with Schedule VII activities"}
+      ],
+      "source_url": "https://www.mca.gov.in/content/mca/global/en/acts-rules/ebooks/acts.html",
+      "last_reviewed": "2026-05-17",
+      "tier": 2
+    },
+    {
+      "framework_id": "cpcb_epa",
+      "name": "CPCB Environmental Compliance (EPA 1986)",
+      "aliases": ["CPCB Environmental Compliance", "CPCB_EPA"],
+      "scanner_reg_id": "CPCB_EPA",
+      "authority": "Central Pollution Control Board / MoEFCC",
+      "version": "EPA-1986",
+      "effective_date": "1986-11-19",
+      "sunset_date": null,
+      "status": "stable",
+      "weight": 0.8,
+      "jurisdiction": "India",
+      "jurisdiction_applicability": {"country_codes": ["IN", "IND", "INDIA"], "company_name_hints": ["NSE", "BSE"]},
+      "industry_applicability": {"include": ["all"], "exclude": []},
+      "lookup_strategy": "cpcb_compliance_check",
+      "key_requirements": [
+        "Consent to Establish (CTE) and Consent to Operate (CTO)",
+        "Emission standards compliance for 17 categories",
+        "Effluent discharge standards",
+        "Hazardous waste management rules",
+        "Environmental audit and compliance reports",
+        "Real-time emission monitoring (OCEMS)"
+      ],
+      "claim_validation_rules": [
+        {"pattern": "pollution free|zero discharge", "requirement": "Must have valid CTO and compliance certificates"},
+        {"pattern": "emission reduction|clean production", "requirement": "Must show CPCB compliance data"}
+      ],
+      "source_url": "https://cpcb.nic.in/",
+      "last_reviewed": "2026-05-17",
+      "tier": 2
+    },
+    {
+      "framework_id": "rbi_green_finance",
+      "name": "RBI Green Finance Guidelines",
+      "aliases": ["RBI Green Finance Framework", "RBI_GREEN_FINANCE"],
+      "scanner_reg_id": "RBI_GREEN_FINANCE",
+      "authority": "Reserve Bank of India",
+      "version": "2023.01",
+      "effective_date": "2023-01-01",
+      "sunset_date": null,
+      "status": "stable",
+      "weight": 0.8,
+      "jurisdiction": "India",
+      "jurisdiction_applicability": {"country_codes": ["IN", "IND", "INDIA"], "company_name_hints": ["NSE", "BSE"]},
+      "industry_applicability": {"include": ["banking", "financial", "insur", "asset manag", "all"], "exclude": []},
+      "lookup_strategy": "rbi_regulated_entity",
+      "key_requirements": [
+        "Climate risk stress testing for banks",
+        "Green bond framework compliance",
+        "Disclosure of climate-related financial risks",
+        "Green taxonomy alignment for loans",
+        "Environmental and Social risk assessment in lending"
+      ],
+      "claim_validation_rules": [
+        {"pattern": "green bond|sustainable finance", "requirement": "Must comply with RBI green bond framework"},
+        {"pattern": "climate risk|transition risk", "requirement": "Must disclose climate risk assessment"}
+      ],
+      "source_url": "https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx",
+      "last_reviewed": "2026-05-17",
+      "tier": 2
+    },
+    {
+      "framework_id": "india_bee_pat",
+      "name": "BEE PAT Scheme (Perform, Achieve, Trade)",
+      "aliases": ["India PAT Scheme (Perform, Achieve and Trade)", "BEE_PAT", "INDIA_BEE_PAT"],
+      "scanner_reg_id": "INDIA_BEE_PAT",
+      "authority": "Bureau of Energy Efficiency",
+      "version": "PAT-Cycle",
+      "effective_date": "2012-04-01",
+      "sunset_date": null,
+      "status": "stable",
+      "weight": 0.7,
+      "jurisdiction": "India",
+      "jurisdiction_applicability": {"country_codes": ["IN", "IND", "INDIA"], "company_name_hints": ["NSE", "BSE"]},
+      "industry_applicability": {"include": ["all"], "exclude": []},
+      "lookup_strategy": "bee_designated_consumer",
+      "key_requirements": [
+        "Specific Energy Consumption (SEC) targets",
+        "Energy audit by BEE accredited auditors",
+        "Energy Saving Certificates (ESCerts) trading",
+        "Mandatory reporting of energy consumption"
+      ],
+      "claim_validation_rules": [
+        {"pattern": "energy efficiency|energy saving", "requirement": "Must show PAT compliance if Designated Consumer"}
+      ],
+      "source_url": "https://beeindia.gov.in/content/pat-3",
+      "last_reviewed": "2026-05-17",
+      "tier": 3
+    },
+    {
+      "framework_id": "sbti",
+      "name": "Science Based Targets initiative",
+      "aliases": ["SBTi", "SBTI"],
+      "scanner_reg_id": "SBTI",
+      "authority": "SBTi (CDP, UN Global Compact, WRI, WWF partnership)",
+      "version": "Net-Zero.v1.2",
+      "effective_date": "2024-04-01",
+      "sunset_date": null,
+      "status": "under_consultation",
+      "status_note": "SBTi Corporate Net-Zero Standard v2 in active public consultation; methodology updates expected late 2026. Validated targets remain authoritative.",
+      "weight": 1.0,
+      "jurisdiction": "Global",
+      "jurisdiction_applicability": {"country_codes": ["*"], "company_name_hints": []},
+      "industry_applicability": {"include": ["all"], "exclude": []},
+      "lookup_strategy": "sbti_registry",
+      "key_requirements": [
+        "Near-term target validated (5-10 yr horizon, 1.5°C aligned)",
+        "Long-term net-zero target validated (by 2050)",
+        "Scope 1, 2, 3 boundary disclosed"
+      ],
+      "claim_validation_rules": [
+        {"pattern": "science based|sbti|1.5", "requirement": "Must have SBTi validated target"},
+        {"pattern": "paris aligned|paris agreement", "requirement": "Must show alignment pathway"}
+      ],
+      "source_url": "https://sciencebasedtargets.org/companies-taking-action",
+      "last_reviewed": "2026-05-17",
+      "tier": 2
+    },
+    {
+      "framework_id": "cdp",
+      "name": "CDP (Carbon Disclosure Project)",
+      "aliases": ["CDP"],
+      "scanner_reg_id": "CDP",
+      "authority": "CDP Worldwide",
+      "version": "2024.disclosure",
+      "effective_date": "2024-04-01",
+      "sunset_date": null,
+      "status": "stable",
+      "weight": 1.0,
+      "jurisdiction": "Global",
+      "jurisdiction_applicability": {"country_codes": ["*"], "company_name_hints": []},
+      "industry_applicability": {"include": ["all"], "exclude": []},
+      "lookup_strategy": "cdp_questionnaire_submitter",
+      "key_requirements": [
+        "Annual disclosure questionnaire (Climate Change, Water, Forests)",
+        "A-List qualification = leadership tier",
+        "Public scoring band (A through F)"
+      ],
+      "claim_validation_rules": [
+        {"pattern": "cdp score|cdp a list", "requirement": "Must submit annual CDP questionnaire"},
+        {"pattern": "supplier engagement", "requirement": "Must have supplier CDP program"}
+      ],
+      "source_url": "https://www.cdp.net/en/companies/companies-scores",
+      "last_reviewed": "2026-05-17",
+      "tier": 2
+    },
+    {
+      "framework_id": "csrd_eu",
+      "name": "EU Corporate Sustainability Reporting Directive",
+      "aliases": ["CSRD / EU ESEF Filing", "CSRD", "EU_CSRD"],
+      "scanner_reg_id": "EU_CSRD",
+      "authority": "European Commission",
+      "version": "2023.01",
+      "effective_date": "2024-01-01",
+      "sunset_date": null,
+      "status": "stable",
+      "weight": 1.0,
+      "jurisdiction": "European Union",
+      "jurisdiction_applicability": {"country_codes": ["EU", "DE", "FR", "IT", "ES", "NL", "BE", "AT", "DK", "SE", "FI", "IE", "PT", "GR", "PL", "CZ", "HU", "RO", "CH"], "company_name_hints": []},
+      "industry_applicability": {"include": ["all"], "exclude": []},
+      "lookup_strategy": "eu_esef_filer",
+      "key_requirements": [
+        "Double materiality assessment (financial + impact)",
+        "Scope 1, 2, 3 emissions + reduction pathway",
+        "Assurance by accredited body"
+      ],
+      "claim_validation_rules": [
+        {"pattern": "sustainable|sustainability", "requirement": "Must comply with ESRS double materiality"},
+        {"pattern": "value chain|supply chain esg", "requirement": "Must conduct value chain due diligence"},
+        {"pattern": "science based|sbti", "requirement": "Must show SBTi validation"}
+      ],
+      "source_url": "https://finance.ec.europa.eu/capital-markets-union-and-financial-markets/company-reporting-and-auditing/company-reporting/corporate-sustainability-reporting_en",
+      "last_reviewed": "2026-05-17",
+      "tier": 2
+    },
+    {
+      "framework_id": "eu_taxonomy",
+      "name": "EU Taxonomy Regulation",
+      "aliases": ["EU_TAXONOMY"],
+      "scanner_reg_id": "EU_TAXONOMY",
+      "authority": "European Commission",
+      "version": "2022.01",
+      "effective_date": "2022-01-01",
+      "sunset_date": null,
+      "status": "stable",
+      "weight": 0.9,
+      "jurisdiction": "European Union",
+      "jurisdiction_applicability": {"country_codes": ["EU", "DE", "FR", "IT", "ES", "NL", "BE", "AT", "DK", "SE", "FI", "IE", "PT", "GR", "PL", "CZ", "HU", "RO", "CH"], "company_name_hints": []},
+      "industry_applicability": {"include": ["all"], "exclude": []},
+      "lookup_strategy": "eu_taxonomy_alignment",
+      "key_requirements": [
+        "Taxonomy alignment of economic activities",
+        "Substantial contribution to 1 of 6 environmental objectives",
+        "Do No Significant Harm (DNSH) criteria",
+        "Minimum social safeguards",
+        "Taxonomy-aligned revenue, CapEx, OpEx disclosure"
+      ],
+      "claim_validation_rules": [
+        {"pattern": "taxonomy aligned|eu taxonomy", "requirement": "Must meet substantial contribution and DNSH criteria"},
+        {"pattern": "green investment|sustainable investment", "requirement": "Must show taxonomy alignment percentage"}
+      ],
+      "source_url": "https://finance.ec.europa.eu/sustainable-finance/tools-and-standards/eu-taxonomy-sustainable-activities_en",
+      "last_reviewed": "2026-05-17",
+      "tier": 2
+    },
+    {
+      "framework_id": "eu_sfdr",
+      "name": "EU Sustainable Finance Disclosure Regulation",
+      "aliases": ["EU SFDR", "EU_SFDR"],
+      "scanner_reg_id": "EU_SFDR",
+      "authority": "European Commission",
+      "version": "2021.03",
+      "effective_date": "2021-03-10",
+      "sunset_date": null,
+      "status": "stable",
+      "weight": 0.8,
+      "jurisdiction": "European Union",
+      "jurisdiction_applicability": {"country_codes": ["EU", "DE", "FR", "IT", "ES", "NL", "BE", "AT", "DK", "SE", "FI", "IE", "PT", "GR", "PL", "CZ", "HU", "RO", "CH"], "company_name_hints": []},
+      "industry_applicability": {"include": ["banking", "financial", "insur", "asset manag", "invest"], "exclude": []},
+      "lookup_strategy": "sfdr_classification",
+      "key_requirements": [
+        "ESG risk integration in investment process",
+        "Principal Adverse Impact (PAI) statements",
+        "Article 8 (promotes ESG) / Article 9 (sustainable objective) classification",
+        "Pre-contractual and periodic disclosures"
+      ],
+      "claim_validation_rules": [
+        {"pattern": "esg fund|sustainable fund", "requirement": "Must classify under SFDR Article 8 or 9"},
+        {"pattern": "impact investment", "requirement": "Must show Article 9 objective"}
+      ],
+      "source_url": "https://finance.ec.europa.eu/sustainable-finance/disclosures/sustainability-related-disclosure-financial-services-sector_en",
+      "last_reviewed": "2026-05-17",
+      "tier": 2
+    },
+    {
+      "framework_id": "uk_fca_antigreenwashing",
+      "name": "FCA Anti-Greenwashing Rule",
+      "aliases": ["UK FCA Anti-Greenwashing", "UK_FCA_ANTIGREENWASHING"],
+      "scanner_reg_id": "UK_FCA_ANTIGREENWASHING",
+      "authority": "Financial Conduct Authority",
+      "version": "2024.05",
+      "effective_date": "2024-05-31",
+      "sunset_date": null,
+      "status": "stable",
+      "weight": 1.0,
+      "jurisdiction": "United Kingdom",
+      "jurisdiction_applicability": {"country_codes": ["UK", "GB"], "company_name_hints": ["LONDON"]},
+      "industry_applicability": {"include": ["all"], "exclude": []},
+      "lookup_strategy": "fca_authorised_firm",
+      "key_requirements": [
+        "Sustainability claims must be fair, clear, not misleading",
+        "Claims must be capable of substantiation",
+        "No cherry-picking or selective disclosure",
+        "Applies to ALL sustainability-related claims"
+      ],
+      "claim_validation_rules": [
+        {"pattern": "sustainable|green|ethical", "requirement": "Must be substantiated and not misleading"},
+        {"pattern": "esg|responsible investment", "requirement": "Must have clear methodology"}
+      ],
+      "source_url": "https://www.fca.org.uk/firms/sustainability-disclosure-investment-labels",
+      "last_reviewed": "2026-05-17",
+      "tier": 1
+    },
+    {
+      "framework_id": "uk_tcfd_mandatory",
+      "name": "UK TCFD Mandatory Disclosure",
+      "aliases": ["UK TCFD-Aligned Disclosure Requirements", "UK_TCFD"],
+      "scanner_reg_id": "UK_TCFD",
+      "authority": "HM Treasury / FCA",
+      "version": "2022.04",
+      "effective_date": "2022-04-06",
+      "sunset_date": null,
+      "status": "stable",
+      "weight": 0.9,
+      "jurisdiction": "United Kingdom",
+      "jurisdiction_applicability": {"country_codes": ["UK", "GB"], "company_name_hints": ["LONDON"]},
+      "industry_applicability": {"include": ["all"], "exclude": []},
+      "lookup_strategy": "uk_tcfd_filer",
+      "key_requirements": [
+        "Governance of climate risks and opportunities",
+        "Strategy including scenario analysis",
+        "Risk management processes",
+        "Metrics and targets including GHG emissions"
+      ],
+      "claim_validation_rules": [
+        {"pattern": "climate strategy|tcfd", "requirement": "Must disclose 4 TCFD pillars"},
+        {"pattern": "scenario analysis|climate scenario", "requirement": "Must include 1.5°C and 2°C+ scenarios"}
+      ],
+      "source_url": "https://www.gov.uk/government/publications/uk-mandatory-tcfd-aligned-disclosures",
+      "last_reviewed": "2026-05-17",
+      "tier": 2
+    },
+    {
+      "framework_id": "tcfd",
+      "name": "TCFD-aligned Climate Disclosure",
+      "aliases": ["TCFD"],
+      "scanner_reg_id": null,
+      "authority": "Task Force on Climate-related Financial Disclosures (now ISSB)",
+      "version": "2017.final",
+      "effective_date": "2017-06-29",
+      "sunset_date": "2024-07-01",
+      "status": "deprecated",
+      "status_note": "TCFD officially folded into ISSB IFRS S2 in 2024. Existing TCFD-aligned reports still recognized; new disclosures should use IFRS S2.",
+      "weight": 0.9,
+      "jurisdiction": "United Kingdom (originally voluntary, now ISSB)",
+      "jurisdiction_applicability": {"country_codes": ["UK", "GB"], "company_name_hints": ["LONDON"]},
+      "industry_applicability": {"include": ["all"], "exclude": []},
+      "lookup_strategy": "tcfd_supporter_registry",
+      "key_requirements": [
+        "Governance, Strategy, Risk Management, Metrics & Targets pillars",
+        "Climate scenario analysis",
+        "Cross-reference to IFRS S2 where adopted"
+      ],
+      "claim_validation_rules": [],
+      "source_url": "https://www.fsb-tcfd.org/recommendations/",
+      "last_reviewed": "2026-05-17",
+      "tier": 2
+    },
+    {
+      "framework_id": "ifrs_s2",
+      "name": "IFRS S2 Climate Disclosures",
+      "aliases": ["IFRS S2", "ISSB S2"],
+      "scanner_reg_id": null,
+      "authority": "International Sustainability Standards Board (IFRS Foundation)",
+      "version": "2023.06",
+      "effective_date": "2024-01-01",
+      "sunset_date": null,
+      "status": "stable",
+      "weight": 1.0,
+      "jurisdiction": "Global (adopted per-jurisdiction)",
+      "jurisdiction_applicability": {"country_codes": ["*"], "company_name_hints": []},
+      "industry_applicability": {"include": ["all"], "exclude": []},
+      "lookup_strategy": "issb_adopter_registry",
+      "key_requirements": [
+        "Successor to TCFD — same 4 pillars + sector-specific metrics",
+        "Scope 1, 2 mandatory; Scope 3 from year 2",
+        "Cross-industry standardised metrics"
+      ],
+      "claim_validation_rules": [],
+      "source_url": "https://www.ifrs.org/issued-standards/ifrs-sustainability-standards-navigator/ifrs-s2-climate-related-disclosures/",
+      "last_reviewed": "2026-05-17",
+      "tier": 2
+    },
+    {
+      "framework_id": "un_global_compact",
+      "name": "UN Global Compact",
+      "aliases": ["UN GC", "UNGC"],
+      "scanner_reg_id": null,
+      "authority": "United Nations",
+      "version": "Ten-Principles.v1",
+      "effective_date": "2000-07-26",
+      "sunset_date": null,
+      "status": "stable",
+      "weight": 0.8,
+      "jurisdiction": "Global",
+      "jurisdiction_applicability": {"country_codes": ["*"], "company_name_hints": []},
+      "industry_applicability": {"include": ["all"], "exclude": []},
+      "lookup_strategy": "un_gc_participant_registry",
+      "key_requirements": [
+        "Commitment letter from CEO",
+        "Annual Communication on Progress (CoP)",
+        "10 principles: human rights, labour, environment, anti-corruption"
+      ],
+      "claim_validation_rules": [],
+      "source_url": "https://www.unglobalcompact.org/what-is-gc/participants",
+      "last_reviewed": "2026-05-17",
+      "tier": 2
+    },
+    {
+      "framework_id": "gri",
+      "name": "GRI Sustainability Reporting Standards",
+      "aliases": ["GRI Standards", "GRI_STANDARDS"],
+      "scanner_reg_id": "GRI_STANDARDS",
+      "authority": "Global Reporting Initiative",
+      "version": "Universal-2021",
+      "effective_date": "2023-01-01",
+      "sunset_date": null,
+      "status": "stable",
+      "weight": 0.8,
+      "jurisdiction": "Global",
+      "jurisdiction_applicability": {"country_codes": ["*"], "company_name_hints": []},
+      "industry_applicability": {"include": ["all"], "exclude": []},
+      "lookup_strategy": "gri_database_lookup",
+      "key_requirements": [
+        "Materiality assessment with stakeholder engagement",
+        "Universal standards (GRI 1, 2, 3) + topic standards",
+        "Public reporting"
+      ],
+      "claim_validation_rules": [
+        {"pattern": "gri report|gri standards", "requirement": "Must follow GRI Universal Standards 2021"},
+        {"pattern": "materiality assessment", "requirement": "Must show stakeholder engagement process"}
+      ],
+      "source_url": "https://www.globalreporting.org/standards/",
+      "last_reviewed": "2026-05-17",
+      "tier": 2
+    },
+    {
+      "framework_id": "nse_bse_listed",
+      "name": "NSE/BSE Listed Equity",
+      "aliases": [],
+      "scanner_reg_id": null,
+      "authority": "National Stock Exchange / Bombay Stock Exchange",
+      "version": "listed-equity",
+      "effective_date": "1994-11-03",
+      "sunset_date": null,
+      "status": "stable",
+      "weight": 0.7,
+      "jurisdiction": "India",
+      "jurisdiction_applicability": {"country_codes": ["IN", "IND", "INDIA"], "company_name_hints": ["NSE", "BSE"]},
+      "industry_applicability": {"include": ["all"], "exclude": []},
+      "lookup_strategy": "nse_bse_listing_check",
+      "key_requirements": [
+        "Listed equity at NSE or BSE",
+        "Used primarily as a BRSR applicability gate, not a standalone compliance signal"
+      ],
+      "claim_validation_rules": [],
+      "source_url": "https://www.nseindia.com/market-data/securities-available-for-trading",
+      "last_reviewed": "2026-05-17",
+      "tier": 3
+    },
+    {
+      "framework_id": "ghg_protocol",
+      "name": "GHG Protocol Corporate Standard",
+      "aliases": ["GHG Protocol", "GHG_PROTOCOL"],
+      "scanner_reg_id": "GHG_PROTOCOL",
+      "authority": "World Resources Institute + WBCSD",
+      "version": "Corporate-Standard.revised",
+      "effective_date": "2004-03-01",
+      "sunset_date": null,
+      "status": "under_consultation",
+      "status_note": "GHG Protocol launched major Scope 2/Scope 3 standard updates in late 2024 with finalisation expected 2026-2027.",
+      "weight": 0.7,
+      "jurisdiction": "Global",
+      "jurisdiction_applicability": {"country_codes": ["*"], "company_name_hints": []},
+      "industry_applicability": {"include": ["all"], "exclude": []},
+      "lookup_strategy": "in_disclosure_inference",
+      "key_requirements": [
+        "Scope 1, 2, 3 emissions inventoried per GHG Protocol categories",
+        "Boundaries defined (operational / financial / equity-share)",
+        "Methodology disclosed (location-based vs market-based for Scope 2)"
+      ],
+      "claim_validation_rules": [
+        {"pattern": "scope 1|scope 2|scope 3", "requirement": "Must follow GHG Protocol methodology"},
+        {"pattern": "carbon footprint|ghg inventory", "requirement": "Must cover all material emission sources"}
+      ],
+      "source_url": "https://ghgprotocol.org/corporate-standard",
+      "last_reviewed": "2026-05-17",
+      "tier": 3
+    }
+  ]
+}

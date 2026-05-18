@@ -636,7 +636,7 @@ class ProfessionalReportGenerator:
 
     def _render_esg_mismatch_section(self, state: Dict[str, Any], major: str) -> List[str]:
         """Render a dedicated mismatch section so it is always visible in text reports."""
-        section = [major, "SECTION 12: ESG MISMATCH DETECTOR", major]
+        section = [major, "SECTION 12A: ESG MISMATCH DETECTOR", major]
         mismatch = state.get("esg_mismatch_analysis")
 
         if not isinstance(mismatch, dict) or not mismatch:
@@ -758,7 +758,7 @@ class ProfessionalReportGenerator:
         return "CCC"
 
     def _risk_band(self, score: float) -> str:
-        # MSCI-style 3-band scale (LOW / MODERATE / HIGH). CRITICAL was
+        # 3-band risk scale (LOW / MODERATE / HIGH). CRITICAL was
         # collapsed into HIGH May-2026 per design call — splitting HIGH
         # further added confusion without changing decision behaviour.
         if score >= 60:
@@ -900,6 +900,35 @@ class ProfessionalReportGenerator:
         # LOW in the JSON.
         _quality_label = quality.get("report_confidence_level") if isinstance(quality, dict) else None
         conf_label = self._confidence_label(conf_pct, quality_label=_quality_label)
+
+        # ── LLM-variance confidence band ────────────────────────────────────
+        # Attach empirical [low, high] bands derived from the variance
+        # harness so headline scores are reported as e.g. "55 [49-61]".
+        # Band width = projected worst-case GW impact across providers.
+        try:
+            from core.confidence_band import (
+                load_latest_variance, get_band_width, clamp_band,
+            )
+            _variance_report = load_latest_variance()
+            _band_half = get_band_width(_variance_report) if _variance_report else None
+            if _band_half is not None and _variance_report is not None:
+                scores["greenwashing_band"] = list(clamp_band(gw_score, _band_half))
+                scores["esg_band"]          = list(clamp_band(esg_score, _band_half))
+                scores["confidence_band"]   = list(clamp_band(conf_pct,
+                                                              max(1.0, _band_half / 2.0)))
+                _summary = (_variance_report.get("aggregate") or {}).get("summary") or {}
+                _proj = _variance_report.get("projected_gw_impact") or {}
+                scores["band_meta"] = {
+                    "source": "llm_variance_harness",
+                    "half_width_points": _band_half,
+                    "method": _proj.get("method"),
+                    "categorical_agreement_rate": _summary.get("categorical_value_agreement_rate"),
+                    "numeric_max_spread": _summary.get("numeric_max_spread"),
+                    "n_probes": _summary.get("n_probes"),
+                    "variance_timestamp_utc": _variance_report.get("timestamp_utc"),
+                }
+        except Exception as _band_exc:  # noqa: BLE001 — bands are advisory
+            print(f"  [confidence_band] skipped: {_band_exc}")
 
         _raw_threshold = calibration.get("optimal_threshold")
         threshold = float(_raw_threshold) if isinstance(_raw_threshold, (int, float)) else None
@@ -1194,6 +1223,12 @@ class ProfessionalReportGenerator:
             "band": band,
             "confidence_pct": conf_pct,
             "confidence_label": conf_label,
+            # Empirical LLM-variance bands (added by A1). None when no
+            # variance report has been generated yet.
+            "gw_band": scores.get("greenwashing_band"),
+            "esg_band": scores.get("esg_band"),
+            "confidence_band": scores.get("confidence_band"),
+            "band_meta": scores.get("band_meta"),
             "threshold": threshold,
             "calibration_status": cal_status,
             "contradiction_output": contradiction_output,
@@ -1384,11 +1419,19 @@ class ProfessionalReportGenerator:
             verdict_findings.append("[i] INFO - Report contains multi-agent triangulation across evidence and scoring")
         verdict_findings = [f for f in verdict_findings if self._is_human_readable_text(f)][:5]
 
+        _section1_gw_b = v.get("gw_band")
+        _section1_gw_band_str = (
+            f" [{_section1_gw_b[0]:.1f}-{_section1_gw_b[1]:.1f}]"
+            if isinstance(_section1_gw_b, (list, tuple)) and len(_section1_gw_b) == 2
+            else ""
+        )
         section1_text = (
             f"This assessment evaluates {v['company']}'s claim using multi-agent evidence retrieval, contradiction checks, and calibrated ESG risk scoring. "
-            f"The resulting greenwashing score is {v['gw_score']:.1f}/100, indicating {v['band'].lower()} risk under the current thresholding policy. "
+            f"The resulting greenwashing score is {v['gw_score']:.1f}{_section1_gw_band_str}/100, indicating {v['band'].lower()} risk under the current thresholding policy. "
             f"The evidence base includes {len(v['citations'])} total sources, with {v['evidence'].get('verifiable_citations', 0)} verifiable citations. "
             f"Overall confidence for this run is {v['confidence_pct']:.1f}% ({v['confidence_label']})."
+            + (" The bracketed interval reflects LLM-variance — different providers land within this band."
+               if _section1_gw_band_str else "")
         )
 
         decomposition = state.get("claim_decomposition") if isinstance(state.get("claim_decomposition"), dict) else {}
@@ -1731,11 +1774,18 @@ class ProfessionalReportGenerator:
             weakest_pillar,
         )
 
+        # Render bands inline when available (e.g. "55.0 [49.0-61.0]/100").
+        _gw_b = v.get("gw_band")
+        _gw_band_str = (
+            f" [{_gw_b[0]:.1f}-{_gw_b[1]:.1f}]"
+            if isinstance(_gw_b, (list, tuple)) and len(_gw_b) == 2
+            else ""
+        )
         score_header = [
             major,
             "SECTION 5: SCORE DERIVATION (E / S / G)",
             major,
-            f"Overall greenwashing risk score: {v['gw_score']:.1f}/100  ->  Rating: {v['rating']}  ->  Band: {v['band']}",
+            f"Overall greenwashing risk score: {v['gw_score']:.1f}{_gw_band_str}/100  ->  Rating: {v['rating']}  ->  Band: {v['band']}",
             "",
             "Score interpretation:",
             self._wrap_paragraph(section5_summary, width=80),
@@ -1748,9 +1798,22 @@ class ProfessionalReportGenerator:
             "  Where: C=Claim Intensity, P=Performance, R=Controversy, D=Disclosure, T=Temporal Escalation",
             "  Note: ESG and Greenwashing scores are INDEPENDENT — a company can have high ESG AND high GW risk.",
             f"  Raw risk score (pre-calibration) = {raw_gw_score:.1f}/100",
-            f"  Final risk score (post-calibration) = {v['gw_score']:.1f}/100  (delta: {calibrated_delta:+.1f})",
+            f"  Final risk score (post-calibration) = {v['gw_score']:.1f}{_gw_band_str}/100  (delta: {calibrated_delta:+.1f})",
             "",
         ]
+        # LLM-variance band explainer — appended only when we have a band.
+        if v.get("band_meta") and _gw_band_str:
+            _bm = v["band_meta"]
+            _agree = _bm.get("categorical_agreement_rate")
+            _n_probes = _bm.get("n_probes")
+            score_header.extend([
+                "LLM variance band [low-high]:",
+                f"  Empirical interval from inter-provider diagnostic ({_n_probes} probes, "
+                f"{(_agree or 0) * 100:.0f}% categorical agreement).",
+                "  Half-width = projected worst-case GW shift across providers; bounds "
+                "clipped to [0,100].",
+                "",
+            ])
         # ── Score Modifier Ledger + GW Formula Inputs ────────────────────
         # Render BEFORE the pillar tables so they don't break the
         # Environmental factor table flow. Look in both the canonical scores
@@ -2073,6 +2136,128 @@ class ProfessionalReportGenerator:
             "",
             major,
         ])
+
+        # ── SECTION 3C: ABSTENTION (SURE-RAG) ─────────────────────────────
+        # Per-sub-claim "we couldn't verify" decisions based on independent
+        # source count, tier mix, and semantic relevance. Honest abstention
+        # is the antidote to hallucination — show the user where we declined.
+        section_3c = [major, "SECTION 3C: ABSTENTION DECISIONS (SURE-RAG)", major]
+        try:
+            from core.abstention_layer import evaluate_state, format_abstention_text
+            _abstain = evaluate_state(state)
+            state["abstention_analysis"] = _abstain
+            section_3c.append(
+                "Per-sub-claim verification: at least 2 independent sources, "
+                "at least 1 Tier 1-2 source, semantic relevance over threshold. "
+                "Sub-claims that fail return INSUFFICIENT_EVIDENCE; the system "
+                "abstains rather than guess."
+            )
+            section_3c.append("")
+            section_3c.extend(format_abstention_text(_abstain))
+        except Exception as _abs_exc:
+            section_3c.append(
+                f"Abstention layer unavailable for this run: {str(_abs_exc)[:160]}"
+            )
+        section_3c.append("")
+        section_3c.append(major)
+
+        # ── SECTION 5E: COUNTERFACTUAL SCENARIOS ──────────────────────────
+        # Show 3 pre-baked "what-if" recomputations so a reader can see how
+        # the headline moves under realistic challenges (lawsuit dismissed,
+        # pathway gap closes, etc.). All scenarios reconcile against the
+        # ledger — no LLM, no synthetic numbers.
+        section_5e = [major, "SECTION 5E: COUNTERFACTUAL SCENARIOS", major]
+        try:
+            # Build a report-shape input the counterfactual module expects.
+            # macro_context + regulatory_registry_snapshot are needed for the
+            # macro-surcharge and frameworks-v-next scenarios to surface in
+            # the text render (they're already in the JSON export).
+            _cf_input = {
+                "scores": v.get("scores") or {},
+                "greenwashingriskscore": (v.get("scores") or {}).get("greenwashingriskscore"),
+                "scoremodifierledger": modifier_ledger,
+                "macro_context": state.get("macro_context") or v.get("macro_context") or {},
+                "regulatory_registry_snapshot": (
+                    state.get("regulatory_registry_snapshot")
+                    or v.get("regulatory_registry_snapshot")
+                    or {}
+                ),
+                "agent_outputs": state.get("agent_outputs") or [],
+                "agent_results": [
+                    {"agent": name, "key_findings": (info or {}).get("output") or {}}
+                    for name, info in (v.get("agents") or {}).items()
+                    if isinstance(info, dict)
+                ],
+            }
+            from core.counterfactual import (
+                prebaked_scenarios, leverage_ranking, format_scenarios_text,
+            )
+            _scenarios = prebaked_scenarios(_cf_input)
+            section_5e.append(
+                "Pre-baked counterfactual scenarios — what the headline would be "
+                "under common challenges. Each recomputation walks the ledger "
+                "deterministically (no LLM, no synthetic deltas)."
+            )
+            section_5e.append("")
+            section_5e.extend(format_scenarios_text(_scenarios))
+            # Top leverage rows
+            _lev = leverage_ranking(_cf_input, top_k=3)
+            if _lev:
+                section_5e.append("")
+                section_5e.append("  Highest-leverage rows (challenge these first):")
+                for ent in _lev:
+                    section_5e.append(
+                        f"    - {ent['label']}: "
+                        f"zeroing -> headline {ent['headline_if_zeroed']:.1f} "
+                        f"(delta={ent['headline_delta']:+.1f})"
+                    )
+        except Exception as _cf_exc:
+            section_5e.append(
+                f"Counterfactual scenarios unavailable: {str(_cf_exc)[:160]}"
+            )
+        section_5e.append("")
+        section_5e.append(major)
+
+        # ── SECTION 5D: SCORE CONTRIBUTORS (attribution) ─────────────────
+        # Decompose the headline score into ranked positive/negative
+        # contributors so a reader can see exactly which signals moved
+        # the number. Reconciliation guard surfaces ledger drift instead
+        # of silent mis-attribution. (5A/5B/5C are already used.)
+        section_5c = [major, "SECTION 5D: SCORE CONTRIBUTORS (WHY THIS SCORE)", major]
+        try:
+            from core.score_attribution import decompose, format_attribution_text
+            # Pass the already-resolved modifier_ledger directly so decompose
+            # doesn't have to re-discover it across nested locations.
+            _decomp_input = {
+                "scores": v.get("scores") or {},
+                "scoremodifierledger": modifier_ledger,
+                "agent_outputs": state.get("agent_outputs") or [],
+                "agent_results": [
+                    {"agent": name, "key_findings": (info or {}).get("output") or {}}
+                    for name, info in (v.get("agents") or {}).items()
+                    if isinstance(info, dict)
+                ],
+            }
+            _decomp = decompose(_decomp_input)
+            section_5c.append(
+                "Decomposes the headline GW score into ranked contributors. "
+                "Each row links to a ledger entry the upstream scorer wrote — "
+                "no LLM rephrasing, no synthetic deltas."
+            )
+            section_5c.append("")
+            section_5c.extend(format_attribution_text(_decomp))
+            if not _decomp.get("reconciles"):
+                section_5c.append("")
+                section_5c.append(
+                    "  [!] Ledger does NOT reconcile to headline within tolerance — "
+                    "report-consistency invariant violated. Check risk_scoring.py."
+                )
+        except Exception as _attr_exc:
+            section_5c.append(
+                f"Score attribution unavailable for this run: {str(_attr_exc)[:160]}"
+            )
+        section_5c.append("")
+        section_5c.append(major)
 
         risk_drivers = self._build_key_risk_drivers(v, state, scope3)
         risk_driver_lines = []
@@ -2820,7 +3005,7 @@ class ProfessionalReportGenerator:
                 _budget_yrs = None
 
             if _budget_yrs is not None and _budget_yrs <= 1.0:
-                # MSCI-style 3-band scale collapses CRITICAL into HIGH.
+                # 3-band risk scale collapses CRITICAL into HIGH.
                 _risk_signal = "HIGH"
                 _risk_basis = (
                     f"carbon budget {_budget_yrs:.1f} yrs remaining at current trajectory — "
@@ -2850,6 +3035,534 @@ class ProfessionalReportGenerator:
                 f"  Carbon Alignment Risk: {_risk_signal} ({_risk_basis})"
             )
         section5b.append(major)
+
+        # ── SECTION 8E: SUBSIDIARY FOOTPRINT (P6) ──────────────────────────
+        sub_walk = state.get("subsidiary_walk") if isinstance(state.get("subsidiary_walk"), dict) else {}
+        section8e: List[str] = []
+        if sub_walk.get("status") and sub_walk.get("status") not in ("NO_SUBSIDIARIES", "ERROR"):
+            section8e = [major, "SECTION 8E: SUBSIDIARY FOOTPRINT (GLEIF + Climate TRACE)", major]
+            section8e.append(
+                "Group-wide emissions exposure via subsidiary walk. "
+                "Coverage score = % of subsidiaries with Climate TRACE asset-level "
+                "matches. Low coverage with high estimated emissions indicates "
+                "the parent's disclosure may under-represent group-wide reality."
+            )
+            section8e.append("")
+            section8e.append(f"  Parent LEI:              {sub_walk.get('parent_lei', '?')}")
+            section8e.append(f"  Subsidiaries walked:     {len(sub_walk.get('subsidiaries') or [])}")
+            section8e.append(
+                f"  Coverage score:          {sub_walk.get('subsidiary_coverage_score', 0)}%"
+            )
+            section8e.append(
+                f"  Aggregate subsidiary emissions: "
+                f"{(sub_walk.get('total_subsidiary_emissions_tco2e') or 0)/1e6:.2f} MtCO2e"
+            )
+            section8e.append(f"  Status:                  {sub_walk.get('status')}")
+            _sw_delta = sub_walk.get("ledger_delta")
+            if isinstance(_sw_delta, (int, float)) and abs(_sw_delta) >= 0.01:
+                _sign = "+" if _sw_delta > 0 else ""
+                section8e.append(
+                    f"  Ledger contribution:     {_sign}{_sw_delta:.1f} GW points (structural penalty)"
+                )
+            section8e.append("")
+            section8e.append("  Subsidiary breakdown:")
+            for s in (sub_walk.get("subsidiaries") or [])[:10]:
+                section8e.append(
+                    f"    - {(s.get('subsidiary_name') or '?')[:38]:<38} "
+                    f"{(s.get('country_iso3') or '?'):<4} "
+                    f"{(s.get('sector_hint') or '?'):<20} "
+                    f"emissions={s.get('estimated_emissions_tco2e', 0):>11,.0f} tCO2e "
+                    f"[{s.get('estimate_basis', '?')}]"
+                )
+            section8e.append("")
+            section8e.append("  Source: GLEIF concatenated registry + Climate TRACE asset DB.")
+            section8e.append(major)
+
+        # ── SECTION 8D: PCAF FINANCED EMISSIONS (P2) ──────────────────────
+        # Renders only when the financial-services flow ran (status COMPUTED).
+        # Replaces the old "JPMorgan scores 0/100 due to lawsuit floor" path
+        # with a peer-comparable intensity signal.
+        financed_em = state.get("financed_emissions") if isinstance(
+            state.get("financed_emissions"), dict
+        ) else {}
+        section8d: List[str] = []
+        if financed_em.get("status") == "COMPUTED":
+            section8d = [major, "SECTION 8D: PCAF FINANCED EMISSIONS (Scope 3 Cat 15)", major]
+            section8d.append(
+                "PCAF (Partnership for Carbon Accounting Financials) methodology "
+                "applied to the bank's top portfolio holdings. Intensity is "
+                "benchmarked against peer financial institutions; position vs "
+                "P25/median/P75 drives the headline contribution."
+            )
+            section8d.append("")
+            section8d.append(
+                f"  Data quality:    PCAF Score {financed_em.get('data_quality_score', '?')} "
+                f"(proxy-based — declared openly)"
+            )
+            section8d.append(
+                f"  Methodology:     {financed_em.get('methodology', '?')}"
+            )
+            section8d.append("")
+            _t_fe = financed_em.get("total_financed_emissions_tco2e") or 0
+            _t_out = financed_em.get("total_outstanding_usd_bn") or 0
+            section8d.append(
+                f"  Total financed emissions:  {_t_fe:,.0f} tCO2e "
+                f"({_t_fe/1e6:.2f} MtCO2e)"
+            )
+            section8d.append(
+                f"  Total outstanding (top {len(financed_em.get('rows', []))} counterparties): "
+                f"USD {_t_out:.1f}bn"
+            )
+            section8d.append(
+                f"  Intensity:                 "
+                f"{financed_em.get('intensity_tco2e_per_usdm', 0):.1f} tCO2e/USDm"
+            )
+            bm = financed_em.get("benchmark") or {}
+            section8d.append(
+                f"  Peer benchmark (PCAF):     P25={bm.get('p25', '?')}  "
+                f"median={bm.get('median', '?')}  P75={bm.get('p75', '?')} (tCO2e/USDm)"
+            )
+            section8d.append(
+                f"  Position vs peers:         {financed_em.get('benchmark_position', '?')}"
+            )
+            _fe_delta = financed_em.get("ledger_delta")
+            if isinstance(_fe_delta, (int, float)):
+                _sign = "+" if _fe_delta > 0 else ""
+                section8d.append(
+                    f"  Ledger contribution:       "
+                    f"{_sign}{_fe_delta:.1f} GW points (applied via structural penalty)"
+                )
+            section8d.append("")
+            section8d.append(
+                f"  Top counterparty holdings (financed emissions, tCO2e):"
+            )
+            for r in (financed_em.get("rows") or [])[:8]:
+                section8d.append(
+                    f"    - {r.get('counterparty', '?'):<22} "
+                    f"{r.get('sector', '?'):<22} "
+                    f"AF={r.get('attribution_factor', 0):.4f}  "
+                    f"fe={r.get('financed_emissions_tco2e', 0):>14,.0f}"
+                )
+            section8d.append("")
+            section8d.append(
+                "  Source: PCAF 2024 Global GHG Accounting Standard "
+                "(https://carbonaccountingfinancials.com, CC-BY)."
+            )
+            section8d.append(major)
+
+        # ── SECTION 8C: EMISSIONS GROUND-TRUTH VERIFICATION ──────────────
+        # Independent satellite-derived cross-check via Climate TRACE.
+        # Inflation flagging is the headline signal here; for the demo it
+        # surfaces the Vedanta-style 49x disclosure inflation.
+        emissions_verif = state.get("emissions_verification") if isinstance(
+            state.get("emissions_verification"), dict
+        ) else {}
+        section8c = [major, "SECTION 8C: EMISSIONS GROUND-TRUTH VERIFICATION", major]
+        if not emissions_verif or emissions_verif.get("status") in (None, ""):
+            section8c.append(
+                "Emissions verification did not run for this report. "
+                "Climate TRACE cross-check is enabled by default; this "
+                "entry indicates the verifier could not reach the API."
+            )
+        else:
+            _status = str(emissions_verif.get("status") or "UNKNOWN")
+            _status_label = {
+                "INFLATION_FLAG":   "[!] INFLATION FLAG — disclosed > 2x observed",
+                "UNDERREPORT_FLAG": "[!] UNDERREPORT FLAG — disclosed < 0.5x observed",
+                "PARTIAL_COVERAGE": "[i] PARTIAL COVERAGE — sector ceiling check only",
+                "CONSISTENT":       "[ok] CONSISTENT — within 0.5x-2x observed band",
+                "NOT_APPLICABLE":   "[-] NOT APPLICABLE — industry not covered by Climate TRACE",
+                "NOT_COVERED":      "[-] NOT COVERED — Climate TRACE lookup unavailable",
+            }.get(_status, _status)
+            section8c.append(f"  Status:                {_status_label}")
+            _disc = emissions_verif.get("disclosed_scope1_tco2e")
+            if isinstance(_disc, (int, float)) and _disc > 0:
+                section8c.append(f"  Disclosed Scope 1:     {_disc:,.0f} tCO2e")
+            _obs_a = emissions_verif.get("observed_scope1_tco2e_assets")
+            if isinstance(_obs_a, (int, float)) and _obs_a > 0:
+                section8c.append(f"  Observed (assets):     {_obs_a:,.0f} tCO2e")
+                _r_a = emissions_verif.get("ratio_disclosed_over_observed_assets")
+                if _r_a is not None:
+                    section8c.append(f"  Disclosed / Observed:  {_r_a}x")
+            _obs_s = emissions_verif.get("observed_sector_total_tco2e")
+            if isinstance(_obs_s, (int, float)) and _obs_s > 0:
+                section8c.append(
+                    f"  National sector ceiling: {_obs_s:,.0f} tCO2e "
+                    f"({', '.join(emissions_verif.get('sectors_targeted') or [])})"
+                )
+                _r_s = emissions_verif.get("ratio_disclosed_over_sector_total")
+                if _r_s is not None:
+                    section8c.append(f"  Disclosed / Sector:    {_r_s}x")
+            _country = emissions_verif.get("country")
+            _year = emissions_verif.get("year")
+            if _country and _year:
+                section8c.append(f"  Jurisdiction × Year:   {_country} × {_year}")
+            _matched = emissions_verif.get("matched_assets") or []
+            if _matched:
+                section8c.append("")
+                section8c.append(
+                    f"  Matched facilities ({len(_matched)} of Climate TRACE's "
+                    "satellite-derived asset registry):"
+                )
+                for a in _matched[:6]:
+                    _aname = (a.get("name") or "?")[:55]
+                    _asec = a.get("sector") or "?"
+                    _atco = a.get("tco2e") or 0
+                    section8c.append(
+                        f"    - {_aname:<55} {_asec:<22} {_atco:>15,.0f} tCO2e"
+                    )
+                if len(_matched) > 6:
+                    section8c.append(f"    ... and {len(_matched) - 6} more")
+            _rationale = emissions_verif.get("rationale")
+            if _rationale:
+                section8c.append("")
+                section8c.append("  Rationale:")
+                section8c.append(self._wrap_paragraph("  " + _rationale, width=78))
+            _delta = emissions_verif.get("ledger_delta")
+            if isinstance(_delta, (int, float)) and abs(_delta) >= 0.01:
+                _sign = "+" if _delta > 0 else ""
+                section8c.append("")
+                section8c.append(
+                    f"  Ledger contribution:   {_sign}{_delta:.1f} GW points "
+                    f"(applied via structural penalty)"
+                )
+            section8c.append("")
+            section8c.append(
+                "  Source: " + (emissions_verif.get("attribution") or "Climate TRACE")
+            )
+        section8c.append(major)
+
+        # ── SECTION 9C: REAL-TIME ESG EVENT SIGNAL (GDELT) ────────────────
+        gdelt_block = state.get("gdelt_events") if isinstance(state.get("gdelt_events"), dict) else {}
+        section9c: List[str] = []
+        if gdelt_block.get("status") == "NO_EVENTS":
+            section9c = [
+                major,
+                "SECTION 9C: REAL-TIME ESG EVENT SIGNAL (GDELT)",
+                major,
+                "  NO_EVENTS — GDELT 2.0 returned 0 adverse events in the analysis window.",
+                major,
+            ]
+        elif gdelt_block.get("status") and gdelt_block.get("status") not in ("ERROR",):
+            _gd_events = gdelt_block.get("events") or []
+            section9c = [major, "SECTION 9C: REAL-TIME ESG EVENT SIGNAL (GDELT)", major]
+            section9c.append(
+                "Adverse-event coverage from GDELT 2.0 (free, 100+ languages, "
+                "15-minute resolution). Tone < -3 = adverse; intensity is "
+                "decay-weighted by event age (30-day half-life)."
+            )
+            section9c.append("")
+            section9c.append(f"  Status:            {gdelt_block.get('status')}")
+            section9c.append(f"  Timespan:          {gdelt_block.get('timespan', '?')}")
+            section9c.append(f"  Events detected:   {len(_gd_events)}")
+            section9c.append(
+                f"  Decay-weighted intensity: {gdelt_block.get('decay_weighted_intensity', 0)}"
+            )
+            _gd_delta = gdelt_block.get("ledger_delta")
+            if isinstance(_gd_delta, (int, float)) and abs(_gd_delta) >= 0.01:
+                section9c.append(
+                    f"  Ledger contribution:     +{_gd_delta:.1f} GW points (structural penalty)"
+                )
+            _sum = gdelt_block.get("summary") or {}
+            _bands = _sum.get("by_tone_band") or {}
+            if _bands:
+                section9c.append("")
+                section9c.append("  Tone distribution:")
+                for band, n in _bands.items():
+                    section9c.append(f"    {band}: {n}")
+            _domains = _sum.get("top_domains") or []
+            if _domains:
+                section9c.append("")
+                section9c.append("  Top covering sources:")
+                for d in _domains[:6]:
+                    section9c.append(f"    - {d.get('domain', '?'):<35} ({d.get('count', 0)} articles)")
+            if _gd_events:
+                section9c.append("")
+                section9c.append(f"  Top {min(5, len(_gd_events))} severity-ranked events:")
+                for e in _gd_events[:5]:
+                    section9c.append(
+                        f"    [tone={e.get('tone', 0):>+6.1f}] "
+                        f"{(e.get('source_domain') or '?'):<22}  "
+                        f"{(e.get('headline') or '')[:90]}"
+                    )
+            section9c.append("")
+            section9c.append(
+                "  Source: GDELT Project 2.0 (https://gdeltproject.org, CC-BY)."
+            )
+            section9c.append(major)
+
+        # ── SECTION 7D: ENVIRONMENTAL CAPEX vs VIOLATION HISTORY (P5) ─────
+        rcr_block = state.get("regulatory_cross_ref") if isinstance(state.get("regulatory_cross_ref"), dict) else {}
+        section7d: List[str] = []
+        # Collapse the full frame when the section has no signal — instead
+        # of 12 lines of empty plumbing, render a one-line note that says
+        # WHY it's empty so readers can still cross-reference.
+        if rcr_block.get("status") == "NOT_APPLICABLE":
+            _rationale = (rcr_block.get("rationale") or "Not applicable for this jurisdiction.")[:120]
+            section7d = [
+                major,
+                "SECTION 7D: ENVIRONMENTAL CAPEX vs VIOLATION HISTORY",
+                major,
+                f"  NOT_APPLICABLE — {_rationale}",
+                major,
+            ]
+        elif rcr_block.get("status") and rcr_block.get("status") not in ("ERROR",):
+            section7d = [major, "SECTION 7D: ENVIRONMENTAL CAPEX vs VIOLATION HISTORY", major]
+            section7d.append(
+                "Cross-reference of EPA ECHO enforcement records with SEC EDGAR "
+                "10-K environmental remediation expense disclosures. Fines that "
+                "exceed disclosed capex by a meaningful ratio indicate "
+                "under-investment in compliance (pay-to-pollute pattern)."
+            )
+            section7d.append("")
+            section7d.append(f"  Status:              {rcr_block.get('status')}")
+            section7d.append(
+                f"  EPA fines total:     USD {rcr_block.get('fines_total_usd', 0):,.0f}"
+            )
+            section7d.append(
+                f"  Env capex (3yr):     USD {rcr_block.get('env_capex_total_usd', 0):,.0f}"
+            )
+            _r = rcr_block.get("ratio_fines_over_capex")
+            if _r is not None:
+                section7d.append(f"  Fines / Capex ratio: {_r}")
+            section7d.append(f"  Integrity flag:      {rcr_block.get('integrity_flag', '?')}")
+            _rcr_delta = rcr_block.get("ledger_delta")
+            if isinstance(_rcr_delta, (int, float)) and abs(_rcr_delta) >= 0.01:
+                _sign = "+" if _rcr_delta > 0 else ""
+                section7d.append(
+                    f"  Ledger contribution: {_sign}{_rcr_delta:.1f} GW points (structural penalty)"
+                )
+            epa_sum = rcr_block.get("epa_summary") or {}
+            if epa_sum.get("by_program"):
+                section7d.append("")
+                section7d.append("  EPA violations by program:")
+                for prog, n in (epa_sum.get("by_program") or {}).items():
+                    section7d.append(f"    {prog}: {n} violations")
+            edgar = rcr_block.get("edgar_env_signal") or {}
+            if edgar.get("available"):
+                section7d.append("")
+                section7d.append("  Environmental capex disclosure (EDGAR XBRL):")
+                for y, t in (edgar.get("totals_by_year") or {}).items():
+                    section7d.append(f"    FY{y}: USD {t:,.0f}")
+            section7d.append("")
+            section7d.append("  Source: EPA ECHO + SEC EDGAR XBRL.")
+            section7d.append(major)
+
+        # ── SECTION 7E: RESOLVED LITIGATION DOCKETS (P4) ──────────────────
+        lit_block = state.get("litigation_resolved") if isinstance(state.get("litigation_resolved"), dict) else {}
+        section7e: List[str] = []
+        if lit_block.get("status") == "NO_CASES":
+            section7e = [
+                major,
+                "SECTION 7E: RESOLVED LITIGATION DOCKETS",
+                major,
+                "  NO_CASES — CourtListener + Indian Kanoon returned no matching dockets.",
+                major,
+            ]
+        elif lit_block.get("status") and lit_block.get("status") not in ("ERROR",):
+            section7e = [major, "SECTION 7E: RESOLVED LITIGATION DOCKETS", major]
+            section7e.append(
+                "Real docket status from CourtListener (US federal RECAP) + "
+                "Indian Kanoon. Replaces pattern-match enforcement counting "
+                "with weighted intensity that down-weights SETTLED / DISMISSED."
+            )
+            section7e.append("")
+            section7e.append(f"  Status:                    {lit_block.get('status')}")
+            _counts = lit_block.get("status_counts") or {}
+            section7e.append(
+                f"  ACTIVE / SETTLED / DISMISSED:  "
+                f"{_counts.get('ACTIVE', 0)} / {_counts.get('SETTLED', 0)} / {_counts.get('DISMISSED', 0)}"
+            )
+            section7e.append(
+                f"  Weighted intensity:        {lit_block.get('weighted_intensity', 0)} (capped at 25)"
+            )
+            _mp = lit_block.get("monetary_penalty_total_usd") or 0.0
+            if _mp > 0:
+                section7e.append(f"  Monetary mentions (total): USD {_mp:,.0f}")
+            _lit_delta = lit_block.get("ledger_delta")
+            if isinstance(_lit_delta, (int, float)) and abs(_lit_delta) >= 0.01:
+                section7e.append(
+                    f"  Ledger contribution:       +{_lit_delta:.1f} GW points (structural penalty)"
+                )
+
+            us_cases = lit_block.get("us_cases") or []
+            in_cases = lit_block.get("in_cases") or []
+            if us_cases:
+                section7e.append("")
+                section7e.append(f"  US (CourtListener, top {min(5, len(us_cases))}):")
+                for c in us_cases[:5]:
+                    section7e.append(
+                        f"    [{c.get('status', '?'):<9}] {(c.get('case_name') or '')[:78]}"
+                    )
+                    if c.get("filed_date") or c.get("terminated_date"):
+                        section7e.append(
+                            f"               filed={c.get('filed_date', '?')}  "
+                            f"terminated={c.get('terminated_date', '?')}"
+                        )
+            if in_cases:
+                section7e.append("")
+                section7e.append(f"  India (Indian Kanoon, top {min(5, len(in_cases))}):")
+                for c in in_cases[:5]:
+                    section7e.append(
+                        f"    [{c.get('status', '?'):<9}] {(c.get('case_name') or '')[:78]}"
+                    )
+                    if c.get("court") and c.get("court") != "Unknown":
+                        section7e.append(f"               court={c.get('court')}")
+            section7e.append("")
+            section7e.append(
+                "  Source: CourtListener (https://courtlistener.com), Indian Kanoon "
+                "(https://indiankanoon.org)."
+            )
+            section7e.append(major)
+
+        # ── SECTION 11D: TRACKED PROMISES (P7 — promise ledger) ───────────
+        pt_block = state.get("promise_tracking") if isinstance(state.get("promise_tracking"), dict) else {}
+        section11d: List[str] = []
+        if pt_block.get("tracked_promises"):
+            section11d = [major, "SECTION 11D: TRACKED PROMISES (LONGITUDINAL LEDGER)", major]
+            section11d.append(
+                "Every quantified ESG promise is recorded in an append-only "
+                "ledger keyed on (company_lei, metric, target_year). On "
+                "subsequent runs we label each promise NEW / IN_PROGRESS / "
+                "KEPT / MISSED / DELAYED, building a longitudinal track record."
+            )
+            section11d.append("")
+            section11d.append(f"  Status counts: {pt_block.get('status_counts')}")
+            section11d.append(
+                f"  Degradation score:    {pt_block.get('promise_degradation_score', 0)}"
+            )
+            _pt_delta = pt_block.get("ledger_delta")
+            if isinstance(_pt_delta, (int, float)) and abs(_pt_delta) >= 0.01:
+                _sign = "+" if _pt_delta > 0 else ""
+                section11d.append(
+                    f"  Ledger contribution:  {_sign}{_pt_delta:.1f} GW points (structural penalty)"
+                )
+            section11d.append("")
+            section11d.append("  Tracked promises:")
+            for p in (pt_block.get("tracked_promises") or [])[:12]:
+                _val = p.get("target_value")
+                _u = p.get("target_unit") or ""
+                _val_str = f"{_val} {_u}" if _val is not None else "-"
+                section11d.append(
+                    f"    [{p.get('status_label', '?'):<14}] "
+                    f"{p.get('metric', '?'):<30} target {p.get('target_year', '?')}  "
+                    f"value={_val_str:<10}  seen={p.get('seen_count', '?')}"
+                )
+                _prior_year = p.get("prior_target_year")
+                if _prior_year and _prior_year != p.get("target_year"):
+                    section11d.append(
+                        f"                    -> prior target_year was {_prior_year}"
+                    )
+            section11d.append("")
+            section11d.append("  Source: Promise Ledger (data/promise_ledger.db).")
+            section11d.append(major)
+
+        # ── SECTION 12: MACRO CONTEXT DURING ANALYSIS (M1) ─────────────────
+        # Read-only display layer. Surfaces curated geopolitical / macro
+        # events that materially affect cross-company ESG metrics during
+        # the analysis window. DOES NOT alter the headline GW / ESG formula.
+        mc_block = state.get("macro_context") if isinstance(state.get("macro_context"), dict) else {}
+        section12: List[str] = []
+        if mc_block and mc_block.get("status") == "ACTIVE_EVENTS_PRESENT":
+            section12 = [major, "SECTION 12B: MACRO CONTEXT DURING ANALYSIS", major]
+            section12.append(
+                "Exogenous events (wars, energy shocks, supply disruption) "
+                "that materially affect scope-3 emissions, energy mix, or "
+                "shipping/aviation routes during the analysis window. "
+                "Surfaced for INTERPRETATION ONLY — scoring formula is not "
+                "adjusted from this data. See `counterfactual` for what-if "
+                "scenarios that quantify a potential macro surcharge."
+            )
+            section12.append("")
+            section12.append(f"  As-of date:          {mc_block.get('as_of')}")
+            section12.append(f"  Scoring impact:      {mc_block.get('scoring_impact')}")
+            _exp = mc_block.get("industry_exposure") or {}
+            section12.append(
+                f"  Industry exposure:   {_exp.get('aggregate_exposure', 0):.2f}  "
+                f"(industry={_exp.get('industry', '?')}, "
+                f"events={_exp.get('events_considered', 0)})"
+            )
+            section12.append("")
+            _channels = mc_block.get("channels_affected") or []
+            if _channels:
+                section12.append(f"  Channels affected:   {', '.join(_channels)}")
+                section12.append("")
+
+            section12.append("  Active events:")
+            for ev in (mc_block.get("active_events") or []):
+                section12.append(
+                    f"    [{ev.get('event_id', '?'):<35}] {ev.get('name', '?')}"
+                )
+                section12.append(
+                    f"      Window: {ev.get('start_date', '?')} → "
+                    f"{ev.get('end_date') or 'ongoing'}"
+                )
+                _ch = ev.get("channels") or []
+                if _ch:
+                    section12.append("      Channels:")
+                    for c in _ch[:4]:
+                        if not isinstance(c, dict):
+                            continue
+                        section12.append(
+                            f"        - {c.get('channel', '?'):<18} "
+                            f"({c.get('magnitude', '?')}, {c.get('direction', '?')}): "
+                            f"{c.get('note', '')[:80]}"
+                        )
+                # Per-event industry exposure score
+                _ind_exp = None
+                for pe in (_exp.get("per_event") or []):
+                    if pe.get("event_id") == ev.get("event_id"):
+                        _ind_exp = pe.get("exposure")
+                        break
+                if _ind_exp is not None:
+                    section12.append(
+                        f"      Industry exposure score: {_ind_exp:.2f}"
+                    )
+                section12.append("")
+
+            # Live signal calibration (Gap 3): show whether macro weights
+            # are running on curated values or have been adjusted by a
+            # configured live signal provider.
+            _calibration = mc_block.get("live_signal_calibration") or []
+            if isinstance(_calibration, list) and _calibration:
+                section12.append("  Live signal calibration:")
+                for cal in _calibration:
+                    if not isinstance(cal, dict):
+                        continue
+                    eid = cal.get("event_id", "?")
+                    status = cal.get("status", "?")
+                    mult = cal.get("effective_multiplier", 1.0)
+                    section12.append(
+                        f"    [{eid:<35}] status={status}  effective_multiplier={mult}"
+                    )
+                    for r_ in (cal.get("readings") or []):
+                        if not isinstance(r_, dict):
+                            continue
+                        sid = r_.get("signal_id", "?")
+                        val = r_.get("value")
+                        base = r_.get("baseline")
+                        src = r_.get("source", "?")
+                        val_str = f"{val}" if val is not None else "not_fetched"
+                        section12.append(
+                            f"        - {sid:<26} value={val_str:<14} baseline={base}  source={src}"
+                        )
+                if all(
+                    isinstance(c, dict) and c.get("status") == "not_configured"
+                    for c in _calibration
+                ):
+                    section12.append(
+                        "    (No live signal provider configured — curated "
+                        "industry exposure weights are used as-is. Set "
+                        "ESG_MACRO_SIGNAL_PROVIDER to wire in a real source.)"
+                    )
+                section12.append("")
+
+            section12.append(
+                "  Source: data/macro_events.json (curated ledger, "
+                "hand-maintained). Industry exposure values are editorial "
+                "judgements grounded in publicly reported channel impact."
+            )
+            section12.append(major)
 
         green = state.get("greenwishing_analysis") or {}
         climate = state.get("climatebert_analysis") or v["agents"].get("climatebert_analysis", {}).get("output", {})
@@ -3382,7 +4095,7 @@ class ProfessionalReportGenerator:
         else:
             esg_score_disp = f"{v['esg_score']:.1f} / 100"
 
-        # Industry baseline reference (MSCI ESG Industry Materiality Map etc.) for context.
+        # Industry baseline reference (ESGLens industry materiality reference) for context.
         _baseline_risk = _v_scores.get("raw", {}).get("industry_baseline_risk") if isinstance(_v_scores.get("raw"), dict) else None
         _baseline_source = _v_scores.get("raw", {}).get("industry_source") if isinstance(_v_scores.get("raw"), dict) else None
         baseline_line = ""
@@ -3402,7 +4115,104 @@ class ProfessionalReportGenerator:
             cal_status_disp = f"{v['calibration_status']}  [{cal.get('calibration_status', 'N/A')} - n={n_size or 0}]"
 
         verdict_justification = []
-        
+
+        # ── Score caveats (May-2026 fix) ──────────────────────────────
+        # Pull together the four caveats that previously hid in different
+        # sections / appendices / applied_caps ledger so readers see a
+        # single block of "what to know before trusting this number":
+        #   (a) abstention rate — system refused to verify some sub-claims
+        #   (b) cross-sector sigma fallback — formula used global sigma
+        #   (c) sector underrepresentation in calibration
+        #   (d) ESG-rating band escalation reason
+        verdict_caveats: List[str] = []
+
+        # (a) Abstention rate — use canonical field names from abstention_analysis
+        try:
+            abstention = state.get("abstention_analysis") or {}
+            total = int(abstention.get("total_subclaims", 0) or 0)
+            abstained = int(abstention.get("abstained_count", 0) or 0)
+            pct = float(abstention.get("abstention_rate_pct", 0.0) or 0.0)
+            if pct == 0.0 and total > 0:
+                pct = (abstained / total) * 100.0
+            if total > 0 and abstained > 0:
+                if pct >= 100.0:
+                    verdict_caveats.append(
+                        f"ABSTENTION: All {total} sub-claim(s) abstained — "
+                        f"the system refused to verify the claim end-to-end. "
+                        f"Headline numbers are produced for triage only."
+                    )
+                elif pct >= 50.0:
+                    verdict_caveats.append(
+                        f"ABSTENTION: {abstained}/{total} sub-claim(s) "
+                        f"abstained ({pct:.0f}%) due to insufficient Tier 1-2 "
+                        f"evidence — headline numbers cover the proceeded sub-claims only."
+                    )
+        except Exception:
+            pass
+
+        # (b) (d) — read from applied_caps stashed by the resolver, with
+        # fallback to report_consistency for legacy reports.
+        try:
+            applied_caps_block = state.get("_resolved_applied_caps")
+            if not isinstance(applied_caps_block, list) or not applied_caps_block:
+                _rc = state.get("report_consistency")
+                if isinstance(_rc, dict):
+                    applied_caps_block = _rc.get("applied_caps") or []
+            if not isinstance(applied_caps_block, list):
+                applied_caps_block = []
+            for cap in applied_caps_block:
+                if not isinstance(cap, dict):
+                    continue
+                name = str(cap.get("cap") or "")
+                # (d) Band escalation
+                if name == "low_rating_band_escalation":
+                    rating_used = cap.get("rating", "?")
+                    orig_band = cap.get("original_value", "?")
+                    verdict_caveats.append(
+                        f"BAND ESCALATION: Natural band by GW score was "
+                        f"{orig_band}; escalated to {cap.get('displayed_value', 'HIGH')} "
+                        f"because ESG rating {rating_used} cannot honestly present "
+                        f"as {orig_band}. Score itself is unchanged."
+                    )
+                # (b) Cross-sector sigma fallback
+                elif name == "cross_sector_sigma_fallback":
+                    n_peers = cap.get("sigma_n_peers", "?")
+                    verdict_caveats.append(
+                        f"SIGMA FALLBACK: GW formula used cross-sector global "
+                        f"sigma (n={n_peers}) because industry-peer count was "
+                        f"below 5. Numeric score is cross-sector normalised — "
+                        f"widen confidence interval accordingly."
+                    )
+        except Exception:
+            pass
+
+        # (c) Sector underrepresentation in calibration. Mirror the
+        # Appendix-A logic exactly: look up `sector_counts` keyed by lowercased
+        # industry; absent/zero entry → underrepresented.
+        try:
+            industry = (v.get("industry") or "").strip()
+            dataset_size = int(cal.get("dataset_size", 0) or 0) if isinstance(cal, dict) else 0
+            sector_counts = (cal.get("sector_counts") or {}) if isinstance(cal, dict) else {}
+            if industry and dataset_size > 0:
+                ind_key = industry.lower()
+                n_sector = 0
+                for k, cnt in sector_counts.items():
+                    if isinstance(k, str) and k.strip().lower() == ind_key:
+                        try:
+                            n_sector = int(cnt)
+                        except (TypeError, ValueError):
+                            n_sector = 0
+                        break
+                if n_sector < 3:
+                    verdict_caveats.append(
+                        f"SECTOR UNDERREPRESENTATION: Calibration ground-truth "
+                        f"contains {n_sector}/{dataset_size} cases for '{industry}'. "
+                        f"Threshold transport from other sectors — treat the "
+                        f"calibrated cutoff as indicative for this sector."
+                    )
+        except Exception:
+            pass
+
         # Calculate DATA COVERAGE
         evidence_count = len(v.get('citations', []))
         carbon_output = v.get("agents", {}).get("carbon_extractor", {}).get("output", {})
@@ -3755,7 +4565,7 @@ class ProfessionalReportGenerator:
         # ── 7C: ENFORCEMENT & FINES HISTORY ──────────────────────────────
         # Pull from governance_analysis.signals.regulatory_legal — surfaces
         # the regulatory fine signals an audience would otherwise miss.
-        enforcement_lines = [major, "SECTION 7C: ENFORCEMENT & FINES HISTORY", major]
+        enforcement_lines = [major, "SECTION 7C: PUBLIC COVERAGE OF REGULATORY ISSUES", major]
         _gov_signals = {}
         for _ao in (state.get("agent_outputs") or []):
             if isinstance(_ao, dict) and _ao.get("agent") == "governance_analysis":
@@ -3864,16 +4674,20 @@ class ProfessionalReportGenerator:
             _fine_count = len(_fine_sources)
 
         enforcement_lines.append(self._wrap_paragraph(
-            "Historical regulatory penalties, enforcement actions, and litigation references "
-            "from governance analysis, contradictions, the regulatory scanner, and the "
-            "ground-truth known-cases registry. Cross-sourced so Section 7 (contradictions) "
-            "and Section 7C (this section) cannot disagree on whether enforcement exists.",
+            "Public mentions of regulatory issues — press coverage, governance "
+            "analysis hits, contradictions, and ground-truth known-case "
+            "references. NOTE: most rows here are news/search hits, not "
+            "confirmed enforcement records — for authoritative US enforcement, "
+            "see Section 7D (EPA ECHO + SEC EDGAR XBRL); for resolved litigation "
+            "dockets see Section 7E (CourtListener + Indian Kanoon). Cross-sourced "
+            "so Section 7 (contradictions) and 7C cannot disagree on whether "
+            "regulatory coverage exists.",
             width=80,
         ))
         enforcement_lines.append("")
         if _fine_count or _fine_sources:
-            enforcement_lines.append(f"  Regulatory fine / enforcement signals detected: {_fine_count}")
-            enforcement_lines.append(f"  Source records reviewed:                      {len(_fine_sources)}")
+            enforcement_lines.append(f"  Public regulatory-coverage hits detected: {_fine_count}")
+            enforcement_lines.append(f"  Source records reviewed:                  {len(_fine_sources)}")
             enforcement_lines.append("")
             if _fine_sources:
                 enforcement_lines.append("  Source records:")
@@ -4020,6 +4834,8 @@ class ProfessionalReportGenerator:
                 data_coverage_str,
                 f"  Calibration Status:       {cal_status_disp}",
                 *([baseline_line] if baseline_line else []),
+                *([""] + ["  Score caveats (read before relying on the headline):",
+                          *[f"  - {line}" for line in verdict_caveats]] if verdict_caveats else []),
                 *([""] + ["  Score justification:", *[f"  - {line}" for line in verdict_justification]] if verdict_justification else []),
                 "",
                 "  One-sentence plain-English summary:",
@@ -4040,8 +4856,19 @@ class ProfessionalReportGenerator:
             "section4": "\n".join(section4),
             "compliance_full": "\n".join(compliance_lines),
             "enforcement_history": "\n".join(enforcement_lines),
+            "section3c": "\n".join(section_3c),
             "section5": "\n".join(section5),
+            "section_5c": "\n".join(section_5c),
+            "section_5e": "\n".join(section_5e),
             "section5b": "\n".join(section5b),
+            "section8c": "\n".join(section8c),
+            "section8d": "\n".join(section8d),
+            "section8e": "\n".join(section8e),
+            "section9c": "\n".join(section9c),
+            "section7e": "\n".join(section7e),
+            "section7d": "\n".join(section7d),
+            "section11d": "\n".join(section11d),
+            "section12":  "\n".join(section12),
             "section7": "\n".join(section7),
             "recent_news": "\n".join(news_lines),
             "section9": "\n".join(section9),
@@ -4059,12 +4886,18 @@ class ProfessionalReportGenerator:
         # Logical reading flow: 3 → 3B → 4 → 5A → 5 → 5C → 6 → 7 → 7B → 7C
         # → 8 → 8B → 9 → 9B → 10 → 10B → 11 → 11B → 12 → appendices
         ordered_keys = [
-            "cover", "verdict", "section1", "section_anatomy", "section2",
-            "materiality_profile", "section3", "component_breakdown",
+            "cover", "verdict", "section1", "section_anatomy",
+            "section3c",  # Abstention follows claim breakdown
+            "section2",
+            "materiality_profile", "section3",
+            "component_breakdown",
+            "section_5c",  # Score Contributors (WHY) sits with the score blocks
+            "section_5e",  # Counterfactual scenarios sit right after the why
             "section6", "section4", "compliance_full", "enforcement_history",
-            "section5", "section5b", "section7", "recent_news",
-            "section9", "audit_metadata", "section10", "section10b",
-            "section11c", "section11", "appendix_a", "appendix_b", "appendix_c", "end",
+            "section7d", "section7e",
+            "section5", "section5b", "section8c", "section8d", "section8e", "section7", "recent_news",
+            "section9", "section9c", "audit_metadata", "section10", "section10b",
+            "section11c", "section11d", "section11", "section12", "appendix_a", "appendix_b", "appendix_c", "end",
         ]
         # Drop empty blocks so optional sections (e.g. SECTION 11B Commitment
         # Timeline when no ledger data exists) don't leave a hollow heading.
@@ -4282,7 +5115,7 @@ class ProfessionalReportGenerator:
             or risk_results.get("risk_level")
         )
         upstream_band = str(upstream_band_raw).strip().upper() if upstream_band_raw else None
-        # MSCI-style 3-band order. CRITICAL collapsed into HIGH May-2026.
+        # 3-band risk order. CRITICAL collapsed into HIGH May-2026.
         order = {"LOW": 0, "MODERATE": 1, "HIGH": 2}
 
         if rating.upper() in {"CCC", "C", "B"} and order.get(band, 0) < order["HIGH"]:
@@ -4572,6 +5405,14 @@ class ProfessionalReportGenerator:
         resolved_benchmarks = self._resolve_benchmark_provenance(risk_results, state)
         calibration_render_status = self._resolve_calibration_render_status(calibration)
 
+        # Stash applied_caps on state so the verdict-text block can surface
+        # the four headline caveats (band escalation, sigma fallback, etc.)
+        # without re-doing the resolver work.
+        try:
+            state["_resolved_applied_caps"] = resolved_scores.get("applied_caps") or []
+        except Exception:
+            pass
+
         # Store resolved contradictions in evidence for downstream consumption
         evidence_struct["contradiction_items_resolved"] = resolved_contradictions["items"]
         evidence_struct["contradictions_count_resolved"] = resolved_contradictions["count"]
@@ -4656,6 +5497,46 @@ class ProfessionalReportGenerator:
                     len(consistency.warnings), company,
                     ", ".join(w.rule_id for w in consistency.warnings),
                 )
+
+        # ── A1: LLM-variance bands attached to canonical scores ──────────
+        # Computed against post-calibration values from report_consistency so
+        # both _collect_v4_values (text render) AND generate_json_export
+        # (machine output) see the same bands.
+        try:
+            from core.confidence_band import (
+                load_latest_variance, get_band_width, clamp_band,
+            )
+            _rc_block = structured.get("report_consistency", {})
+            _scores_block = structured.get("scores", {})
+            _variance_report = load_latest_variance()
+            _band_half = get_band_width(_variance_report) if _variance_report else None
+            if _band_half is not None and _variance_report is not None:
+                _gw = _rc_block.get("final_gw_calibrated")
+                _esg = _rc_block.get("final_esg_display")
+                _conf = _rc_block.get("confidence_pct") or _scores_block.get("confidence")
+                if isinstance(_conf, float) and _conf <= 1.0:
+                    _conf = _conf * 100.0
+                if isinstance(_gw, (int, float)):
+                    _scores_block["greenwashing_band"] = list(clamp_band(float(_gw), _band_half))
+                if isinstance(_esg, (int, float)):
+                    _scores_block["esg_band"] = list(clamp_band(float(_esg), _band_half))
+                if isinstance(_conf, (int, float)):
+                    _scores_block["confidence_band"] = list(
+                        clamp_band(float(_conf), max(1.0, _band_half / 2.0))
+                    )
+                _summary = (_variance_report.get("aggregate") or {}).get("summary") or {}
+                _proj = _variance_report.get("projected_gw_impact") or {}
+                _scores_block["band_meta"] = {
+                    "source": "llm_variance_harness",
+                    "half_width_points": _band_half,
+                    "method": _proj.get("method"),
+                    "categorical_agreement_rate": _summary.get("categorical_value_agreement_rate"),
+                    "numeric_max_spread": _summary.get("numeric_max_spread"),
+                    "n_probes": _summary.get("n_probes"),
+                    "variance_timestamp_utc": _variance_report.get("timestamp_utc"),
+                }
+        except Exception as _band_exc:  # noqa: BLE001 — advisory
+            logger.warning("[confidence_band] structured attach skipped: %s", _band_exc)
 
         return structured
 
@@ -7300,7 +8181,7 @@ class ProfessionalReportGenerator:
             s = pillar_scores.get("social_score")
             g = pillar_scores.get("governance_score")
             o = pillar_scores.get("overall_esg_score")
-            lines.append("PILLAR SUMMARY (MSCI-style pillar-primary scoring)")
+            lines.append("PILLAR SUMMARY (pillar-primary scoring)")
             lines.append("-" * 55)
             lines.append(f"Environmental (E): {e if isinstance(e, (int, float)) else 'N/A'} / 100")
             lines.append(f"Social (S):        {s if isinstance(s, (int, float)) else 'N/A'} / 100")
@@ -9208,6 +10089,13 @@ KEY PERFORMANCE METRICS
                 "historical_archive_quality": risk_scoring_output.get("historical_archive_quality", {}),
                 "adversarial_audit": analysis_state.get("adversarial_audit", {}),
                 "compliance": regulatory.get("compliance_score"),
+                # A1: LLM-variance bands. Sourced from structured.scores
+                # which is populated by the band-injection block at the
+                # end of _build_structured_report.
+                "greenwashing_band": scores.get("greenwashing_band"),
+                "esg_band":          scores.get("esg_band"),
+                "confidence_band":   scores.get("confidence_band"),
+                "band_meta":         scores.get("band_meta"),
             },
             "decision": structured.get("decision") or {},
             "report_consistency": _rc,
@@ -9303,9 +10191,59 @@ KEY PERFORMANCE METRICS
                 "duration_seconds": None,
             }),
             "esg_mismatch_analysis": analysis_state.get("esg_mismatch_analysis", {}),
+            "emissions_verification": analysis_state.get("emissions_verification", {}),
+            "financed_emissions": analysis_state.get("financed_emissions", {}),
+            "gdelt_events": analysis_state.get("gdelt_events", {}),
+            "litigation_resolved": analysis_state.get("litigation_resolved", {}),
+            "regulatory_cross_ref": analysis_state.get("regulatory_cross_ref", {}),
+            "subsidiary_walk": analysis_state.get("subsidiary_walk", {}),
+            "promise_tracking": analysis_state.get("promise_tracking", {}),
+            "cross_pillar_contradictions": analysis_state.get("cross_pillar_contradictions", {}),
+            "a3cg_triplets": analysis_state.get("a3cg_triplets", {}),
+            "kg_rag_retrieval": analysis_state.get("kg_rag_retrieval", {}),
+            "multimodal_extraction": analysis_state.get("multimodal_extraction", {}),
+            "macro_context": analysis_state.get("macro_context", {}),
+            "regulatory_registry_snapshot": analysis_state.get("regulatory_registry_snapshot", {}),
+            "entity_record": analysis_state.get("entity_record", {}),
+            "company_lei": analysis_state.get("company_lei"),
             "report_confidence_level": report_metadata.get("report_confidence", "MEDIUM"),
             "quality_warnings": quality.get("quality_warnings", report_metadata.get("quality_warnings", [])),
         }
+
+        # ── Score attribution: ranked contributors derived from the ledger ──
+        # Embedded here so the API endpoint can serve it without re-deriving.
+        try:
+            from core.score_attribution import decompose
+            export["score_attribution"] = decompose(export)
+        except Exception as _attr_exc:
+            export["score_attribution"] = {
+                "error": f"decomposition failed: {str(_attr_exc)[:160]}",
+                "reconciles": False,
+            }
+
+        # ── Abstention analysis: per-sub-claim INSUFFICIENT_EVIDENCE decisions ──
+        try:
+            from core.abstention_layer import evaluate_state
+            export["abstention_analysis"] = (
+                analysis_state.get("abstention_analysis")
+                or evaluate_state(analysis_state)
+            )
+        except Exception as _abs_exc:
+            export["abstention_analysis"] = {
+                "error": f"abstention evaluation failed: {str(_abs_exc)[:160]}",
+            }
+
+        # ── P1: counterfactual scenarios + leverage ranking ──────────────
+        try:
+            from core.counterfactual import prebaked_scenarios, leverage_ranking
+            export["counterfactual"] = {
+                "prebaked_scenarios": prebaked_scenarios(export),
+                "leverage_ranking":   leverage_ranking(export, top_k=5),
+            }
+        except Exception as _cf_exc:
+            export["counterfactual"] = {
+                "error": f"counterfactual generation failed: {str(_cf_exc)[:160]}",
+            }
 
         report_id = export.get("report_id") or f"ESG_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
         os.makedirs("reports", exist_ok=True)

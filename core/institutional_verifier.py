@@ -178,18 +178,19 @@ def check_rating_divergence(
     internal_esg_score: float,
 ) -> Dict[str, Any]:
     """
-    RULE 4: Compare scores across MSCI, Sustainalytics, S&P/Bloomberg.
-    Flag divergence if spread > 25 points.
+    RULE 4: Compare scores across third-party ESG rating providers
+    (consumed from external_benchmarks if present). Flag divergence if
+    spread > 25 points.
     """
     providers: Dict[str, float] = {}
     scores_block = external_benchmarks.get("scores", {}) if isinstance(external_benchmarks, dict) else {}
 
     # Map known keys
     for key, label in [
-        ("msci_esg_score", "MSCI"),
-        ("sustainalytics_score", "Sustainalytics"),
-        ("sp_esg_score", "S&P"),
-        ("bloomberg_esg_score", "Bloomberg"),
+        ("msci_esg_score", "Provider_A"),
+        ("sustainalytics_score", "Provider_B"),
+        ("sp_esg_score", "Provider_C"),
+        ("bloomberg_esg_score", "Provider_D"),
         ("esg_score", "External_Generic"),
     ]:
         raw = scores_block.get(key) or external_benchmarks.get(key)

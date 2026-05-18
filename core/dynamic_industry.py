@@ -65,10 +65,22 @@ def detect_industry(
     
     Returns (industry_key, confidence, method)
     """
-    # If a valid industry is already set and isn't "General" or "Unknown", keep it
+    # If a valid industry is already set and isn't "General" or "Unknown", keep it.
+    # The previous regex normalisation collapsed "Healthcare / Pharma" to
+    # "healthcare___pharma" (triple underscore) which never matched any config
+    # key, so the keyword fallback fired and Pfizer kept getting reclassified
+    # as `real_estate` (because facilities/R&D text contains "property").
+    # Delegate to the shared normaliser instead — it already handles
+    # "Healthcare / Pharma" → "pharmaceuticals", "Food & Beverage" → "food
+    # beverage", and other display-form variants.
     if current_industry and current_industry.lower() not in ("general", "unknown", ""):
-        normalized = re.sub(r"[^a-z0-9]", "_", current_industry.lower().strip()).strip("_")
-        # Verify it's a known sector
+        try:
+            from core.safe_utils import normalize_industry_key
+            normalized = normalize_industry_key(current_industry).replace(" ", "_")
+        except Exception:
+            normalized = re.sub(r"[^a-z0-9]", "_", current_industry.lower().strip()).strip("_")
+        # Compact consecutive underscores in case the legacy path is hit.
+        normalized = re.sub(r"_+", "_", normalized)
         baselines = _load_baselines()
         if normalized in baselines.get("industry_baseline_risk", {}):
             return normalized, 0.95, "pre_classified"

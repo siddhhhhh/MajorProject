@@ -103,10 +103,11 @@ ROUTING_TABLE: dict[str, list[ModelConfig]] = {
     ],
 
     "credibility_analysis": [
-        # Called ~47 times per report — must be fastest available
-        Cerebras("llama3.1-8b",          json_mode=True, max_tokens=200),
-        Groq("llama-3.1-8b-instant",     json_mode=True, max_tokens=200),
-        OR("mistralai/mistral-small-3.1-24b-instruct:free", json_mode=True, max_tokens=200),
+        # Batched: one call covers ~6 sources at ~150 tokens each → 1500 cap
+        # leaves headroom for JSON wrapper without truncation mid-array.
+        Cerebras("llama3.1-8b",          json_mode=True, max_tokens=1500),
+        Groq("llama-3.1-8b-instant",     json_mode=True, max_tokens=1500),
+        OR("mistralai/mistral-small-3.1-24b-instruct:free", json_mode=True, max_tokens=1500),
     ],
 
     "climatebert_analysis": [

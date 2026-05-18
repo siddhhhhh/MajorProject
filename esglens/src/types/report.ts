@@ -13,6 +13,12 @@ export type ReportData = {
   pillars: { e: number; s: number; g: number };
   greenwashing: number;
   confidence: number;
+  // LLM-variance confidence bands [low, high]. Empty when no variance
+  // harness has been run yet.
+  esgScoreBand?: [number, number];
+  greenwashingBand?: [number, number];
+  confidenceBand?: [number, number];
+  bandMeta?: Record<string, unknown>;
   scope1: number;
   scope2: number;
   scope3: number;

@@ -605,6 +605,11 @@ class CarbonExtractor:
         if not report_chunks and isinstance(claim, dict):
             report_chunks = claim.get("parsed_report_chunks") or claim.get("report_chunks") or []
 
+        # Stash company name so internal helpers (regex/camelot/candidate
+        # validation) can include it in CarbonValidator reject logs instead
+        # of printing the literal placeholder "company".
+        self._current_company = company
+
         # Build prioritized extraction corpus (reports -> report claims -> evidence)
         extraction_text, source_meta = self._build_extraction_corpus(
             evidence=evidence,
@@ -646,7 +651,8 @@ class CarbonExtractor:
             # Always reject camelot values that fail the industry magnitude floor —
             # otherwise a 979 sub-total wins by virtue of being non-None.
             validated = self._validate_emission_magnitude(
-                camelot_val, scope_num, industry_threshold_key, "company"
+                camelot_val, scope_num, industry_threshold_key,
+                getattr(self, "_current_company", None) or "extraction"
             )
             if validated is None:
                 return False
@@ -711,7 +717,7 @@ class CarbonExtractor:
         print("📊 Extracting carbon emissions data via LLM/Regex...")
         extracted_data = self._llm_extract_carbon(company, extraction_text, claim)
         if not extracted_data:
-            extracted_data = self._regex_extract_carbon(extraction_text)
+            extracted_data = self._regex_extract_carbon(extraction_text, industry_hint)
 
         # Deterministic scope extraction has priority when available.
         if deterministic_scope1.get("value") is not None:
@@ -2082,7 +2088,8 @@ class CarbonExtractor:
         valid_candidates = []
         for c in candidates:
             if self._validate_emission_magnitude(
-                c.get("value"), scope_number, industry_threshold_key, "company"
+                c.get("value"), scope_number, industry_threshold_key,
+                getattr(self, "_current_company", None) or "extraction"
             ) is not None:
                 valid_candidates.append(c)
 
@@ -2708,32 +2715,104 @@ Extract ALL carbon emission data. Return ONLY valid JSON."""
             # Attempt regex extraction
             return self._regex_extract_carbon(evidence_text)
 
-    def _regex_extract_carbon(self, text: str) -> Dict[str, Any]:
-        """Fallback regex extraction for carbon figures"""
+    @staticmethod
+    def _is_pct_intensity_context(text: str, match_start: int, match_end: int,
+                                  window: int = 30) -> bool:
+        """Reject matches where the captured number is a percentage, intensity
+        ratio, growth/reduction figure, or relative-baseline index — not an
+        absolute emissions value.
 
-        result = {"scope1": {}, "scope2": {}, "scope3": {}, "total": {}}
+        Looks at the ``window`` chars before and after the matched value.
+        Trips on: ``%`` sign, "percent", "per cent", "intensity", "ratio",
+        "per unit", "vs.", "compared", "baseline", "reduction", "increase",
+        "decrease", "fold", "x ", "lower", "higher", and "growth".
+        """
+        if not text:
+            return False
+        lo = max(0, match_start - window)
+        hi = min(len(text), match_end + window)
+        nbh = text[lo:hi].lower()
+        # Direct % sign is the strongest signal.
+        if "%" in nbh:
+            return True
+        return bool(re.search(
+            r"\b(percent(?:age)?|per\s*cent|intensity|ratio|per\s+unit|"
+            r"per\s+(?:tonne|ton|barrel|mwh|kwh|employee|fte|revenue)|"
+            r"vs\.?|compared\s+(?:to|with)|relative\s+to|"
+            r"baseline|reduction|reduced\s+by|increase|increased\s+by|"
+            r"decrease|decreased\s+by|fold|x\s+\d|times|growth|lower|higher"
+            r")\b",
+            nbh,
+        ))
 
-        # Stronger extraction patterns aligned to report wording
+    def _regex_extract_carbon(self, text: str, industry_hint: str = "general") -> Dict[str, Any]:
+        """Fallback regex extraction for carbon figures.
+
+        The unit suffix is now REQUIRED (was optional, which let percentages
+        and intensity ratios slip through as bare numbers — e.g. "Scope 1
+        reduction of 2.0 percent" was captured as Scope 1 = 2.0 tCO2e).
+        We also reject matches whose neighborhood looks like a ratio or
+        growth context, and validate the final value against the industry
+        floor before returning.
+        """
+
+        result: Dict[str, Any] = {"scope1": {}, "scope2": {}, "scope3": {}, "total": {}}
+
+        # Unit suffix is now REQUIRED. Without a unit, we cannot tell an
+        # absolute emissions value apart from a percentage, intensity, or
+        # year-over-year delta. The previous optional-unit form defaulted
+        # to "tCO2e", producing false positives like Scope 1 = 2.0.
+        unit_alt = (
+            r"(MtCO2e|MtCO2|MmtCO2e|GtCO2e|GtCO2|"
+            r"ktCO2e|ktCO2|tCO2e|tCO2|"
+            r"million\s+tonnes(?:\s+CO2e?)?|million\s+tons(?:\s+CO2e?)?|"
+            r"million\s+metric\s+tons(?:\s+CO2e?)?|"
+            r"thousand\s+tonnes(?:\s+CO2e?)?|kilotonnes(?:\s+CO2e?)?|"
+            r"megatonnes(?:\s+CO2e?)?|gigatonnes(?:\s+CO2e?)?|"
+            r"tonnes\s+CO2e?|metric\s+tons\s+CO2e?|"
+            r"Mt\b|kt\b|Gt\b|tons?|tonnes?)"
+        )
         patterns = [
-            (r'Scope\s*1[^\n\r]{0,120}?(\d[\d,\.]+)\s*(MtCO2e|ktCO2e|tCO2e|tons?|tonnes?)?', "scope1"),
-            (r'Scope\s*2[^\n\r]{0,120}?(\d[\d,\.]+)\s*(MtCO2e|ktCO2e|tCO2e|tons?|tonnes?)?', "scope2"),
-            (r'Scope\s*3[^\n\r]{0,120}?(\d[\d,\.]+)\s*(MtCO2e|ktCO2e|tCO2e|tons?|tonnes?)?', "scope3"),
-            (r'Total\s+emissions[^\n\r]{0,120}?(\d[\d,\.]+)\s*(MtCO2e|ktCO2e|tCO2e|tons?|tonnes?)?', "total"),
-            (r'carbon\s+footprint[:\s]+(\d+(?:,\d+)*(?:\.\d+)?)\s*(MtCO2e|ktCO2e|tCO2e|MT|tonnes?)', "total"),
+            (rf'Scope\s*1[^\n\r]{{0,120}}?(\d[\d,\.]+)\s*{unit_alt}', "scope1"),
+            (rf'Scope\s*2[^\n\r]{{0,120}}?(\d[\d,\.]+)\s*{unit_alt}', "scope2"),
+            (rf'Scope\s*3[^\n\r]{{0,120}}?(\d[\d,\.]+)\s*{unit_alt}', "scope3"),
+            (rf'Total\s+emissions[^\n\r]{{0,120}}?(\d[\d,\.]+)\s*{unit_alt}', "total"),
+            (rf'carbon\s+footprint[:\s]+(\d+(?:,\d+)*(?:\.\d+)?)\s*{unit_alt}', "total"),
         ]
+
+        industry_key = self._normalize_industry_for_threshold(industry_hint)
+        scope_to_num = {"scope1": 1, "scope2": 2, "scope3": 3}
 
         for pattern, scope in patterns:
             match = re.search(pattern, text, re.IGNORECASE)
-            if match:
+            if not match:
+                continue
+            # Anti-percentage/intensity gate before parsing.
+            if self._is_pct_intensity_context(text, match.start(), match.end()):
+                continue
+            try:
                 value = float(match.group(1).replace(",", ""))
-                unit = match.group(2) if len(match.groups()) > 1 and match.group(2) else "tCO2e"
-                normalized_value = self._normalize_units(value, unit)
-                if scope == "scope3":
-                    result[scope] = {"total": normalized_value, "unit": "tCO2e", "source": "regex_extraction"}
-                elif scope == "total":
-                    result[scope] = {"value": normalized_value, "unit": "tCO2e", "source": "regex_extraction"}
-                else:
-                    result[scope] = {"value": normalized_value, "unit": "tCO2e", "source": "regex_extraction"}
+            except (ValueError, IndexError):
+                continue
+            unit = match.group(2)  # now guaranteed non-None
+            normalized_value = self._normalize_units(value, unit)
+            # Plausibility floor by industry — refuse to publish absurdly
+            # small values (parser artifacts, mis-attributed sub-totals).
+            scope_num = scope_to_num.get(scope)
+            if scope_num is not None:
+                validated = self._validate_emission_magnitude(
+                    normalized_value, scope_num, industry_key,
+                    getattr(self, "_current_company", None) or "regex_extract"
+                )
+                if validated is None:
+                    continue
+                normalized_value = validated
+            if scope == "scope3":
+                result[scope] = {"total": normalized_value, "unit": "tCO2e", "source": "regex_extraction"}
+            elif scope == "total":
+                result[scope] = {"value": normalized_value, "unit": "tCO2e", "source": "regex_extraction"}
+            else:
+                result[scope] = {"value": normalized_value, "unit": "tCO2e", "source": "regex_extraction"}
 
         return result
 
