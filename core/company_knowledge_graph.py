@@ -32,12 +32,25 @@ try:
 except Exception:
     LLMGraphTransformer = None
 
+# Prefer the new langchain_neo4j package for Neo4jGraph (the
+# langchain_community version is deprecated as of LangChain 0.3.8 and
+# emits a noisy warning on import). Falls back to langchain_community
+# if langchain_neo4j is not installed.
 try:
-    from langchain_community.graphs import Neo4jGraph
+    from langchain_neo4j import Neo4jGraph  # type: ignore
+except Exception:
+    try:
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            from langchain_community.graphs import Neo4jGraph  # type: ignore
+    except Exception:
+        Neo4jGraph = None
+
+try:
     from langchain_community.graphs.graph_document import GraphDocument, Node, Relationship
     from langchain_core.documents import Document
 except Exception:
-    Neo4jGraph = None
     GraphDocument = None
     Node = None
     Relationship = None
@@ -608,13 +621,20 @@ class CompanyKnowledgeGraph:
     def _get_graph(self):
         if not self.is_configured() or Neo4jGraph is None:
             return None
-        return Neo4jGraph(
-            url=self.driver_uri or self.uri,
-            username=self.username,
-            password=self.password,
-            database=self.database,
-            refresh_schema=False,
-        )
+        # Suppress the LangChain 0.3.8 deprecation warning fired by the
+        # community Neo4jGraph at construction. We're not migrating to
+        # langchain_neo4j yet; KG/Fact-Graph logic is independent of
+        # which Neo4jGraph wrapper is used.
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return Neo4jGraph(
+                url=self.driver_uri or self.uri,
+                username=self.username,
+                password=self.password,
+                database=self.database,
+                refresh_schema=False,
+            )
 
     def _get_transformer(self):
         if self._transformer is None:

@@ -211,12 +211,76 @@ def evaluate_subclaims(
     }
 
 
+def _regulatory_tier1_credits(state: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Materialise synthetic Tier-1 evidence rows for verified regulatory
+    filings already surfaced by ``regulatory_scanning``.
+
+    A 10-K filed against SEC EDGAR is a definitional Tier-1 source. Without
+    this credit, a US filer whose entire evidence pool is web/news (Tier 3)
+    forces abstention even though the regulatory scanner has already
+    confirmed an authoritative filing. Each credit row is tagged
+    ``_origin=regulatory_credit`` so downstream consumers can distinguish
+    it from a primary-retrieval evidence row.
+
+    Recognised Tier-1 sources (government registries + mandatory filings):
+      - SEC EDGAR (10-K, 20-F, DEF 14A)
+      - SBTi (Science Based Targets) registry
+      - CDP A-list
+      - EU ESEF mandatory filings
+      - SEBI BRSR (India)
+      - FTC Enforcement Database
+      - FSB-TCFD (when verified by registry, not self-attestation)
+    """
+    reg = state.get("regulatory_scanning") or {}
+    # The agent's output shape varies between top-level and nested ``output``.
+    if isinstance(reg, dict) and "frameworks" not in reg and isinstance(reg.get("output"), dict):
+        reg = reg["output"]
+    frameworks = (reg or {}).get("frameworks") or (reg or {}).get("compliance_result", {}).get("frameworks") or []
+    if not isinstance(frameworks, list):
+        return []
+
+    tier1_sources = {
+        "sec edgar",
+        "sbti",
+        "science based targets initiative",
+        "cdp",
+        "eu esef",
+        "sebi brsr",
+        "ftc enforcement db",
+        "ftc",
+    }
+    credits: List[Dict[str, Any]] = []
+    for row in frameworks:
+        if not isinstance(row, dict):
+            continue
+        status = str(row.get("status") or "").lower()
+        if status != "compliant":
+            continue
+        if not row.get("real_data", True):  # heuristic-only rows are not Tier-1
+            continue
+        source_name = str(row.get("source_name") or "").lower()
+        if not any(s in source_name for s in tier1_sources):
+            continue
+        credits.append({
+            "title": f"{row.get('framework')} — verified by {row.get('source_name')}",
+            "snippet": str(row.get("specific_violation") or row.get("evidence") or "")[:500],
+            "url": row.get("evidence_url") or "",
+            "source_name": row.get("source_name"),
+            "reliability_tier": 1,
+            "_tier": 1,
+            "_origin": "regulatory_credit",
+            "framework": row.get("framework"),
+        })
+    return credits
+
+
 def evaluate_state(state: Dict[str, Any]) -> Dict[str, Any]:
     """Apply abstention checks to a pipeline state dict.
 
     Reads:
       - state['claim_decomposition']['sub_claims'] (list of dicts)
       - state['evidence']                          (list of dicts)
+      - state['regulatory_scanning']               (for Tier-1 registry credits)
     """
     decomposition = state.get("claim_decomposition") or {}
     sub_claims = (
@@ -232,8 +296,22 @@ def evaluate_state(state: Dict[str, Any]) -> Dict[str, Any]:
             "note": "no sub_claims found in claim_decomposition",
         }
 
-    evidence = state.get("evidence") or []
-    return evaluate_subclaims(sub_claims, evidence)
+    evidence = list(state.get("evidence") or [])
+    # Fix #13: credit verified regulatory filings (SEC 10-K, SBTi, CDP A-list,
+    # ...) toward the Tier-1/2 counter. Without this, Chevron's 11 web
+    # evidence rows + a verified SEC 10-K filing still abstained (tier12=0).
+    regulatory_credits = _regulatory_tier1_credits(state)
+    if regulatory_credits:
+        evidence = evidence + regulatory_credits
+
+    result = evaluate_subclaims(sub_claims, evidence)
+    # Surface the credit derivation for the diagnostics appendix.
+    if regulatory_credits:
+        result["regulatory_credits_applied"] = [
+            {"framework": c.get("framework"), "source": c.get("source_name")}
+            for c in regulatory_credits
+        ]
+    return result
 
 
 def format_abstention_text(result: Dict[str, Any], indent: str = "  ") -> List[str]:

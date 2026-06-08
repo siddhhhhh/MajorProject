@@ -21,6 +21,7 @@ from core.vector_store import vector_store
 from core.sg_evidence import build_legacy_sg_adequacy, build_sg_evidence_pack
 from utils.enterprise_data_sources import enterprise_fetcher
 from utils.web_search import classify_source
+from core.institutional_verifier import get_source_tier
 from config.agent_prompts import EVIDENCE_RETRIEVAL_PROMPT
 from core.evidence_cache import evidence_cache
 import time
@@ -1085,6 +1086,7 @@ class EvidenceRetriever:
     def __init__(self):
         self.name = "Evidence Retrieval & Cross-Verification Specialist"
         self.vector_store = vector_store
+        self.vector_store_enabled = os.getenv("RAG_VECTOR_ENABLED", "0").lower() in {"1", "true", "yes"}
         self.enterprise_fetcher = enterprise_fetcher
         from utils.free_data_sources import free_data_aggregator
         self.data_aggregator = free_data_aggregator
@@ -1323,9 +1325,11 @@ class EvidenceRetriever:
             raw += _try_sync(       "duckduckgo",    fetch_duckduckgo, long_query, cap=DUCKDUCKGO_FETCH_CAP)
             raw += _try_sync(       "reuters_rss",   fetch_reuters_rss, company, cap=REUTERS_RSS_FETCH_CAP)
 
-            # Historical context remains useful but bounded
-            vector_results = self.vector_store.search_similar(claim_text, n_results=5)
-            raw += self._process_vector_results(vector_results)
+            # Historical vector context is useful, but ChromaDB is a heavy
+            # Windows cold-start dependency. Keep it opt-in for demo runs.
+            if self.vector_store_enabled:
+                vector_results = self.vector_store.search_similar(claim_text, n_results=5)
+                raw += self._process_vector_results(vector_results)
 
             async with httpx.AsyncClient() as session:
                 raw += await _try_async("cdp",              fetch_cdp_evidence(company, session))
@@ -1613,6 +1617,16 @@ class EvidenceRetriever:
             except Exception as e:
                 print(f"   ⚠️ Indian financial data error: {e}")
         
+        # Fix #15: Per-pillar coverage audit. The Chevron run ended with
+        # E=12, S=0, G=2 KG facts — Social pillar score was computed on
+        # zero evidence. Fire targeted DuckDuckGo queries for any empty
+        # pillar so the knowledge graph is at least minimally populated.
+        pillar_counts, pillar_fallback_evidence, pillar_fallback_queries = (
+            self._audit_and_backfill_pillars(structured_evidence, company)
+        )
+        if pillar_fallback_evidence:
+            structured_evidence = structured_evidence + pillar_fallback_evidence
+
         print(f"\n✅ Evidence retrieval complete:")
         print(f"   Total sources: {len(structured_evidence)}")
         print(f"   Independent sources: {quality_metrics['independent_sources']}")
@@ -1620,6 +1634,9 @@ class EvidenceRetriever:
         print(f"   Avg freshness: {quality_metrics['avg_freshness_days']:.1f} days")
         print(f"   Source diversity: {quality_metrics['source_diversity']} types")
         print(f"   Evidence gap: {'YES ⚠️' if quality_metrics['evidence_gap'] else 'NO ✓'}")
+        print(f"   Pillar coverage: E={pillar_counts['E']} S={pillar_counts['S']} G={pillar_counts['G']}"
+              + (f" (+{len(pillar_fallback_evidence)} from fallback queries: {pillar_fallback_queries})"
+                 if pillar_fallback_evidence else ""))
         if company_reports.get("reports_found"):
             print(f"   Official reports: {len(company_reports['reports_found'])} PDF(s)")
         if indian_financials.get("financials"):
@@ -1645,7 +1662,9 @@ class EvidenceRetriever:
             "company_reports": company_reports,
             "indian_financials": indian_financials,
             "graph_retrieval": graph_context,
-            "retrieval_timestamp": datetime.now().isoformat()
+            "retrieval_timestamp": datetime.now().isoformat(),
+            "pillar_coverage_post_retrieval": pillar_counts,
+            "pillar_fallback_queries_fired": pillar_fallback_queries,
         }
         
         # ============================================================
@@ -1915,11 +1934,47 @@ class EvidenceRetriever:
                     or ev.get("title", "").split(" - ")[0]
                     or "Unknown"
                 )
-            
+
+            # ── Fix 5: Source classification & reliability-tier recovery ──
+            # Every structured record must leave with `source` and
+            # `reliability_tier` populated. Pre-fix, 62/63 records reached
+            # the report with both null, collapsing tier-weighted scoring
+            # and triggering false-abstain on every claim.
+            #
+            # We stamp three coupled fields:
+            #   - source            (string fallback chain: explicit → name → domain → type)
+            #   - reliability_tier  (string in "Tier N – Category" format so BOTH
+            #                       abstention_layer._tier() and
+            #                       api/mappers._classify_source_type() parse it)
+            #   - _tier             (explicit int 1-4 for downstream weighting)
+            tier_int = get_source_tier({
+                "url": ev.get("url", ""),
+                "source_type": source_type,
+            })
+
+            existing_tier_str = str(ev.get("reliability_tier") or "")
+            if re.search(r"tier\s*[-_]?\s*[1234]", existing_tier_str, re.IGNORECASE):
+                # Retriever already tagged with parseable tier (e.g. "Tier-1 Financial Media")
+                reliability_tier_str = existing_tier_str
+            elif existing_tier_str:
+                # Retriever provided a category label only — fold tier in front
+                reliability_tier_str = f"Tier {tier_int} - {existing_tier_str}"
+            else:
+                # No retriever tag — synthesize from computed tier + classified type
+                reliability_tier_str = f"Tier {tier_int} - {source_type}"
+
+            source_field = ev.get("source")
+            if not source_field:
+                netloc = (urlparse(ev.get("url", "")).netloc or "").replace("www.", "")
+                source_field = source_name or netloc or source_type or "Unknown"
+
             structured.append({
                 "source_id": f"ev_{i:03d}",
+                "source": source_field,
                 "source_name": source_name,
                 "source_type": source_type,
+                "reliability_tier": reliability_tier_str,
+                "_tier": tier_int,
                 "url": ev.get("url", ""),
                 "title": ev.get("title", ""),
                 "snippet": ev.get("snippet", ""),
@@ -1960,6 +2015,69 @@ class EvidenceRetriever:
             return max(0, (now - date).days)
         except:
             return 999
+
+    def _audit_and_backfill_pillars(
+        self, evidence: List[Dict], company: str
+    ) -> tuple[Dict[str, int], List[Dict], List[str]]:
+        """Count pillar coverage; if any pillar is empty, fire targeted
+        DuckDuckGo queries to backfill.
+
+        Bounded — at most 2 extra queries fire per call so a degenerate
+        run doesn't balloon the retrieval cost. Each backfill row is
+        tagged ``_origin="pillar_backfill"`` for traceability.
+
+        Returns (pillar_counts, backfill_rows, queries_fired).
+        """
+        counts = {"E": 0, "S": 0, "G": 0}
+        for ev in evidence:
+            if not isinstance(ev, dict):
+                continue
+            blob = " ".join(str(ev.get(k) or "") for k in (
+                "title", "snippet", "relevant_text", "summary"
+            ))
+            meta = self._infer_pillar_metadata(blob)
+            p = meta.get("pillar")
+            if p in counts:
+                counts[p] += 1
+
+        empty_pillars = [p for p, n in counts.items() if n == 0]
+        if not empty_pillars:
+            return counts, [], []
+
+        # Pillar → fallback query terms. Keeps queries cheap and specific.
+        pillar_queries = {
+            "S": f"{company} workforce safety community labor diversity",
+            "G": f"{company} board governance compliance ethics whistleblower",
+            "E": f"{company} emissions climate renewable water biodiversity",
+        }
+        backfill_rows: List[Dict] = []
+        queries_fired: List[str] = []
+        for p in empty_pillars[:2]:  # cap at 2 to bound cost
+            q = pillar_queries.get(p)
+            if not q:
+                continue
+            try:
+                rows = fetch_duckduckgo(q, cap=3)
+            except Exception as exc:
+                print(f"   ⚠️ Pillar backfill query for {p} failed: {exc}")
+                continue
+            queries_fired.append(q)
+            for r in rows:
+                if not isinstance(r, dict):
+                    continue
+                r = dict(r)
+                r["_origin"] = "pillar_backfill"
+                r["_pillar_target"] = p
+                meta = self._infer_pillar_metadata(
+                    " ".join(str(r.get(k) or "") for k in ("title", "snippet"))
+                )
+                r["pillar"] = meta.get("pillar", p)
+                r["pillar_environmental"] = meta.get("pillar_environmental", False)
+                r["pillar_social"] = meta.get("pillar_social", False)
+                r["pillar_governance"] = meta.get("pillar_governance", False)
+                backfill_rows.append(r)
+                counts[p] = counts.get(p, 0) + 1
+        return counts, backfill_rows, queries_fired
 
     def _infer_pillar_metadata(self, text: str) -> Dict[str, Any]:
         lower = str(text or "").lower()
@@ -2013,6 +2131,9 @@ class EvidenceRetriever:
     def _store_evidence_in_vectordb(self, evidence: List[Dict], company: str, claim_id: int):
         """Store evidence in vector DB for future queries"""
         
+        if not self.vector_store_enabled:
+            return
+
         try:
             documents = []
             metadatas = []

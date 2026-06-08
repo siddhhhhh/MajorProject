@@ -1828,8 +1828,64 @@ class ProfessionalReportGenerator:
             or []
         )
         if isinstance(modifier_ledger, list) and modifier_ledger:
+            # ─── Top-5 simplified waterfall (demo-friendly view) ───────────
+            # Pre-rank the ledger so a reader sees the *headline drivers*
+            # before the full audit dump. The raw ledger has 30-50 rows
+            # including bucket pre-weights, intermediate sub-totals, and
+            # hard-cap markers — useful for audit, hostile to a 10-minute
+            # demo. We compute a stable Top-5 once and render both views.
+            _delta_rows: List[tuple] = []
+            for _row in modifier_ledger:
+                if not isinstance(_row, dict):
+                    continue
+                _label = str(_row.get("label") or "")
+                _val = _row.get("value")
+                if not isinstance(_val, (int, float)):
+                    continue
+                # Filter to delta-style contributions only — drop GW/ESG
+                # running totals and raw (unweighted) bucket scores.
+                _label_lower = _label.lower()
+                if _label_lower.startswith("gw score") or _label_lower.startswith("esg score"):
+                    continue
+                if "bucket:" in _label_lower and "(score)" in _label_lower:
+                    continue  # raw bucket score (will pick weighted version instead)
+                if _label in {"α (formula gap weight)", "β (historical trust weight)",
+                              "γ (disclosure quality weight)", "δ (current contradictions weight)"}:
+                    continue  # weights, not deltas
+                if _label in {"C (Claim Intensity)", "P (Performance Score)",
+                              "R (Controversy Risk)", "D (Disclosure Completeness)",
+                              "T (Temporal Escalation)", "Gap (C - P)"}:
+                    continue  # GW formula inputs, not deltas
+                if abs(float(_val)) < 0.5:
+                    continue
+                _delta_rows.append((_label, float(_val)))
+            _delta_rows.sort(key=lambda x: abs(x[1]), reverse=True)
+            _top5 = _delta_rows[:5]
+
+            _headline_gw = None
+            for _row in modifier_ledger:
+                if isinstance(_row, dict) and str(_row.get("label", "")).lower().startswith("gw score (final"):
+                    _v = _row.get("value")
+                    if isinstance(_v, (int, float)):
+                        _headline_gw = float(_v)
+                        break
+
+            if _top5:
+                score_header.extend([
+                    "TOP 5 SCORE DRIVERS (simplified view — full ledger below)",
+                    "─" * 56,
+                ])
+                for _label, _val in _top5:
+                    _sign_val = f"{_val:+7.2f}"
+                    score_header.append(f"  {_sign_val}  {_label[:48]}")
+                if _headline_gw is not None:
+                    score_header.append("  " + "─" * 50)
+                    score_header.append(
+                        f"  After remaining rows + caps + recalibration → Headline GW: {_headline_gw:.1f}/100"
+                    )
+                score_header.append("")
             score_header.extend([
-                "SCORE MODIFIER LEDGER",
+                "FULL SCORE MODIFIER LEDGER (all rows — audit-grade)",
                 "─" * 56,
             ])
             for row in modifier_ledger:
@@ -1882,17 +1938,57 @@ class ProfessionalReportGenerator:
             gw_formula = raw_scores.get("greenwashingformula") or raw_scores.get("greenwashing_formula") or {}
             formula_comps = gw_formula.get("formula_components") or {}
             industry_sigma = formula_comps.get("industry_sigma", "N/A")
+            _alpha = ledger_map.get("α (formula gap weight)", 0.35)
+            _beta = ledger_map.get("β (historical trust weight)", 0.40)
+            _gamma = ledger_map.get("γ (disclosure quality weight)", 0.10)
+            _delta = ledger_map.get("δ (current contradictions weight)", 0.15)
+            _c_val = ledger_map.get("C (Claim Intensity)")
+            _p_val = ledger_map.get("P (Performance Score)")
+            _r_val = ledger_map.get("R (Controversy Risk)")
+            _d_val = ledger_map.get("D (Disclosure Completeness)")
+            _t_val = ledger_map.get("T (Temporal Escalation)")
+
+            def _num_or_none(value: Any) -> Optional[float]:
+                try:
+                    if value in (None, "", "N/A", "nan"):
+                        return None
+                    return float(value)
+                except (TypeError, ValueError):
+                    return None
+
+            gw_formula_value = ledger_map.get("GW Score (formula)")
+            if gw_formula_value is None:
+                _nums = [
+                    _num_or_none(v)
+                    for v in (_c_val, _p_val, industry_sigma, _r_val, _d_val, _t_val, _alpha, _beta, _gamma, _delta)
+                ]
+                if all(v is not None for v in _nums):
+                    c_num, p_num, sigma_num, r_num, d_num, t_num, a_num, b_num, g_num, dl_num = _nums
+                    if sigma_num and sigma_num > 0:
+                        gw_formula_value = (
+                            a_num * max(0.0, (c_num - p_num) / sigma_num) * 100.0
+                            + b_num * r_num
+                            + g_num * (1.0 - d_num / 100.0) * 100.0
+                            + dl_num * t_num
+                        )
+
+            gw_recalibrated_value = (
+                ledger_map.get("GW Score (recalibrated)")
+                or ledger_map.get("GW Score (final, recalibrated)")
+                or ledger_map.get("GW Score (raw bucket + structural penalties)")
+                or ledger_map.get("GW Score (bucket formula, pre-structural)")
+            )
 
             gw_vars = [
-                ("C (Claim Intensity)", ledger_map.get("C (Claim Intensity)")),
-                ("P (Performance Score)", ledger_map.get("P (Performance Score)")),
+                ("C (Claim Intensity)", _c_val),
+                ("P (Performance Score)", _p_val),
                 ("Gap (C - P)", ledger_map.get("Gap (C - P)")),
-                ("R (Controversy Risk)", ledger_map.get("R (Controversy Risk)")),
-                ("D (Disclosure Completeness)", ledger_map.get("D (Disclosure Completeness)")),
-                ("T (Temporal Escalation)", ledger_map.get("T (Temporal Escalation)")),
+                ("R (Controversy Risk)", _r_val),
+                ("D (Disclosure Completeness)", _d_val),
+                ("T (Temporal Escalation)", _t_val),
                 ("Industry sigma", industry_sigma),
-                ("GW Score (formula)", ledger_map.get("GW Score (formula)")),
-                ("GW Score (recalibrated)", ledger_map.get("GW Score (recalibrated)")),
+                ("GW Score (formula)", gw_formula_value),
+                ("GW Score (recalibrated)", gw_recalibrated_value),
             ]
             score_header.append("GW FORMULA INPUTS")
             score_header.append("─" * 56)
@@ -2309,7 +2405,7 @@ class ProfessionalReportGenerator:
                     "severity": str(_c.get("severity", "HIGH")).upper(),
                     "statement": _stmt,
                     "source": str(_c.get("source") or _c.get("citation") or "Evidence analysis"),
-                    "year": str(_c.get("year", "N/A")),
+                    "year": str(_c.get("year") or "N/A"),
                     "confidence": str(_c.get("confidence", "HIGH")).upper(),
                 })
             # Re-sort by severity rank (HIGH first)
@@ -2817,8 +2913,43 @@ class ProfessionalReportGenerator:
                 section5.append(self._wrap_paragraph(
                     "  → " + scope3_boundary["reason"], width=80,
                 ))
-            for cat in (scope3_boundary.get("missing_categories") or [])[:3]:
+            _missing_cats = scope3_boundary.get("missing_categories") or []
+            for cat in _missing_cats[:3]:
                 section5.append(f"  → Likely missing: {cat}")
+            # Loud callout when Cat 11 (Use of sold products) is missing for
+            # a sector where it dominates total Scope 3 (auto = vehicle use
+            # phase, oil & gas = fuel combustion). Headline Scope 3 is then
+            # understated by an order of magnitude — that's a sharper investor
+            # finding than the polite "Likely missing" line.
+            _cat11_dominant_industries = {
+                "automotive", "auto", "oil_and_gas", "oil and gas", "oil & gas",
+                "energy", "coal", "mining", "aviation", "shipping", "petrochemicals",
+                "utilities", "power",
+            }
+            _industry_key = str(v.get("industry") or "").strip().lower()
+            _cat11_missing = any("Cat 11" in str(c) or "use of sold products" in str(c).lower() for c in _missing_cats)
+            if _cat11_missing and _industry_key in _cat11_dominant_industries:
+                _disclosed_s3 = None
+                if isinstance(carbon, dict):
+                    _em = carbon.get("emissions") or {}
+                    _s3v = (_em.get("scope3") or {}) if isinstance(_em, dict) else {}
+                    _disclosed_s3 = _s3v.get("total") or _s3v.get("value")
+                _disclosed_str = (
+                    f"{float(_disclosed_s3):,.0f} tCO2e" if isinstance(_disclosed_s3, (int, float)) else "the disclosed figure"
+                )
+                section5.append("")
+                section5.append(
+                    "  ⚠⚠  HEADLINE SCOPE 3 LIKELY UNDERSTATES TRUE EXPOSURE BY ORDER OF MAGNITUDE."
+                )
+                section5.append(self._wrap_paragraph(
+                    f"  For {_industry_key}, Category 11 (Use of sold products) typically "
+                    f"dominates total Scope 3 (~70-90% of lifecycle for autos; ~85-95% for oil & "
+                    f"gas). With Cat 11 missing from the headline, {_disclosed_str} should be read "
+                    f"as a NARROW-boundary disclosure — true lifecycle exposure is likely "
+                    f"5-10× higher. Do NOT compare across companies unless boundaries match.",
+                    width=80,
+                ))
+                section5.append("")
             if scope3_boundary.get("use_phase_disclosed_separately"):
                 # Only point to a lifecycle metric "below" if we actually
                 # extracted a numeric value — otherwise the reader looks
@@ -4070,6 +4201,15 @@ class ProfessionalReportGenerator:
         appendix_a = [major, "APPENDIX A: VALIDATION & CALIBRATION STATUS", major, self._plain_textify(self._generate_validation_metadata_section(v.get("calibration", {}), company_industry=v.get("industry", "Unknown"))), "", major]
         appendix_b = [major, "APPENDIX B: TEMPORAL ESG CONSISTENCY", major, self._plain_textify(self._generate_temporal_consistency_section(state)), "", major]
         appendix_c = [major, "APPENDIX C: EVIDENCE & OFFSET INTEGRITY", major, self._plain_textify(self._generate_realism_diagnostics_section(state)), "", major]
+        # Fix #19 — Diagnostics appendix: surface the data-quality probes
+        # added by Phases 1–4 (Scope-3 boundary basis, per-pillar evidence
+        # counts, Tier-1 regulatory credits, abstention demotion flag,
+        # year-of-data classification). Pure plumbing — no new computation,
+        # just exposes what the upstream agents already wrote so a reviewer
+        # can audit any number's provenance in one section.
+        appendix_d = [major, "APPENDIX D: DIAGNOSTICS", major,
+                      self._plain_textify(self._generate_diagnostics_section(state, v)),
+                      "", major]
 
         # ── Decision state from canonical resolver (Phase 3: render from v) ──
         score_disclaimer = str(v.get("score_disclaimer", "")).strip()
@@ -4077,7 +4217,19 @@ class ProfessionalReportGenerator:
         abstainrecommended = bool(v.get("abstain_recommended", False))
         abstentionreason = str(v.get("abstention_reason", "")).strip()
 
+        # Fix #18: When ABSTAIN_RECOMMENDED, the headline number must NOT
+        # dominate the verdict block. Replace the big-number line with an
+        # ABSTAINED tag; the numeric is preserved on a secondary line marked
+        # [indicative only]. The brief.json gets the explicit display string
+        # via greenwashing_risk_score_display so machine consumers see the
+        # demotion too.
         gw_score_disp = f"{v['gw_score']:.1f} / 100"
+        if abstainrecommended:
+            gw_score_disp = (
+                f"ABSTAINED — numeric below decision floor (see Section 3C)\n"
+                f"                            "
+                f"[indicative only: {v['gw_score']:.1f} / 100]"
+            )
         # ESG display: use canonical resolved score (already in v["esg_score"])
         # If a separate raw (un-adjusted) ESG score is available, show both side-by-side
         # so the audience can see industry-adjustment effects without flipping to JSON.
@@ -4194,10 +4346,10 @@ class ProfessionalReportGenerator:
             dataset_size = int(cal.get("dataset_size", 0) or 0) if isinstance(cal, dict) else 0
             sector_counts = (cal.get("sector_counts") or {}) if isinstance(cal, dict) else {}
             if industry and dataset_size > 0:
-                ind_key = industry.lower()
+                ind_key = self._normalize_sector_value(industry)
                 n_sector = 0
                 for k, cnt in sector_counts.items():
-                    if isinstance(k, str) and k.strip().lower() == ind_key:
+                    if isinstance(k, str) and self._normalize_sector_value(k) == ind_key:
                         try:
                             n_sector = int(cnt)
                         except (TypeError, ValueError):
@@ -4742,10 +4894,21 @@ class ProfessionalReportGenerator:
                 _articles = _rt_state.get("articles") or []
         if not isinstance(_articles, list):
             _articles = []
+        # Relevance filter — the realtime monitoring agent's aggregators can
+        # surface aspirationally-named lifestyle articles (camper-van DIY
+        # using a VW ID. Buzz, generic "Malaysia 2050 net zero" pieces) that
+        # mention the company brand but have zero bearing on greenwashing
+        # risk. Require BOTH a company-name token AND at least one ESG /
+        # legal / financial keyword before surfacing in the report. Without
+        # this gate the news section reads as low-quality retrieval and
+        # undermines the rest of the evidence layer's credibility.
+        _articles = self._filter_relevant_articles(_articles, v.get("company"))
         news_lines.append(self._wrap_paragraph(
             "Current news coverage and public discourse signals captured by the real-time "
             "monitoring agent. These items reflect what would inform a market participant's "
-            "view today; they are NOT graded contradictions.",
+            "view today; they are NOT graded contradictions. Items below have been filtered "
+            "to keep only ESG/legal/financial-relevant matches; off-topic brand mentions "
+            "(product reviews, lifestyle, unrelated sector pieces) are suppressed.",
             width=80,
         ))
         news_lines.append("")
@@ -4826,9 +4989,29 @@ class ProfessionalReportGenerator:
                     "  Scores are produced for triage but should not be used for decision-grade reliance.",
                     "",
                 ] if decision_status == "DIRECTIONAL_ONLY" else []),
+                # Visible PROVISIONAL callout box. We surface this BEFORE the
+                # numbers so a skimming reader can't miss that the calibration
+                # set is small. Without this, an analyst lands on "89/100" and
+                # treats it as investment-grade precision — the parenthetical
+                # in the header line below is too easy to skip past.
+                *([
+                    "  ┌──────────────────────────────────────────────────────────────────────────┐",
+                    "  │ ⚠  PROVISIONAL CALIBRATION                                              │",
+                    f"  │ {self._provisional_callout_msg(cal_status_disp, v.get('industry')):<72} │",
+                    "  │ Score is directionally reliable, NOT investment-grade precision.        │",
+                    "  └──────────────────────────────────────────────────────────────────────────┘",
+                    "",
+                ] if "PROVISIONAL" in str(cal_status_disp) else []),
                 f"  Greenwashing Risk Score:  {gw_score_disp}",
                 f"  ESG Score:                {esg_score_disp}",
                 f"  ESG Rating:               {v['rating']}",
+                # One-line reconciliation so an analyst doesn't ask why a
+                # high GW score sits next to a positive-sounding letter
+                # rating (BBB looks moderate-to-strong in credit context but
+                # GW Score uses an independent axis). Without this the box
+                # invites "why doesn't 89 match BBB?" objections in demos.
+                ("  ↳  GW and ESG measure DIFFERENT things: GW = trustworthiness of the CLAIM; "
+                 "ESG = corporate profile. A high-ESG company can still over-claim."),
                 f"  Risk Band:                {band_disp}",
                 f"  Confidence:               {v['confidence_pct']:.1f}%",
                 data_coverage_str,
@@ -4846,7 +5029,7 @@ class ProfessionalReportGenerator:
                 "",
                 major,
             ]),
-            "section1": "\n".join(self._build_section1_with_limitations(major, section1_text, v, structured)),
+            "section1": "\n".join(self._build_section1_with_limitations(major, section1_text, v, structured, state)),
             "section_anatomy": "\n".join(section_anatomy),
             "section2": "\n".join(sec2_lines),
             "materiality_profile": "\n".join(materiality_lines),
@@ -4880,6 +5063,7 @@ class ProfessionalReportGenerator:
             "appendix_a": "\n".join(appendix_a),
             "appendix_b": "\n".join(appendix_b),
             "appendix_c": "\n".join(appendix_c),
+            "appendix_d": "\n".join(appendix_d),
             "end": "\n".join([major, "END OF REPORT", major, f"Report ID: {report_id}   Generated: {date_line}   ESGLens v4.0", major]),
         }
 
@@ -4897,7 +5081,7 @@ class ProfessionalReportGenerator:
             "section7d", "section7e",
             "section5", "section5b", "section8c", "section8d", "section8e", "section7", "recent_news",
             "section9", "section9c", "audit_metadata", "section10", "section10b",
-            "section11c", "section11d", "section11", "section12", "appendix_a", "appendix_b", "appendix_c", "end",
+            "section11c", "section11d", "section11", "section12", "appendix_a", "appendix_b", "appendix_c", "appendix_d", "end",
         ]
         # Drop empty blocks so optional sections (e.g. SECTION 11B Commitment
         # Timeline when no ledger data exists) don't leave a hollow heading.
@@ -5228,7 +5412,7 @@ class ProfessionalReportGenerator:
             "error": merged.get("error"),
         }
 
-    def _build_section1_with_limitations(self, major: str, section1_text: str, v: Dict[str, Any], structured: Dict[str, Any]) -> List[str]:
+    def _build_section1_with_limitations(self, major: str, section1_text: str, v: Dict[str, Any], structured: Dict[str, Any], state: Optional[Dict[str, Any]] = None) -> List[str]:
         """Build Section 3 (Executive Summary) with critical caveats up front.
 
         Previously, limitations were buried in Section 11 — a reader skimming
@@ -5240,6 +5424,43 @@ class ProfessionalReportGenerator:
         lines: List[str] = [major, "SECTION 3: EXECUTIVE SUMMARY", major]
         lines.append(self._wrap_paragraph(section1_text, width=80))
         lines.append("")
+
+        # Headline finding — Deception vs GW divergence. When the linguistic
+        # deception score is materially below the headline GW score, the
+        # company isn't lying — they're under-executing or carrying real-world
+        # signals (regulatory gaps, carbon-pathway misalignment). That is a
+        # sharper investor takeaway than either number alone, and it's
+        # currently buried 9 sections down. Promote it.
+        try:
+            _state = state or {}
+            _green = _state.get("greenwishing_analysis") or {}
+            _dec_score = None
+            if isinstance(_green, dict):
+                _dec_block = _green.get("overall_deception_risk") or {}
+                if isinstance(_dec_block, dict):
+                    _dec_score = _dec_block.get("score")
+            _gw_score = v.get("gw_score")
+            if (
+                isinstance(_dec_score, (int, float))
+                and isinstance(_gw_score, (int, float))
+                and (float(_gw_score) - float(_dec_score)) > 30
+            ):
+                _diff = float(_gw_score) - float(_dec_score)
+                lines.append("HEADLINE FINDING — EXECUTION RISK, NOT DECEPTION:")
+                lines.append(self._wrap_paragraph(
+                    f"  Linguistic Deception Risk is {float(_dec_score):.0f}/100 while "
+                    f"Greenwashing Score is {float(_gw_score):.0f}/100 (gap = {_diff:.0f} pts). "
+                    f"The company is not over-promoting in its narrative — the elevated GW "
+                    f"score is driven by non-linguistic signals: regulatory gaps, active "
+                    f"enforcement, or carbon-pathway misalignment. Read as DISCLOSURE/"
+                    f"EXECUTION risk, not narrative manipulation.",
+                    width=80,
+                ))
+                lines.append("")
+        except Exception:
+            # Headline finding is advisory — never let a render miss block
+            # the rest of the executive summary.
+            pass
 
         caveats: List[str] = []
 
@@ -5684,9 +5905,20 @@ class ProfessionalReportGenerator:
 
     def _parse_unified_evidence(self, state: Dict[str, Any]) -> List[EvidenceItem]:
         # ── Key-name audit: detect novel upstream keys that we'd silently miss ──
+        # Fix #17: cross_pillar_contradictions was firing this warning every
+        # run. Added to the known set with a comment explaining its purpose;
+        # the warning now points to THIS file:line so future schema-drift
+        # has a single canonical fix-up location.
         _KNOWN_EVIDENCE_KEYS = {
             "evidence", "contradiction_results", "contradictions",
             "unified_evidence", "evidence_items",
+            # cross_pillar_contradictions = output of core.evidence_graph's
+            # P8 cross-pillar pass. It's a derived view (not raw evidence)
+            # so it does NOT need consolidation into unified_evidence — but
+            # the audit set must know about it to suppress the warning.
+            "cross_pillar_contradictions",
+            "additional_evidence",
+            "evidence_gap_analysis",
         }
         state_evidence_keys = {
             k for k in state.keys()
@@ -5696,7 +5928,8 @@ class ProfessionalReportGenerator:
         if novel_keys:
             logger.warning(
                 f"Novel evidence-related state keys detected: {novel_keys}. "
-                f"Check if they should be consolidated into unified_evidence."
+                f"Add to _KNOWN_EVIDENCE_KEYS in {__file__}:_parse_unified_evidence "
+                f"or consolidate into unified_evidence."
             )
 
         unified: List[EvidenceItem] = []
@@ -7107,6 +7340,80 @@ class ProfessionalReportGenerator:
         s = re.sub(r"  +", " ", s)
         return s
 
+    def _filter_relevant_articles(self, articles: Any, company: Any) -> List[Dict[str, Any]]:
+        """Filter news articles to those that are actually ESG/legal/financial-relevant.
+
+        The realtime monitoring aggregators (Google News, BBC, DuckDuckGo, NGO
+        feeds) frequently surface product reviews, brand-mention lifestyle
+        pieces, or unrelated-sector articles that just mention the company
+        name. Requiring BOTH a company-name token AND an ESG-relevant keyword
+        keeps the section honest. Without this gate, an analyst reading VW's
+        report finds tiny-house camper-van DIY pieces in the "real-time ESG
+        coverage" section — destroys retrieval credibility.
+
+        Returns the filtered list preserving original order.
+        """
+        if not isinstance(articles, list) or not articles:
+            return []
+        company_tokens = [
+            t.lower() for t in re.split(r"[^A-Za-z0-9]+", str(company or ""))
+            if len(t) >= 4
+        ]
+        relevance_kws = {
+            # ESG / climate
+            "esg", "sustainab", "climate", "carbon", "emission", "net zero",
+            "net-zero", "scope 1", "scope 2", "scope 3", "ghg", "greenwash",
+            "green claim", "renewable", "decarbon", "transition", "biodivers",
+            "pollut", "deforest", "circular", "recyc",
+            # Governance / legal
+            "lawsuit", "litigation", "court", "settlement", "fine", "penalty",
+            "regulator", "sec ", "ftc", "sebi", "epa", "doj", "complaint",
+            "investigat", "indict", "probe", "enforcement", "violation",
+            "breach", "fraud", "consent decree", "subpoena", "ruling",
+            # Financial / disclosure
+            "earnings", "annual report", "10-k", "10k", "filing", "disclos",
+            "audit", "shareholder", "board", "governance", "proxy",
+            # Social / labor
+            "labor", "labour", "human rights", "workplace", "harass",
+            "diversity", "supply chain", "indigenous",
+        }
+        out: List[Dict[str, Any]] = []
+        for art in articles:
+            if not isinstance(art, dict):
+                continue
+            blob = " ".join([
+                str(art.get("title") or ""),
+                str(art.get("snippet") or ""),
+                str(art.get("relevant_text") or ""),
+            ]).lower()
+            if not blob.strip():
+                continue
+            # Company-token gate
+            if company_tokens and not any(tok in blob for tok in company_tokens):
+                continue
+            # Keyword gate (any one keyword suffices)
+            if not any(kw in blob for kw in relevance_kws):
+                continue
+            out.append(art)
+        return out
+
+    def _provisional_callout_msg(self, cal_status_disp: str, industry: Any) -> str:
+        """Render a one-line provisional-calibration explainer for the verdict callout box.
+
+        Pulls (n=X) out of the existing calibration-status string so the box
+        reads "Banking calibration set has 16 cases" rather than the raw
+        bracketed "[CALIBRATED - LOW (n=16)]" the header line carries.
+        """
+        n = 0
+        try:
+            m = re.search(r"n\s*=\s*(\d+)", str(cal_status_disp or ""))
+            if m:
+                n = int(m.group(1))
+        except Exception:
+            n = 0
+        ind = str(industry or "").strip() or "this sector"
+        return f"Score is provisional — {ind} calibration set has {n} case(s)."
+
     def _format_verdict_finding(self, line: str) -> str:
         # Use a generous max_len so the source string isn't truncated mid-name
         # ("EU | EU" instead of "EU | EU Regulatory Evidence"). textwrap.fill
@@ -7553,7 +7860,17 @@ class ProfessionalReportGenerator:
 
     @staticmethod
     def _normalize_sector_value(value: Any) -> str:
-        return str(value or "").strip().lower()
+        key = re.sub(r"\s+", " ", str(value or "").strip().lower().replace("_", " "))
+        aliases = {
+            "oil & gas": "energy",
+            "oil and gas": "energy",
+            "oil gas": "energy",
+            "energy/oil & gas": "energy",
+            "financial services": "finance",
+            "banking": "finance",
+            "retail fashion": "retail/fashion",
+        }
+        return aliases.get(key, key)
 
     @staticmethod
     def _infer_claim_type(claim_text: str) -> str:
@@ -8698,10 +9015,10 @@ Score: {score:.1f}/100 — {level}
 
         # Company-specific sector note
         if cal_state != "NOT_AVAILABLE" and dataset_size and industries_repr:
-            ind_key = company_industry.strip().lower()
+            ind_key = self._normalize_sector_value(company_industry)
             n_sector = 0
             for k, cnt in sector_counts.items():
-                if k.strip().lower() == ind_key:
+                if self._normalize_sector_value(k) == ind_key:
                     n_sector = cnt
                     break
             representativeness = "well-represented" if n_sector >= 3 else "underrepresented"
@@ -9490,6 +9807,14 @@ Industry Baseline Adjustment: {industry_adj:+.1f} points
         else:
             realism_score = 0
 
+        # Do not report "100/100 HIGH" when only one diagnostic dimension was
+        # assessable. A strong evidence-composition signal alone is useful, but
+        # it cannot prove offset, temporal, and execution integrity.
+        if len(dim_assessed) == 1:
+            realism_score = min(realism_score, 69)
+        elif len(dim_assessed) == 2:
+            realism_score = min(realism_score, 84)
+
         realism_label = "high"
         if realism_score < 70:
             realism_label = "moderate"
@@ -9527,7 +9852,110 @@ Industry Baseline Adjustment: {industry_adj:+.1f} points
                 "quality_label": temporal_quality_label,
                 "reliability": temporal_reliability,
             },
+            "assessed_dimensions": dim_assessed,
+            "assessed_dimension_count": len(dim_assessed),
+            "diagnostic_coverage_note": (
+                "Only one realism diagnostic dimension was assessable; score is capped."
+                if len(dim_assessed) == 1
+                else "Two realism diagnostic dimensions were assessable; score is capped."
+                if len(dim_assessed) == 2
+                else ""
+            ),
         }
+
+    def _generate_diagnostics_section(self, state: Dict[str, Any], v: Dict[str, Any]) -> str:
+        """Diagnostics appendix — surfaces upstream data-quality probes.
+
+        Pure plumbing: every value rendered here was already computed by an
+        upstream agent and stashed in state. The section exists so a reviewer
+        can audit any headline number's provenance without grepping the
+        full report.
+
+        Includes (Phases 1–4):
+          - Scope-3 boundary classification basis
+          - Per-pillar evidence counts + backfill queries
+          - Tier-1 regulatory credits applied to abstention
+          - Abstention demotion flag
+          - Year-of-data rejection rate (carbon extractor)
+        """
+        lines = ["DIAGNOSTICS", "─" * 80, ""]
+
+        # Scope 3 boundary classification basis
+        carbon = state.get("carbon_extraction") or {}
+        emissions = carbon.get("emissions") or {} if isinstance(carbon, dict) else {}
+        scope3 = emissions.get("scope3") or {} if isinstance(emissions, dict) else {}
+        boundary = scope3.get("boundary") if isinstance(scope3, dict) else None
+        if isinstance(boundary, dict):
+            basis = boundary.get("classification_basis") or {}
+            lines.append("Scope 3 Boundary Classification:")
+            lines.append(f"  Label:                {boundary.get('boundary', 'UNKNOWN')}")
+            if basis:
+                lines.append(f"  Magnitude in range:   {basis.get('magnitude_in_range')}")
+                lines.append(f"  Disclosed categories: {basis.get('disclosed_categories')}/15")
+                lines.append(f"  Material categories:  {basis.get('material_categories')}/5")
+            reason = str(boundary.get("reason", "")).strip()
+            if reason:
+                lines.append(f"  Reason: {reason[:240]}")
+            lines.append("")
+
+        # Per-pillar evidence coverage + backfill
+        evidence_state = state.get("evidence_retrieval") or {}
+        # Some pipelines stash it at top-level
+        if not evidence_state:
+            evidence_state = state
+        pillar_counts = evidence_state.get("pillar_coverage_post_retrieval")
+        backfill_queries = evidence_state.get("pillar_fallback_queries_fired") or []
+        if pillar_counts:
+            lines.append("Per-Pillar Evidence Coverage:")
+            lines.append(
+                f"  E={pillar_counts.get('E', 0)}  "
+                f"S={pillar_counts.get('S', 0)}  "
+                f"G={pillar_counts.get('G', 0)}"
+            )
+            if backfill_queries:
+                lines.append(f"  Backfill queries fired: {len(backfill_queries)}")
+                for q in backfill_queries[:3]:
+                    lines.append(f"    • {q}")
+            lines.append("")
+
+        # Tier-1 regulatory credits (Fix #13)
+        abst = state.get("abstention_analysis") or {}
+        credits = abst.get("regulatory_credits_applied") or []
+        if credits:
+            lines.append("Tier-1 Regulatory Credits Applied (SURE-RAG):")
+            for c in credits:
+                lines.append(f"  • {c.get('framework')} (source: {c.get('source')})")
+            lines.append("")
+        elif abst:
+            lines.append("Tier-1 Regulatory Credits Applied: (none — no verified registry filings)")
+            lines.append("")
+
+        # Abstention demotion flag (Fix #18)
+        abstain_recommended = bool(v.get("abstain_recommended", False))
+        if abstain_recommended:
+            lines.append("Abstention Demotion:")
+            lines.append("  Applied:   YES — headline numeric demoted to indicative-only")
+            lines.append(f"  Reason:    {str(v.get('abstention_reason', '')).strip()[:200]}")
+            lines.append("")
+
+        # Year-of-data rejection rate (Fix #11) — derived from rejection log,
+        # surfaced opportunistically if the extractor populated it.
+        rejections = (carbon or {}).get("rejection_summary") or {}
+        if isinstance(rejections, dict) and rejections:
+            future_year_rejects = rejections.get("future_year_rejects") or 0
+            mag_rejects = rejections.get("magnitude_rejects") or 0
+            if future_year_rejects or mag_rejects:
+                lines.append("Carbon Extraction Rejections (this run):")
+                lines.append(f"  Future-year measurements rejected:  {future_year_rejects}")
+                lines.append(f"  Magnitude-bound rejections:         {mag_rejects}")
+                lines.append("")
+
+        if len(lines) == 3:  # only the header — nothing populated
+            lines.append("  No diagnostic probes populated for this run.")
+            lines.append("  (Upstream agents did not stash diagnostic state — see")
+            lines.append("   evidence_retriever, carbon_extractor, abstention_layer.)")
+
+        return "\n".join(lines)
 
     def _generate_realism_diagnostics_section(self, state: Dict[str, Any]) -> str:
         """Generate a concise diagnostics panel for evidence and offset integrity."""
@@ -9541,6 +9969,7 @@ EVIDENCE & OFFSET INTEGRITY
 {'─'*80}
 
 Overall Realism Confidence: {"Not available" if diagnostics.get('realism_score', 0) == 0 and diagnostics.get('realism_label', 'unknown') == 'unknown' else f"{diagnostics.get('realism_score', 0)}/100 ({str(diagnostics.get('realism_label', 'unknown')).upper()})"}
+Diagnostic Coverage: {diagnostics.get('assessed_dimension_count', 0)} assessed dimension(s){f" - {diagnostics.get('diagnostic_coverage_note')}" if diagnostics.get('diagnostic_coverage_note') else ""}
 
 Offset Integrity:
   - Classification: {str(diagnostics.get('offset_integrity', 'unknown')).upper()} ({diagnostics.get('offset_status', 'unknown')})

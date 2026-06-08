@@ -911,18 +911,24 @@ class CarbonExtractor:
             validated_data["waste_data"] = extracted_data.get("waste_data")
 
         # Magnitude validation to reject parser artifacts (return None, never zero).
+        # Year is plumbed through so the future-year guard can reject rows
+        # like Chevron Scope 1=2M@2028 (a target-year leak), not just rows
+        # that fail the magnitude bounds.
         industry_state = self._normalize_industry_for_threshold(industry_hint)
         scope1_value = self._validate_emission_magnitude(
-            (validated_data.get("scope1") or {}).get("value"), 1, industry_state, company
+            (validated_data.get("scope1") or {}).get("value"), 1, industry_state, company,
+            year=(validated_data.get("scope1") or {}).get("year"),
         )
         scope2_value = self._validate_emission_magnitude(
-            (validated_data.get("scope2") or {}).get("value"), 2, industry_state, company
+            (validated_data.get("scope2") or {}).get("value"), 2, industry_state, company,
+            year=(validated_data.get("scope2") or {}).get("year"),
         )
         scope3_value = self._validate_emission_magnitude(
             (validated_data.get("scope3") or {}).get("total") or (validated_data.get("scope3") or {}).get("value"),
             3,
             industry_state,
             company,
+            year=(validated_data.get("scope3") or {}).get("year"),
         )
         if "scope1" not in validated_data:
             validated_data["scope1"] = {}
@@ -940,12 +946,26 @@ class CarbonExtractor:
         # extraction" failure mode where the parser pulls a sub-figure
         # (e.g. business-travel only Scope 3 = 2,030 for Microsoft, when
         # actual is ~14.9M) — _all_rejected wouldn't trigger because
-        # Scope 1/2 came through fine. The 5x band is wide enough that
-        # legitimate year-over-year change won't trip it; reporting boundary
-        # changes (e.g. adding Cat 11) are explicitly preserved by the
-        # boundary tagger downstream.
+        # Scope 1/2 came through fine.
+        #
+        # Bands:
+        #   Scope 1/2: tight (<0.7x or >1.5x curated). Operational emissions
+        #     change <30% YoY for established companies; >50% delta from a
+        #     cited public number is almost always extraction error, not a
+        #     real disclosure boundary shift.
+        #   Scope 3: still tight (<0.7x). Partial-boundary extraction is the
+        #     dominant failure mode — extractor finds 1-3 of 15 categories
+        #     and reports the partial sum as total. For oil & gas Cat 11 (use
+        #     of sold products) alone is ~90% of total, so missing it under-
+        #     reports by ~10x. Curated total reflects the full disclosed
+        #     boundary, which the boundary tagger downstream re-validates.
         curated_xc = self._curated_emissions_lookup(company)
         if curated_xc:
+            partial_s3_categories = None
+            _s3_obj_check = validated_data.get("scope3") or {}
+            _cat_dict = _s3_obj_check.get("categories")
+            if isinstance(_cat_dict, dict):
+                partial_s3_categories = len(_cat_dict)
             for _sk, _vk in (("scope1", "value"), ("scope2", "value"), ("scope3", "total")):
                 _curated_v = curated_xc.get(_sk)
                 if _curated_v is None or _curated_v == 0:
@@ -953,14 +973,25 @@ class CarbonExtractor:
                 _scope_obj = validated_data.get(_sk) or {}
                 _ext_v = _scope_obj.get(_vk)
                 # Override when extraction returned None/0 OR the extracted
-                # value is more than 5x off from curated in either direction.
+                # value differs materially from curated.
                 if _ext_v is None or _ext_v == 0:
                     _override = True
                     _reason = "no extracted value"
                 else:
                     try:
                         _ratio = float(_ext_v) / float(_curated_v)
-                        _override = _ratio < 0.2 or _ratio > 5.0
+                        if _sk == "scope3":
+                            # Tighten Scope 3 + override automatically when
+                            # extraction only saw <6/15 categories AND came
+                            # in under curated (the partial-boundary case).
+                            _partial_undercount = (
+                                partial_s3_categories is not None
+                                and partial_s3_categories < 6
+                                and _ratio < 1.0
+                            )
+                            _override = _partial_undercount or _ratio < 0.7 or _ratio > 1.5
+                        else:
+                            _override = _ratio < 0.7 or _ratio > 1.5
                         _reason = f"extracted {_ext_v:,.0f} vs curated {_curated_v:,.0f} (ratio {_ratio:.2f}x)"
                     except (TypeError, ValueError, ZeroDivisionError):
                         _override = False
@@ -1081,8 +1112,17 @@ class CarbonExtractor:
         _scope3_value = (validated_data.get("scope3") or {}).get("total")
         if _scope3_value is None:
             _scope3_value = (validated_data.get("scope3") or {}).get("value")
+        # Run the category audit FIRST so the boundary classifier can refuse
+        # to label magnitude-only signals as "FULL" when the explicit category
+        # evidence is thin (Chevron 2/15 disclosed → was labelled FULL purely
+        # from the magnitude band).
+        _completeness_pre = self._assess_scope3_completeness(
+            validated_data.get("scope3", {}) or {}, report_text=extraction_text,
+        )
         boundary_info = self._classify_scope3_boundary(
-            _scope3_value, industry_hint, extraction_text
+            _scope3_value, industry_hint, extraction_text,
+            disclosed_categories_count=_completeness_pre.get("categories_reported"),
+            material_categories_count=_completeness_pre.get("material_categories_count"),
         )
         if isinstance(validated_data.get("scope3"), dict):
             validated_data["scope3"]["boundary"] = boundary_info
@@ -2089,7 +2129,8 @@ class CarbonExtractor:
         for c in candidates:
             if self._validate_emission_magnitude(
                 c.get("value"), scope_number, industry_threshold_key,
-                getattr(self, "_current_company", None) or "extraction"
+                getattr(self, "_current_company", None) or "extraction",
+                year=c.get("year"),
             ) is not None:
                 valid_candidates.append(c)
 
@@ -2253,7 +2294,7 @@ class CarbonExtractor:
     # signal is still surfaced) and silence subsequent identical ones.
     _rejection_log_seen: set = set()
 
-    def _validate_emission_magnitude(self, value: Optional[float], scope: int, industry: str, company: str) -> Optional[float]:
+    def _validate_emission_magnitude(self, value: Optional[float], scope: int, industry: str, company: str, year: Optional[int] = None) -> Optional[float]:
         """Reject implausibly small or implausibly large emissions for the industry.
 
         Returns ``None`` for rejected values. The bounds are calibrated from
@@ -2262,9 +2303,36 @@ class CarbonExtractor:
         Without an upper bound, the parser routinely turned percentage tokens
         ("82.2%"), production volumes, or financial figures into ridiculous
         emissions values (VW Scope 1 = 82M tCO2e — actual ~6M).
+
+        When ``year`` is provided and is materially in the future relative to
+        the current calendar year, the row is rejected as a target/projection
+        rather than accepted as a measurement (Chevron Scope 1=2M@2028 leak).
+        Fiscal-year-ahead tolerance (current_year + 1) is allowed for
+        forward-published reports.
         """
         if value is None:
             return None
+        # Future-year guard: parser may capture a target year ("by 2028")
+        # and surface it as a data_year for a parsed emissions value. That
+        # cascade poisons intensity, Scope 3 share, and pathway gap. Block
+        # any (value, year) where the year exceeds current_year + 1.
+        if year is not None:
+            try:
+                year_int = int(year)
+                from datetime import datetime as _dt
+                current_year = _dt.now().year
+                if year_int > current_year + 1:
+                    _key = (scope, round(float(value), 2), str(industry).lower(), company, "future_year")
+                    if _key not in CarbonExtractor._rejection_log_seen:
+                        CarbonExtractor._rejection_log_seen.add(_key)
+                        print(
+                            f"[CarbonValidator] REJECTED Scope {scope}={value} year={year_int} "
+                            f"for {company} ({industry}) - year > current_year+1 "
+                            f"({current_year}); likely a target/projection, not a measurement"
+                        )
+                    return None
+            except (TypeError, ValueError):
+                pass
 
         industry_key = str(industry or "general").lower().strip()
         key_variants = [
@@ -2964,22 +3032,35 @@ Extract ALL carbon emission data. Return ONLY valid JSON."""
         scope3_value: Optional[float],
         industry: str,
         report_text: str,
+        disclosed_categories_count: Optional[int] = None,
+        material_categories_count: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Classify a reported Scope 3 figure as full / narrow / partial.
 
-        Uses two signals:
+        Uses three signals:
           1. Magnitude vs. industry-expected ranges (full vs narrow band).
           2. Presence of use-phase / lifecycle keywords elsewhere in the
              company's own disclosures — when an automaker mentions "use of
              sold products" but the reported Scope 3 only covers a few
              categories, that's a clear PARTIAL_SCOPE3 signal.
+          3. Per-category coverage from the GHG-Protocol audit. When the
+             magnitude lands in the FULL band BUT explicit categories<5
+             AND material-categories<3, the result is downgraded to
+             PARTIAL_INFERRED. Without this, Chevron's 2/15 categorical
+             disclosure was being labelled FULL purely because its 2.05 Bt
+             total fits the oil & gas full-boundary band.
 
         Returns:
             {
-                "boundary": "FULL" | "NARROW" | "PARTIAL" | "UNKNOWN",
+                "boundary": "FULL" | "PARTIAL_INFERRED" | "NARROW" | "PARTIAL" | "UNKNOWN",
                 "reason": "<human-readable>",
                 "missing_categories": ["..."],
                 "use_phase_disclosed_separately": bool,
+                "classification_basis": {
+                    "magnitude_in_range": bool,
+                    "disclosed_categories": int,
+                    "material_categories": int,
+                },
             }
         """
         if scope3_value is None or scope3_value <= 0:
@@ -3030,7 +3111,39 @@ Extract ALL carbon emission data. Return ONLY valid JSON."""
         use_phase_present = any(m in text_lower for m in use_phase_markers)
 
         # Classification
+        _basis = {
+            "magnitude_in_range": scope3_value >= full_lo,
+            "disclosed_categories": disclosed_categories_count,
+            "material_categories": material_categories_count,
+        }
         if scope3_value >= full_lo:
+            # Magnitude lands in the FULL band — but downgrade to
+            # PARTIAL_INFERRED if categorical evidence is thin. The threshold
+            # is <5 explicit categories AND <3 material categories: this
+            # combination means we have neither breadth NOR the right
+            # categories to call it FULL coverage. Chevron's 2/15 disclosed
+            # (Cat 2 + Cat 15, both non-material) was the leak case.
+            thin_categorical = (
+                isinstance(disclosed_categories_count, int) and disclosed_categories_count < 5
+                and isinstance(material_categories_count, int) and material_categories_count < 3
+            )
+            if thin_categorical:
+                boundary = "PARTIAL_INFERRED"
+                reason = (
+                    f"Reported Scope 3 ({scope3_value:,.0f} tCO2e) falls in the full-boundary range "
+                    f"for {industry} ({full_lo:,}–{full_hi:,} tCO2e), BUT the per-category audit "
+                    f"found only {disclosed_categories_count}/15 categories explicitly disclosed "
+                    f"and {material_categories_count}/5 material categories covered. Magnitude alone "
+                    f"is insufficient to confirm FULL boundary — treating as PARTIAL_INFERRED."
+                )
+                return {
+                    "boundary": boundary,
+                    "reason": reason,
+                    "missing_categories": missing_cats,
+                    "use_phase_disclosed_separately": use_phase_present,
+                    "magnitude_only": False,
+                    "classification_basis": _basis,
+                }
             # The boundary label here is a MAGNITUDE-based signal. When we
             # don't actually have a category breakdown (because the figure
             # came from a curated table or a total-only disclosure), the
@@ -3051,6 +3164,7 @@ Extract ALL carbon emission data. Return ONLY valid JSON."""
                 "missing_categories": [],
                 "use_phase_disclosed_separately": use_phase_present,
                 "magnitude_only": True,
+                "classification_basis": _basis,
             }
         if narrow_lo <= scope3_value < full_lo:
             boundary = "PARTIAL_SCOPE3" if use_phase_present else "NARROW"

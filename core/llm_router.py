@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
+import os
 from typing import Any, Dict, List, Optional
 
 class Provider(Enum):
@@ -255,12 +256,32 @@ NO_LLM_AGENTS = {
     "realtime_monitoring",
 }
 
+_RETIRED_MODELS = {
+    (Provider.CEREBRAS, "llama3.1-8b"),
+}
+
+
+def _sanitize_chain(chain: List[ModelConfig]) -> List[ModelConfig]:
+    """Drop provider/model pairs known to be unavailable.
+
+    The retired Cerebras llama3.1-8b endpoint returns a guaranteed 404, which
+    adds latency before every fallback and increases pressure on downstream
+    rate limits. Keep an env override for deliberate compatibility probes.
+    """
+    if os.getenv("ESG_ALLOW_RETIRED_MODELS", "0").lower() in {"1", "true", "yes"}:
+        return chain
+    filtered = [
+        config for config in chain
+        if (config.provider, config.model_id) not in _RETIRED_MODELS
+    ]
+    return filtered or chain
+
 
 def get_primary_model_config(agent_name: str) -> ModelConfig:
     chain = ROUTING_TABLE.get(agent_name)
     if not chain:
         raise ValueError(f"No routing chain configured for agent '{agent_name}'.")
-    return chain[0]
+    return _sanitize_chain(chain)[0]
 
 
 # ═══════════════════════════════════════════════════════════
@@ -289,6 +310,7 @@ def get_effective_chain(agent_name: str) -> List[ModelConfig]:
     base_chain = ROUTING_TABLE.get(agent_name)
     if not base_chain:
         raise ValueError(f"No routing chain configured for agent '{agent_name}'.")
+    base_chain = _sanitize_chain(base_chain)
     if ROUTING_OVERRIDE is None:
         return base_chain
 
@@ -296,9 +318,9 @@ def get_effective_chain(agent_name: str) -> List[ModelConfig]:
     if agent_name in ROUTING_OVERRIDE:
         ov = ROUTING_OVERRIDE[agent_name]
         if isinstance(ov, list):
-            return ov
+            return _sanitize_chain(ov)
         if isinstance(ov, ModelConfig):
-            return [ov]
+            return _sanitize_chain([ov])
 
     # Provider-wide override: filter the base chain to only models from
     # the forced provider. If none match, append a Gemini-flash safety

@@ -193,12 +193,34 @@ class CompanyReportFetcher:
             categorized = self._categorize_pdfs(pdf_links, report_types)
 
             # Step 4: Download and parse reports
+            # GUARDRAILS (added 2026-06-05 to stop 12-min hangs on anti-bot CDNs):
+            #   - hard cap on total attempts (not just successes) so a wall of
+            #     failures can't burn 12+ minutes
+            #   - failed-host blacklist: once a host fails twice it's skipped
+            #   - per-URL timeout is enforced in _download_and_parse_pdf (15s)
             reports_downloaded = 0
+            total_attempts = 0
+            MAX_TOTAL_ATTEMPTS = 5
+            failed_host_counts: Dict[str, int] = {}
+            HOST_FAIL_LIMIT = 2
+            from urllib.parse import urlparse as _urlparse
             for report_type, links in categorized.items():
                 for link_info in links[:max_reports]:
                     if reports_downloaded >= max_reports:
                         break
+                    if total_attempts >= MAX_TOTAL_ATTEMPTS:
+                        print(f"   ⛔ Stopping after {MAX_TOTAL_ATTEMPTS} attempts (budget exhausted)")
+                        break
+                    _host = ""
+                    try:
+                        _host = _urlparse(link_info.get("url", "")).netloc.lower()
+                    except Exception:
+                        _host = ""
+                    if _host and failed_host_counts.get(_host, 0) >= HOST_FAIL_LIMIT:
+                        print(f"   ⏭️  Skipping {_host} ({failed_host_counts[_host]} prior fails this run)")
+                        continue
 
+                    total_attempts += 1
                     try:
                         report_data = self._download_and_parse_pdf(
                             link_info["url"],
@@ -219,8 +241,16 @@ class CompanyReportFetcher:
                                 result["extracted_data"].update(report_data["metrics"])
 
                             reports_downloaded += 1
+                        else:
+                            # Download returned None (timeout, non-PDF, etc.) — penalise host
+                            if _host:
+                                failed_host_counts[_host] = failed_host_counts.get(_host, 0) + 1
                     except Exception as e:
                         result["errors"].append(f"Error processing {link_info['url']}: {str(e)}")
+                        if _host:
+                            failed_host_counts[_host] = failed_host_counts.get(_host, 0) + 1
+                if reports_downloaded >= max_reports or total_attempts >= MAX_TOTAL_ATTEMPTS:
+                    break
 
         # Step 5: Also try direct Google search for reports
         if len(result["reports_found"]) < 2:
@@ -429,7 +459,12 @@ class CompanyReportFetcher:
 
         try:
             print(f"   ⬇️ Downloading: {report_type}...")
-            response = self.session.get(url, timeout=60, stream=True)
+            # Tuple timeout (connect, read) — with stream=True the single-int
+            # form only bounds connect+headers, so body-chunk reads can stall
+            # indefinitely. JPMC's CDN held a stalled body open for 6 min in
+            # the 2026-06-05 dry-run. The 15s read-timeout fires per chunk
+            # so a stalled stream fails fast and the fetcher moves on.
+            response = self.session.get(url, timeout=(5, 15), stream=True)
             response.raise_for_status()
 
             # Check if it's actually a PDF
@@ -454,57 +489,107 @@ class CompanyReportFetcher:
             print(f"   ⚠️ Download error: {e}")
             return None
 
+    # Text-extraction depth for ESG metric regex. The first ~30 pages of a
+    # corporate report carry the exec summary, scope 1/2/3 disclosures,
+    # targets, board composition, and headline financials — i.e. every input
+    # to _extract_esg_metrics. Walking deeper produces near-zero additional
+    # hits while compounding per-page parsing cost on large PDFs (400+ pages).
+    PARSE_TEXT_PAGE_LIMIT = 30
+
+    # Hard ceiling on _parse_pdf runtime. In isolation pdfplumber finishes a
+    # 364-page PDF in ~5s; inside the full pipeline a deadlock condition
+    # observed 2026-06-07 left it running indefinitely. The daemon-thread
+    # timeout below abandons the parse and lets the pipeline continue —
+    # losing one PDF's metrics is acceptable vs blocking the entire run.
+    PARSE_TIMEOUT_SECONDS = 30
+
     def _parse_pdf(self, pdf_path: Path, report_type: str) -> Dict:
-        """Parse PDF and extract ESG-relevant metrics"""
-        result = {
+        """Parse PDF and extract ESG-relevant metrics.
+
+        Performance note (2026-06-07): the previous implementation called
+        ``page.extract_tables()`` on every one of the first 50 pages of every
+        downloaded PDF. On a 364-page JPMC report this alone burned ~12 min
+        inside ``std_evidence`` — the dominant cost in the entire pipeline.
+
+        Profiling found the extracted tables were **never consumed downstream**:
+        ``_extract_esg_metrics`` runs regex on text only, and no other caller
+        reads ``result["tables"]``. Table-aware extraction for chunking is
+        handled by ``utils/report_parser.py``'s Camelot dual-channel path,
+        which feeds the real RAG pipeline.
+
+        We now extract text only, on a bounded page slice, and keep the
+        ``tables`` key as an empty list for backward-compat with the cached
+        JSON schema.
+
+        Timeout note (2026-06-07): pdfplumber occasionally deadlocks inside
+        the heavy-imports pipeline process even though the same PDF parses
+        fine in a clean subprocess. We wrap the parse in a daemon thread and
+        time it out after PARSE_TIMEOUT_SECONDS — leaking thread is fine,
+        the daemon dies with the process.
+        """
+        import threading
+
+        def _do_parse():
+            result = {
+                "pages": 0,
+                "text_preview": "",
+                "metrics": {},
+                "tables": []
+            }
+            text_content = ""
+            if PDF_PLUMBER_AVAILABLE:
+                try:
+                    with pdfplumber.open(pdf_path) as pdf:
+                        result["pages"] = len(pdf.pages)
+                        for page in pdf.pages[:self.PARSE_TEXT_PAGE_LIMIT]:
+                            page_text = page.extract_text() or ""
+                            text_content += page_text + "\n"
+                except Exception as e:
+                    print(f"   ⚠️ pdfplumber error: {e}")
+            elif PYPDF2_AVAILABLE:
+                try:
+                    reader = PdfReader(pdf_path)
+                    result["pages"] = len(reader.pages)
+                    for page in reader.pages[:self.PARSE_TEXT_PAGE_LIMIT]:
+                        text_content += page.extract_text() or ""
+                except Exception as e:
+                    print(f"   ⚠️ PyPDF2 error: {e}")
+            result["text_preview"] = text_content[:5000]
+            result["metrics"] = self._extract_esg_metrics(text_content)
+            return result
+
+        container: Dict[str, Any] = {}
+
+        def _worker():
+            try:
+                container["result"] = _do_parse()
+            except Exception as e:
+                container["error"] = str(e)
+
+        thread = threading.Thread(target=_worker, daemon=True)
+        thread.start()
+        thread.join(timeout=self.PARSE_TIMEOUT_SECONDS)
+
+        if thread.is_alive():
+            print(f"   ⚠️ PDF parse exceeded {self.PARSE_TIMEOUT_SECONDS}s — abandoning (daemon will die with process)")
+            return {
+                "pages": 0,
+                "text_preview": "",
+                "metrics": {},
+                "tables": [],
+                "parse_timeout": True,
+            }
+
+        if "result" in container:
+            return container["result"]
+
+        return {
             "pages": 0,
             "text_preview": "",
             "metrics": {},
-            "tables": []
+            "tables": [],
+            "parse_error": container.get("error", "unknown"),
         }
-
-        text_content = ""
-
-        # Try pdfplumber first (better table extraction)
-        if PDF_PLUMBER_AVAILABLE:
-            try:
-                with pdfplumber.open(pdf_path) as pdf:
-                    result["pages"] = len(pdf.pages)
-
-                    # Extract text from first 50 pages (ESG info usually upfront)
-                    for i, page in enumerate(pdf.pages[:50]):
-                        page_text = page.extract_text() or ""
-                        text_content += page_text + "\n"
-
-                        # Extract tables
-                        tables = page.extract_tables()
-                        for table in tables:
-                            if table and len(table) > 1:
-                                result["tables"].append({
-                                    "page": i + 1,
-                                    "data": table[:10]  # First 10 rows
-                                })
-            except Exception as e:
-                print(f"   ⚠️ pdfplumber error: {e}")
-
-        # Fallback to PyPDF2
-        elif PYPDF2_AVAILABLE:
-            try:
-                reader = PdfReader(pdf_path)
-                result["pages"] = len(reader.pages)
-
-                for page in reader.pages[:50]:
-                    text_content += page.extract_text() or ""
-            except Exception as e:
-                print(f"   ⚠️ PyPDF2 error: {e}")
-
-        # Store preview
-        result["text_preview"] = text_content[:5000]
-
-        # Extract metrics
-        result["metrics"] = self._extract_esg_metrics(text_content)
-
-        return result
 
     def _detect_reporting_year(self, text: str) -> Optional[int]:
         """Identify the reporting year for the document.

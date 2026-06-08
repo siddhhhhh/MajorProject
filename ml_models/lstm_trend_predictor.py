@@ -20,7 +20,7 @@ try:
     TENSORFLOW_AVAILABLE = True
 except ImportError:
     TENSORFLOW_AVAILABLE = False
-    print("⚠️  TensorFlow not installed - LSTM trend prediction disabled")
+    print("[WARN] TensorFlow not installed - LSTM trend prediction disabled")
 
 
 class LSTMTrendPredictor:

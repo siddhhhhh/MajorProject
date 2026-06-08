@@ -92,7 +92,13 @@ def get_framework_weight(framework: str) -> float:
         pass
     return float(FRAMEWORK_CREDIBILITY_WEIGHTS.get(framework, 0.5))
 
-_SESSION: Optional[requests.Session] = None
+import threading
+
+# Thread-local session storage. requests.Session is NOT safe for concurrent
+# .get() calls from multiple threads (its connection pool and cookie jar are
+# not synchronized). Since fetch_all_real_compliance fans out across
+# ThreadPoolExecutor, every worker thread needs its own Session.
+_THREAD_LOCAL = threading.local()
 
 
 # Tokens that indicate a scrape result is HTML/CSS junk, not a company name.
@@ -150,16 +156,23 @@ def _looks_like_company_name(text: str) -> bool:
 
 
 def _session() -> requests.Session:
-    global _SESSION
-    if _SESSION is None:
+    """Return a thread-local requests.Session.
+
+    Each worker thread in fetch_all_real_compliance's ThreadPoolExecutor gets
+    its own Session — requests.Session is documented as not thread-safe for
+    concurrent .get() calls, and a single shared session under heavy fan-out
+    can corrupt the connection pool and cookie jar.
+    """
+    s = getattr(_THREAD_LOCAL, "session", None)
+    if s is None:
         s = requests.Session()
         s.headers.update({
             "User-Agent": USER_AGENT,
             "Accept": "application/json, text/html;q=0.9, */*;q=0.8",
             "Accept-Language": "en-US,en;q=0.5",
         })
-        _SESSION = s
-    return _SESSION
+        _THREAD_LOCAL.session = s
+    return s
 
 
 def _cache_key(name: str, *parts: str) -> Path:
@@ -2043,25 +2056,28 @@ def fetch_all_real_compliance(
     company's own disclosures (GHG Protocol, BRSR).
     """
     juris = _classify_jurisdiction(country)
-    rows: List[Dict[str, Any]] = []
+
+    # Build the full task list first (fetcher_fn, kwargs) so we can fan out
+    # all HTTP-bound work concurrently. Pre-Jun-2026 this loop ran fetchers
+    # serially: 8 fetchers × ~70s each (slow ESG registries + retries)
+    # made regulatory_scanning the single dominant cost in std_parallel_analytics
+    # (565s of the 566s fanout). Each fetcher is independent — no shared
+    # writes — so a thread pool is safe and gets us to max-fetcher time.
+    tasks: List[tuple] = []
 
     # Always-on global frameworks (apply to every company regardless of HQ).
-    # TCFD-adoption now takes report_chunks for the in-disclosure attestation
-    # path, so it goes through a separate call below.
-    global_fetchers = [
-        fetch_cdp_disclosure,
-        fetch_sbti_status,
-        fetch_un_global_compact,
-        fetch_gri_disclosure,
-    ]
+    tasks.append((fetch_cdp_disclosure,        {"company": company, "country": country}))
+    tasks.append((fetch_sbti_status,           {"company": company, "country": country}))
+    tasks.append((fetch_un_global_compact,     {"company": company, "country": country}))
+    tasks.append((fetch_gri_disclosure,        {"company": company, "country": country}))
 
-    # Jurisdiction-specific fetchers (excluding CSRD which now needs
-    # report_chunks and runs through the in-disclosure path below).
-    jurisdictional: List[Any] = []
+    # Jurisdiction-specific fetchers (excluding CSRD which needs report_chunks
+    # and runs through the in-disclosure path below).
     if juris == "US":
-        jurisdictional.extend([fetch_sec_climate_disclosure, fetch_ftc_green_guides])
+        tasks.append((fetch_sec_climate_disclosure, {"company": company, "country": country}))
+        tasks.append((fetch_ftc_green_guides,       {"company": company, "country": country}))
     elif juris == "IN":
-        jurisdictional.append(fetch_nse_bse_listing)
+        tasks.append((fetch_nse_bse_listing,        {"company": company, "country": country}))
     elif juris == "UK":
         # UK has no India/EU-specific filing API in the current set; TCFD
         # is global. The base scanner adds FCA Anti-Greenwashing checks
@@ -2069,44 +2085,41 @@ def fetch_all_real_compliance(
         pass
     elif juris not in {"EU"}:
         # Other jurisdictions: run gated fetchers (they self-classify as N/A).
-        jurisdictional.extend([
-            fetch_sec_climate_disclosure,
-            fetch_ftc_green_guides,
-        ])
+        tasks.append((fetch_sec_climate_disclosure, {"company": company, "country": country}))
+        tasks.append((fetch_ftc_green_guides,       {"company": company, "country": country}))
 
-    for fn in global_fetchers + jurisdictional:
-        try:
-            row = fn(company, country)
-            if row:
-                rows.append(row)
-        except Exception as exc:
-            logger.warning("%s failed for %s: %s", fn.__name__, company, exc)
-
-    # CSRD / ESEF: now accepts report_chunks for the in-disclosure path
-    # (Sustainability Statements + ESRS standards in the issuer's own
-    # report). Run only for EU jurisdictions where CSRD applies.
+    # CSRD / ESEF — EU jurisdiction or OTHER (auto self-classifies as N/A
+    # for non-EU). Needs report_chunks for in-disclosure attestation.
     if juris == "EU" or juris == "OTHER":
-        try:
-            rows.append(fetch_csrd_esef_filing(company, country, report_chunks=report_chunks))
-        except Exception as exc:
-            logger.warning("fetch_csrd_esef_filing failed for %s: %s", company, exc)
+        tasks.append((fetch_csrd_esef_filing, {"company": company, "country": country, "report_chunks": report_chunks}))
 
-    # TCFD adoption — needs report_chunks for the in-disclosure attestation
-    # path that catches companies (e.g. Volkswagen) absent from the
-    # frozen FSB-TCFD archive but who self-attest in their own reports.
-    try:
-        rows.append(fetch_tcfd_adoption(company, country, report_chunks=report_chunks))
-    except Exception as exc:
-        logger.warning("fetch_tcfd_adoption failed for %s: %s", company, exc)
+    # TCFD adoption — global; in-disclosure attestation needs report_chunks
+    tasks.append((fetch_tcfd_adoption, {"company": company, "country": country, "report_chunks": report_chunks}))
 
-    # In-disclosure fetchers (need parsed chunks)
-    try:
-        rows.append(fetch_ghg_protocol_alignment(company, country, report_chunks=report_chunks))
-    except Exception as exc:
-        logger.warning("fetch_ghg_protocol_alignment failed for %s: %s", company, exc)
+    # GHG Protocol — global; in-disclosure check uses report_chunks
+    tasks.append((fetch_ghg_protocol_alignment, {"company": company, "country": country, "report_chunks": report_chunks}))
+
+    # BRSR — India only; in-disclosure check
     if juris == "IN":
-        try:
-            rows.append(fetch_brsr_disclosure(company, country, report_chunks=report_chunks))
-        except Exception as exc:
-            logger.warning("fetch_brsr_disclosure failed for %s: %s", company, exc)
+        tasks.append((fetch_brsr_disclosure, {"company": company, "country": country, "report_chunks": report_chunks}))
+
+    rows: List[Dict[str, Any]] = []
+    import concurrent.futures
+    # Workers = task count → every fetcher gets its own thread. They are all
+    # I/O-bound (HTTPS to external registries) so the GIL is not a bottleneck.
+    # Cap at 12 to avoid socket exhaustion on long jurisdictional task lists.
+    max_workers = min(len(tasks), 12) if tasks else 1
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_name = {
+            executor.submit(fn, **kwargs): fn.__name__
+            for fn, kwargs in tasks
+        }
+        for future in concurrent.futures.as_completed(future_to_name):
+            name = future_to_name[future]
+            try:
+                row = future.result()
+                if row:
+                    rows.append(row)
+            except Exception as exc:
+                logger.warning("%s failed for %s: %s", name, company, exc)
     return rows

@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, List, Optional
 import json
 import os
 import sys
@@ -15,6 +15,35 @@ from features.esg_mismatch_detector.promise_extractor import (
 )
 from features.esg_mismatch_detector.evidence_collector import collect_external_evidence
 from features.esg_mismatch_detector.comparison_engine import compare_promises_vs_actual
+
+
+def _map_state_evidence_to_actual_data(evidence: List[Dict]) -> List[Dict]:
+    """Map main-pipeline evidence shape → esg_mismatch's actual_data shape.
+
+    Main pipeline state["evidence"] uses keys: url, title, snippet, source_name,
+    reliability_tier, claim_support, relationship_to_claim, sub_claim_id, date.
+    esg_mismatch's compare_promises_vs_actual expects: metric, supporting_quote,
+    source, stance, event_category, url, date.
+    """
+    actual: List[Dict] = []
+    for e in evidence or []:
+        if not isinstance(e, dict):
+            continue
+        actual.append({
+            "metric": str(e.get("metric") or "general"),
+            "supporting_quote": e.get("snippet")
+                or e.get("relevant_text")
+                or e.get("text")
+                or e.get("title") or "",
+            "source": e.get("source_name") or e.get("source") or "main_pipeline",
+            "stance": e.get("claim_support")
+                or e.get("relationship_to_claim")
+                or "neutral",
+            "event_category": e.get("event_category") or "",
+            "url": e.get("url") or "",
+            "date": e.get("date") or e.get("date_retrieved") or "",
+        })
+    return actual
 
 # ==============================
 # Cache Configuration
@@ -82,19 +111,30 @@ def save_cached_result(company_name: str, result: Dict):
 # Main Pipeline
 # ==============================
 
-def analyze_company_esg(company_name: str) -> Dict:
-    """
-    Main ESG mismatch detection pipeline.
+def analyze_company_esg(
+    company_name: str,
+    state_evidence: Optional[List[Dict]] = None,
+    state_report_text: Optional[str] = None,
+) -> Dict:
+    """ESG mismatch detection pipeline.
+
+    Modes:
+      - Standalone (CLI): state_evidence and state_report_text are None — runs
+        full fetch (DuckDuckGo + PDF + parallel evidence search). 2-6 min.
+      - In-pipeline: when the main pipeline supplies state_evidence (and
+        optionally state_report_text), skips the duplicate fetch + search.
+        Only the promise-extraction LLM + comparison engine run. ~30s.
     """
 
     cache_key = company_name.lower().strip()
 
     # ------------------------------
-    # Cache Check
+    # Cache Check  (only when running standalone — state inputs are fresher)
     # ------------------------------
-    cached_result = load_cached_result(cache_key)
-    if cached_result:
-        return cached_result
+    if state_evidence is None and not state_report_text:
+        cached_result = load_cached_result(cache_key)
+        if cached_result:
+            return cached_result
 
     print(f"🔍 Starting ESG analysis for: {company_name}")
 
@@ -107,35 +147,46 @@ def analyze_company_esg(company_name: str) -> Dict:
     evidence_threshold = 8 if high_signal_company else MIN_EVIDENCE_SOURCES
 
     # ------------------------------
-    # Fetch ESG Report
+    # ESG Report text: reuse from main pipeline when provided
     # ------------------------------
-    print("📥 Fetching ESG report...")
-    report_text = fetch_latest_esg_report(company)
+    if state_report_text:
+        report_text = state_report_text
+        print(f"⚡ Reusing {len(report_text):,} chars of pre-parsed report text from main pipeline")
+    else:
+        print("📥 Fetching ESG report...")
+        report_text = fetch_latest_esg_report(company)
     report_unavailable = not bool(report_text)
 
     # ------------------------------
-    # Extract ESG Promises
+    # Extract ESG Promises (LLM still needed; runs on already-have-text)
     # ------------------------------
     print("🤖 Extracting promises...")
     promises = extract_promises(report_text, company_name) if report_text else []
 
     if not promises:
-        print("🔁 No commitments extracted from report text. Running targeted commitments retrieval...")
-        promises = extract_promises_from_external_sources(company["company"])
+        if state_evidence is None:
+            print("🔁 No commitments extracted from report text. Running targeted commitments retrieval...")
+            promises = extract_promises_from_external_sources(company["company"])
+        else:
+            print("🔁 No commitments extracted; main-pipeline evidence will substitute as actuals.")
 
     print(f"✅ Found {len(promises)} promises.")
 
     # ------------------------------
-    # Collect Evidence
+    # Evidence: reuse from main pipeline when provided
     # ------------------------------
-    print("🌍 Collecting evidence...")
-    actual_data = collect_external_evidence(
-        company["company"],
-        aliases=company.get("aliases", []),
-        industry=company_industry,
-        min_sources=evidence_threshold,
-        target_retrieval=25,
-    )
+    if state_evidence is not None:
+        actual_data = _map_state_evidence_to_actual_data(state_evidence)
+        print(f"⚡ Reusing {len(actual_data)} evidence items from main pipeline (skipped collect_external_evidence)")
+    else:
+        print("🌍 Collecting evidence...")
+        actual_data = collect_external_evidence(
+            company["company"],
+            aliases=company.get("aliases", []),
+            industry=company_industry,
+            min_sources=evidence_threshold,
+            target_retrieval=25,
+        )
 
     print(f"✅ Found {len(actual_data)} pieces of evidence.")
 

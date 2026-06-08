@@ -182,7 +182,36 @@ def build_pdf_from_text(report_text: str, report: Dict[str, Any] | None = None) 
         HRFlowable(width="100%", thickness=0.7, color=TEAL, spaceBefore=2, spaceAfter=6),
     ]
 
+    def _pdf_safe_text(value: str) -> str:
+        """Normalize report text for Helvetica/Courier PDF extraction.
+
+        ReportLab's built-in fonts cannot represent many emoji/status glyphs;
+        those can round-trip as NUL/control characters when auditors extract
+        text from the PDF. Use ASCII status markers and remove unsafe controls.
+        """
+        replacements = {
+            "⚠️": "WARNING:",
+            "⚠": "WARNING:",
+            "ℹ": "INFO:",
+            "✅": "[OK]",
+            "❌": "[X]",
+            "🔴": "[TIER-1]",
+            "🟡": "[TIER-2]",
+            "⚪": "[TIER-3]",
+            "✓": "[OK]",
+            "→": "->",
+            "—": "-",
+            "–": "-",
+            "•": "-",
+        }
+        text = str(value or "")
+        for src, dst in replacements.items():
+            text = text.replace(src, dst)
+        text = "".join(ch if (ch >= " " or ch in "\t\n\r") else " " for ch in text)
+        return text
+
     for raw_line in report_text.splitlines():
+        raw_line = _pdf_safe_text(raw_line)
         line = raw_line.rstrip()
         if not line:
             story.append(Spacer(1, 2.2 * mm))

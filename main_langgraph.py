@@ -10,8 +10,98 @@ import argparse
 import threading
 import warnings
 from datetime import datetime
+from pathlib import Path
 from dotenv import load_dotenv
 import json
+
+# ── Unified pipeline log (project_root/pipeline.log) ────────────────────────
+# Every print() and stderr write, every Python `logging` record, every
+# uncaught traceback is appended here. Multiple runs accumulate in one file
+# with session headers so the user can hand me the WHOLE thing and I see
+# exactly where each run died.
+_PROJECT_ROOT = Path(__file__).resolve().parent
+_PIPELINE_LOG_PATH = _PROJECT_ROOT / "pipeline.log"
+
+# Opt-in: pipeline.log TeeStream wraps stdout/stderr with a per-line flush
+# to disk. Useful for debugging slow/stuck runs but adds a small per-print
+# disk sync that can slow import-heavy phases when packages emit thousands
+# of stderr warnings. Default OFF so it doesn't slow normal runs.
+# Set `ESG_PIPELINE_LOG=1` to enable for a debugging session.
+_PIPELINE_LOG_FH = None
+if os.environ.get("ESG_PIPELINE_LOG", "").lower() in ("1", "true", "yes"):
+    try:
+        _PIPELINE_LOG_FH = open(_PIPELINE_LOG_PATH, "a", encoding="utf-8", buffering=1)
+        _PIPELINE_LOG_FH.write(f"\n{'='*80}\n")
+        _PIPELINE_LOG_FH.write(
+            f"PIPELINE RUN START  {datetime.now().isoformat(timespec='seconds')}\n"
+        )
+        _PIPELINE_LOG_FH.write(f"  pid : {os.getpid()}\n")
+        _PIPELINE_LOG_FH.write(f"  argv: {sys.argv}\n")
+        _PIPELINE_LOG_FH.write(f"  cwd : {os.getcwd()}\n")
+        _PIPELINE_LOG_FH.write(f"{'='*80}\n")
+        _PIPELINE_LOG_FH.flush()
+
+        class _TeeStream:
+            """Mirror writes to console AND to pipeline.log."""
+            def __init__(self, console, logfile):
+                self._console = console
+                self._logfile = logfile
+            def write(self, s):
+                try:
+                    self._console.write(s)
+                    self._console.flush()
+                except Exception:
+                    pass
+                try:
+                    self._logfile.write(s)
+                    self._logfile.flush()
+                except Exception:
+                    pass
+            def flush(self):
+                try: self._console.flush()
+                except Exception: pass
+                try: self._logfile.flush()
+                except Exception: pass
+            def isatty(self): return False
+            def __getattr__(self, name):
+                return getattr(self._console, name)
+
+        sys.stdout = _TeeStream(sys.__stdout__, _PIPELINE_LOG_FH)
+        sys.stderr = _TeeStream(sys.__stderr__, _PIPELINE_LOG_FH)
+
+        import logging as _logging
+        _root_logger = _logging.getLogger()
+        if not any(getattr(h, "_pipeline_log_handler", False) for h in _root_logger.handlers):
+            _h = _logging.StreamHandler(sys.stdout)
+            _h.setLevel(_logging.INFO)
+            _h.setFormatter(_logging.Formatter(
+                "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+                datefmt="%H:%M:%S",
+            ))
+            _h._pipeline_log_handler = True  # type: ignore[attr-defined]
+            _root_logger.addHandler(_h)
+            if _root_logger.level > _logging.INFO or _root_logger.level == _logging.NOTSET:
+                _root_logger.setLevel(_logging.INFO)
+    except Exception as _log_setup_exc:
+        _PIPELINE_LOG_FH = None
+        print(f"[pipeline.log setup failed: {_log_setup_exc}]", file=sys.__stderr__)
+
+# Install forensic crash trap BEFORE heavy imports so allocations are tracked
+# from process start. Silent crashes (OOM-kill, segfault) will leave evidence
+# in logs/forensic_<pid>_<ts>.log — RSS over time, top allocation sites,
+# stack tracebacks of every thread at the moment of death.
+try:
+    if os.getenv("ESG_FORENSIC_TRAP", "0").lower() in {"1", "true", "yes"}:
+        from core.forensic_trap import install as _install_forensic_trap, report_exception as _report_forensic_exception
+        _FORENSIC_LOG_PATH = _install_forensic_trap()
+    else:
+        _FORENSIC_LOG_PATH = None
+        def _report_forensic_exception(exc):  # type: ignore
+            pass
+except Exception:  # never block startup on instrumentation failure
+    _FORENSIC_LOG_PATH = None
+    def _report_forensic_exception(exc):  # type: ignore
+        pass
 
 # ── Suppress known dependency warning flood ─────────────────────────────
 # These are safe to ignore and pollute demo output.
@@ -49,7 +139,6 @@ load_dotenv()
 USE_LANGGRAPH = os.getenv("USE_LANGGRAPH", "true").lower() == "true"
 
 if USE_LANGGRAPH:
-    from agents.industry_comparator import initialize_peer_database
     from core.workflow_phase2 import build_phase2_graph
     from core.professional_report_generator import ProfessionalReportGenerator
 
@@ -65,7 +154,12 @@ class ESGGreenwashingDetectorLangGraph:
         print("Agentic AI | Dynamic Routing | Multi-Agent Debate | Professional Reports")
         print("="*80)
 
-        initialize_peer_database()
+        if os.getenv("ESG_INIT_PEER_DB", "0").lower() in {"1", "true", "yes"}:
+            try:
+                from agents.industry_comparator import initialize_peer_database
+                initialize_peer_database()
+            except Exception as exc:
+                print(f"[PeerDB] Initialization skipped: {exc}")
         
         if not USE_LANGGRAPH:
             print("⚠️  LangGraph disabled. Use main.py instead.")
@@ -468,6 +562,22 @@ class ESGGreenwashingDetectorLangGraph:
             "risk_band": risk_band,
             "confidence_pct": confidence_pct,
         }
+        # Fix #18: When ABSTAIN_RECOMMENDED, surface an explicit display
+        # string so machine consumers (dashboards, downstream pipelines)
+        # see the demotion without re-deriving it from abstention_summary.
+        # Numeric stays in greenwashing_risk_score for backward compat.
+        abstain_flag = (
+            (rendered.get("decision") or {}).get("abstain_recommended")
+            or rendered_scores.get("abstain_recommended")
+            or (verdict.get("decision_status") == "ABSTAIN_RECOMMENDED")
+        )
+        if abstain_flag:
+            headline_block["abstain_recommended"] = True
+            headline_block["greenwashing_risk_score_display"] = (
+                f"ABSTAINED (indicative only: {gw_score:.1f})"
+                if isinstance(gw_score, (int, float))
+                else "ABSTAINED"
+            )
         if gw_band:
             headline_block["greenwashing_risk_score_band"] = gw_band
         if esg_band:
@@ -787,14 +897,18 @@ Examples:
     args = parser.parse_args()
     
     # If company and claim are provided, run analysis
-    if args.company and args.claim:
-        result = quick_analysis(args.company, args.claim, args.industry)
-        if isinstance(result, dict) and result.get("error"):
-            _force_exit_if_background_threads(1)
-        _force_exit_if_background_threads(0)
-    else:
-        # Interactive mode if no arguments provided
-        interactive_mode()
+    try:
+        if args.company and args.claim:
+            result = quick_analysis(args.company, args.claim, args.industry)
+            if isinstance(result, dict) and result.get("error"):
+                _force_exit_if_background_threads(1)
+            _force_exit_if_background_threads(0)
+        else:
+            # Interactive mode if no arguments provided
+            interactive_mode()
+    except BaseException as _exc:
+        _report_forensic_exception(_exc)
+        raise
 
 # ============================================================================
 # API WRAPPER FUNCTION FOR TESTING & INTEGRATION

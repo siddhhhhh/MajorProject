@@ -229,15 +229,52 @@ _PCT_REDUCTION_RE = re.compile(
 )
 _TARGET_YEAR_RE = re.compile(r"\b(20\d{2})\b")
 _SCOPE_RE = re.compile(r"\bscope\s*([123])\b", re.I)
+# Fix #16: Absolute reduction targets like "reduce Scope 1 to 5 MT by 2030"
+# or "Scope 1 emissions to 50,000 tCO2e by 2030". The filler is [\s\S]
+# (any char) so digits in "Scope 1" don't break the span.
+_ABSOLUTE_REDUCTION_RE = re.compile(
+    r"(?:reduce|cut|lower|target)[\s\S]{0,50}?(?:to\s+)?"
+    r"(?P<value>\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*"
+    r"(?P<unit>MtCO2e|Mt|MT|ktCO2e|kt|tCO2e|tCO2|"
+    r"million\s+tonnes(?:\s+CO2e?)?|million\s+metric\s+tons(?:\s+CO2e?)?|"
+    r"thousand\s+tonnes(?:\s+CO2e?)?|kilotonnes|megatonnes)\b",
+    re.I,
+)
+# Renewable / coverage targets: "100% renewable by 2025" — the percent is
+# a positive *coverage* target, not a reduction. Treat separately so we
+# don't confuse it with reduction targets.
+_RENEWABLE_COVERAGE_RE = re.compile(
+    r"(?P<pct>\d{1,3}(?:\.\d+)?)\s*%\s*(?:renewable|clean energy|solar|wind)",
+    re.I,
+)
+
+
+def _normalize_to_tco2e(value: float, unit: str) -> float:
+    """Convert a value+unit pair to tCO2e. Unit strings already validated
+    by _ABSOLUTE_REDUCTION_RE so the match is permissive."""
+    u = unit.lower().strip()
+    if "mt" in u or "megaton" in u or "million" in u:
+        return value * 1_000_000.0
+    if "kt" in u or "kiloton" in u or "thousand" in u:
+        return value * 1_000.0
+    # tCO2e / tCO2 / tonnes → already in target unit
+    return value
 
 
 def _extract_metric_and_target(text: str) -> Optional[Dict[str, Any]]:
-    """Pull (metric, target_year, target_value, target_unit) from a sub-claim."""
+    """Pull (metric, target_year, target_value, target_unit) from a sub-claim.
+
+    Each return carries a ``value_extraction_method`` field so the diagnostics
+    appendix can show how the target was parsed (net-zero literal vs %
+    reduction vs absolute MT). value=0.0 with is_absolute=True is the
+    semantically correct shape for net-zero — adding the flag distinguishes
+    it from a parse-failure 0."""
     if not text:
         return None
     txt = text.lower()
 
-    # Net-zero / carbon-neutral kind
+    # Net-zero / carbon-neutral kind. The target value IS zero — flag
+    # is_absolute=True so consumers don't treat this as a missing value.
     if _NETZERO_RE.search(text):
         m = _TARGET_YEAR_RE.search(text)
         if m:
@@ -246,7 +283,31 @@ def _extract_metric_and_target(text: str) -> Optional[Dict[str, Any]]:
                 "target_year":   int(m.group(1)),
                 "target_value":  0.0,
                 "target_unit":   "tCO2e",
+                "is_absolute":   True,
+                "value_extraction_method": "net_zero_literal",
             }
+
+    # Absolute reduction (e.g. "reduce Scope 1 to 5 Mt by 2030").
+    # Try this BEFORE percent-reduction so "reduce 50 Mt" doesn't lose
+    # to the % pattern matching nothing.
+    am = _ABSOLUTE_REDUCTION_RE.search(text)
+    ay = _TARGET_YEAR_RE.search(text)
+    if am and ay:
+        sm = _SCOPE_RE.search(text)
+        scope = f"scope{sm.group(1)}" if sm else "ghg_emissions"
+        raw_v = float(am.group("value").replace(",", ""))
+        unit = am.group("unit")
+        normalized_v = _normalize_to_tco2e(raw_v, unit)
+        return {
+            "metric":      f"{scope}_absolute",
+            "target_year": int(ay.group(1)),
+            "target_value": normalized_v,
+            "target_unit": "tCO2e",
+            "is_absolute": True,
+            "raw_value":   raw_v,
+            "raw_unit":    unit,
+            "value_extraction_method": "regex_absolute_mt_kt",
+        }
 
     # Percent-reduction kind
     pm = _PCT_REDUCTION_RE.search(text)
@@ -259,6 +320,20 @@ def _extract_metric_and_target(text: str) -> Optional[Dict[str, Any]]:
             "target_year": int(ym.group(1)),
             "target_value": float(pm.group("pct")),
             "target_unit": "percent",
+            "is_absolute": False,
+            "value_extraction_method": "regex_pct_reduction",
+        }
+
+    # Renewable-coverage kind (e.g. "100% renewable by 2025").
+    rm = _RENEWABLE_COVERAGE_RE.search(text)
+    if rm and ym:
+        return {
+            "metric":      "renewable_energy_pct",
+            "target_year": int(ym.group(1)),
+            "target_value": float(rm.group("pct")),
+            "target_unit": "percent",
+            "is_absolute": False,
+            "value_extraction_method": "regex_renewable_coverage",
         }
 
     return None

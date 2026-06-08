@@ -81,10 +81,56 @@ CURATED_OWNER_MAP: Dict[str, List[Dict[str, str]]] = {
     "shell": [
         {"name_contains": "Shell ", "country": "NLD"},
         {"name_contains": "Shell ", "country": "GBR"},
+        {"name_contains": "Shell ", "country": "USA"},
+        {"name_contains": "Pernis", "country": "NLD"},
+        {"name_contains": "Rheinland", "country": "DEU"},
     ],
     "arcelormittal": [
         {"name_contains": "ArcelorMittal", "country": "IND"},
         {"name_contains": "ArcelorMittal", "country": "FRA"},
+    ],
+    "volkswagen": [
+        {"name_contains": "Volkswagen", "country": "DEU"},
+        {"name_contains": "VW ", "country": "DEU"},
+        {"name_contains": "Wolfsburg", "country": "DEU"},
+        {"name_contains": "Volkswagen", "country": "USA"},
+        {"name_contains": "Volkswagen", "country": "MEX"},
+        {"name_contains": "Volkswagen", "country": "BRA"},
+        {"name_contains": "Volkswagen", "country": "CHN"},
+        {"name_contains": "Audi", "country": "DEU"},
+    ],
+    "exxonmobil": [
+        {"name_contains": "ExxonMobil", "country": "USA"},
+        {"name_contains": "Exxon", "country": "USA"},
+        {"name_contains": "Baytown", "country": "USA"},
+        {"name_contains": "Baton Rouge", "country": "USA"},
+    ],
+    "exxon": [
+        {"name_contains": "Exxon", "country": "USA"},
+    ],
+    "chevron": [
+        {"name_contains": "Chevron", "country": "USA"},
+        {"name_contains": "Richmond", "country": "USA"},
+    ],
+    "totalenergies": [
+        {"name_contains": "Total", "country": "FRA"},
+        {"name_contains": "Total", "country": "BEL"},
+    ],
+    "saudi aramco": [
+        {"name_contains": "Saudi Aramco", "country": "SAU"},
+        {"name_contains": "Aramco", "country": "SAU"},
+        {"name_contains": "Ghawar", "country": "SAU"},
+        {"name_contains": "Ras Tanura", "country": "SAU"},
+    ],
+    "petrobras": [
+        {"name_contains": "Petrobras", "country": "BRA"},
+    ],
+    "sinopec": [
+        {"name_contains": "Sinopec", "country": "CHN"},
+    ],
+    "reliance industries": [
+        {"name_contains": "Jamnagar", "country": "IND"},
+        {"name_contains": "Reliance", "country": "IND"},
     ],
 }
 
@@ -214,9 +260,17 @@ def resolve_company_assets(
 
     out: List[AssetEmissions] = []
     rule_countries = {r["country"] for r in rules}
-    target_countries = (
-        {country_iso3} if country_iso3 else rule_countries
-    )
+    # For multinationals, the caller's HQ country (country_iso3) often does
+    # NOT match the company's actual asset footprint — e.g. Shell HQ=GBR but
+    # bulk Scope 1 is in NLD refineries; VW HQ=DEU but plants in MEX/USA/CHN.
+    # When the curated rule names multiple countries, sweep ALL of them
+    # regardless of the requested country. The country_iso3 filter is honoured
+    # only when the curated rules are single-country (Vedanta → IND only, etc.)
+    # in which case asking for a different country still returns empty.
+    if country_iso3 and country_iso3 in rule_countries and len(rule_countries) == 1:
+        target_countries = {country_iso3}
+    else:
+        target_countries = rule_countries
 
     for ctry in target_countries:
         d = _get("assets", {"countries": ctry, "limit": pull_limit, "year": 2024})
@@ -326,7 +380,25 @@ def get_company_emissions_snapshot(
 
     country_iso3 = normalise_country(country)
     industry_key = (industry or "").strip().lower()
+    # Normalise common separator variants so "Oil & Gas" / "Oil&Gas" / "oil
+    # and gas" / "Oil/Gas" all resolve to the same sector list. Without this,
+    # the verifier silently returned NOT_COVERED for any caller using "&".
+    industry_key = (
+        industry_key
+        .replace("&", " and ")
+        .replace("/", " and ")
+        .replace("  ", " ")
+        .strip()
+    )
     sectors = INDUSTRY_SECTOR_MAP.get(industry_key, [])
+    if not sectors:
+        # Last-mile fuzzy: pull any key that shares all whitespace-split tokens.
+        toks = [t for t in industry_key.split() if t]
+        if toks:
+            for k, v in INDUSTRY_SECTOR_MAP.items():
+                if all(t in k for t in toks):
+                    sectors = v
+                    break
 
     assets = resolve_company_assets(company, country_iso3=country_iso3)
     asset_total = (

@@ -121,13 +121,23 @@ class RealTimeMonitor:
         # Extract full content using newspaper3k
         print(f"\n🔎 Extracting full article content...")
         enriched_articles = self._enrich_articles(all_articles[:10])  # Top 10
-        
+
+        # Fix #14: Drop articles that don't reference the company in title/snippet/body.
+        # enterprise_fetcher returns generic search hits like Wikipedia
+        # "Greenwashing" or UN explainers that have no company-specific signal
+        # — those polluted Section 9B for Chevron with 5 of 7 unrelated rows.
+        pre_filter_count = len(enriched_articles)
+        enriched_articles = self._filter_by_company_relevance(enriched_articles, company)
+        dropped = pre_filter_count - len(enriched_articles)
+        if dropped > 0:
+            print(f"   📉 Relevance filter dropped {dropped}/{pre_filter_count} non-{company} articles")
+
         # Filter by recency
         recent_articles = [
-            a for a in enriched_articles 
+            a for a in enriched_articles
             if self._is_recent(a.get('date', ''), cutoff_time)
         ]
-        
+
         print(f"\n📊 Found {len(recent_articles)} recent articles")
         
         # Store in Chroma
@@ -259,7 +269,41 @@ class RealTimeMonitor:
         
         return enriched
 
-    
+
+    def _filter_by_company_relevance(self, articles: List[Dict], company: str) -> List[Dict]:
+        """Keep only articles that reference the company in title/snippet/body.
+
+        Fix #14: enterprise_fetcher's generic ESG/greenwashing queries surface
+        Wikipedia, UN, and academic-journal entries that don't mention the
+        company at all (Chevron's Section 9B had 5/7 such rows). The filter
+        is permissive — it accepts the company token OR any subtoken >=4
+        chars so multi-word names ("Reliance Industries") still match an
+        article that only says "Reliance".
+        """
+        if not company:
+            return articles
+        company_l = company.lower().strip()
+        if not company_l:
+            return articles
+        # Build a token set for matching: full lowercase name + each
+        # 4+-char subtoken (avoids overmatching on common short words
+        # like "&", "Co", "of").
+        tokens = {company_l}
+        for tok in company_l.split():
+            tok = tok.strip(".,()&-")
+            if len(tok) >= 4:
+                tokens.add(tok)
+        if not tokens:
+            return articles
+
+        kept = []
+        for a in articles:
+            blob = " ".join(str(a.get(k) or "") for k in ("title", "snippet", "summary", "content", "text")).lower()
+            if any(t in blob for t in tokens):
+                kept.append(a)
+        return kept
+
+
     def _is_recent(self, date_str: str, cutoff: datetime) -> bool:
         """Check if article is recent"""
         if not date_str:

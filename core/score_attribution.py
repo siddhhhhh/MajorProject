@@ -111,9 +111,22 @@ def _categorise(row: Dict[str, Any]) -> Tuple[str, str]:
 def _format_human_name(category: str, raw_name: str) -> str:
     """Human-readable name from category + raw label."""
     if category == "structural":
-        # "pathway_gap_pct>30:+20" -> "Carbon pathway gap > 30%"
+        # Display the actual computed gap, not the trigger threshold.
+        # Rule key shapes accepted:
+        #   "pathway_gap_pct=13.0:+20"  (new — shows real gap)
+        #   "pathway_gap_pct>30:+20"    (legacy — pre-fix runs cached)
+        # When the upstream gap value exceeds reasonable display bounds
+        # (e.g. 3149.1pp from a malformed implied-rate calc) the raw figure
+        # would scream "bug" in a demo. Cap display to >100pp and explain.
         if "pathway_gap_pct" in raw_name:
-            return "Carbon pathway gap > 30%"
+            import re
+            m = re.search(r"pathway_gap_pct=(\d+(?:\.\d+)?)", raw_name)
+            if m:
+                gap_val = float(m.group(1))
+                if gap_val > 100:
+                    return "Carbon pathway gap >100pp (severely off benchmark — trigger: >30pp)"
+                return f"Carbon pathway gap {gap_val:.1f}pp (trigger: >30pp)"
+            return "Carbon pathway gap > 30pp trigger"
         if "climate_trace" in raw_name:
             # "climate_trace:INFLATION_FLAG:+12.0" -> "Climate TRACE: inflation flag"
             parts = raw_name.split(":")

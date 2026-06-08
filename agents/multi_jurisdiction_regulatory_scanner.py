@@ -541,6 +541,66 @@ class MultiJurisdictionRegulatoryScanner:
             return None
         return top[0]
 
+    def _known_cases_for_company(self, company: str) -> List[Dict[str, Any]]:
+        """Seed pseudo-evidence rows from the curated known-cases registry.
+
+        The live evidence retriever can miss famous cases (Dieselgate, JPMC
+        Mexican LNG financing dispute, DWS SEC fine) when the claim is short
+        or the search aggregators are rate-limited. Surfacing these from
+        data/known_cases.py guarantees the regulatory scanner has a Tier-1
+        ground truth lane regardless of evidence coverage.
+
+        Filters:
+          - Skip entries with appeal_overturned=True (Shell 2021 / GW-003 —
+            the principal ruling was reversed on appeal Nov 2024, so it is
+            no longer an active enforcement signal).
+          - Skip entries with outcome in CLEARED / DISMISSED.
+          - Skip entries older than 12 years (matches _litigation_hits
+            STALE_CUTOFF_YEARS with a small buffer for registry lag).
+        """
+        try:
+            from data.known_cases import KNOWN_GREENWASHING_CASES
+        except Exception:
+            return []
+        company_lower = (company or "").lower().strip()
+        if not company_lower:
+            return []
+        from datetime import datetime as _dt
+        _now_year = _dt.utcnow().year
+        rows: List[Dict[str, Any]] = []
+        for case in KNOWN_GREENWASHING_CASES:
+            if not isinstance(case, dict):
+                continue
+            case_company = str(case.get("company", "")).lower().strip()
+            if not case_company:
+                continue
+            if case_company not in company_lower and company_lower not in case_company:
+                continue
+            if case.get("appeal_overturned"):
+                continue
+            outcome = str(case.get("outcome", "")).upper()
+            if outcome in {"CLEARED", "DISMISSED", "NO_VIOLATION"}:
+                continue
+            yr = case.get("year")
+            try:
+                yr_int = int(yr) if yr is not None else None
+            except (TypeError, ValueError):
+                yr_int = None
+            if yr_int is not None and (_now_year - yr_int) > 12:
+                continue
+            reg_action = str(case.get("regulatory_action", "")).strip()
+            source = str(case.get("source", "")).strip()
+            jurisdiction = str(case.get("jurisdiction", "Global")).strip() or "Global"
+            rows.append({
+                "title": f"{case.get('company')}: {reg_action[:180]}",
+                "snippet": f"{source}. Outcome: {outcome}. Severity: {case.get('severity', 'N/A')}.",
+                "url": case.get("evidence_url") or case.get("url") or f"data/known_cases.py#{case.get('case_id')}",
+                "year": yr_int,
+                "jurisdiction": jurisdiction,
+                "_from_known_cases": True,
+            })
+        return rows
+
     def _litigation_hits(self, company: str, evidence: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Detect documented litigation/enforcement against the company.
 
@@ -560,10 +620,20 @@ class MultiJurisdictionRegulatoryScanner:
           3. Explicit company-name match in title or snippet (token alone
              is insufficient; "court" appearing far from the company name
              is too weak a signal).
+          4. Curated known-cases registry is merged in as additional rows
+             so famous cases survive even when live evidence search misses
+             them. Known-cases bypass the strong-keyword heuristic since
+             they are pre-validated, but still respect dismissed_markers
+             and stale-year cutoff.
         """
         hits = []
         company_lower = (company or "").lower()
         company_tokens = [t for t in re.split(r"[^a-z0-9]+", company_lower) if len(t) >= 4]
+
+        # Seed with curated known-cases so famous matters surface even when
+        # the live evidence retriever was too narrow to find them.
+        seeded = self._known_cases_for_company(company)
+        evidence = list(seeded) + list(evidence or [])
 
         # URLs that are categorically NOT enforcement records.
         url_blocklist = (
@@ -646,8 +716,10 @@ class MultiJurisdictionRegulatoryScanner:
 
             # Require at least one STRONG enforcement keyword, not just generic
             # "court"/"enforcement" mentions which are too easily triggered.
-            if not any(k in text for k in strong_enforcement_kws):
-                continue
+            # Curated known-cases bypass this filter — they are pre-validated.
+            if not item.get("_from_known_cases"):
+                if not any(k in text for k in strong_enforcement_kws):
+                    continue
 
             # Filter dismissed / withdrawn / overturned cases — these are
             # not active enforcement and should not feed the penalty.

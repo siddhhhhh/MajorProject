@@ -24,6 +24,20 @@ New Agents (2026):
 - GovernanceAgent: Governance pillar forensic analysis
 """
 
+import os
+import sys
+
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+os.environ.setdefault("PYTHONUTF8", "1")
+
+for _stream_name in ("stdout", "stderr"):
+    _stream = getattr(sys, _stream_name, None)
+    if hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
 from .claim_extractor import ClaimExtractor
 from .evidence_retriever import EvidenceRetriever
 from .contradiction_analyzer import ContradictionAnalyzer

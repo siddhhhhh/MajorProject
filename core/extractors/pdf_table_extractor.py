@@ -270,10 +270,18 @@ def extract_carbon_tables(pdf_path: str) -> list[dict]:
     pages_str = ",".join(str(p) for p in carbon_pages)
     results: list[dict] = []
 
+    # Fast-fail: if the PDF's structure is broken (NullObject etc) and the
+    # first N pages all error with no extracted tables, abort the rest of
+    # the pages for this PDF — they will fail the same way. Without this,
+    # a 90-page broken PDF burns ~10 minutes producing nothing.
+    _consecutive_failures = 0
+    _MAX_CONSECUTIVE_FAILURES = 3
+
     for page_num in carbon_pages:
         page_str = str(page_num)
         tables_found = False
         temp_write_blocked = False
+        _page_had_any_success = False  # track whether either flavor produced data
 
         # --- Attempt 1: lattice ---
         try:
@@ -298,6 +306,8 @@ def extract_carbon_tables(pdf_path: str) -> list[dict]:
                     })
                     tables_found = True
             if tables_found:
+                _page_had_any_success = True
+                _consecutive_failures = 0
                 logger.debug(
                     "Page %d: %d carbon table(s) via lattice",
                     page_num, sum(1 for r in results if r["page"] == page_num),
@@ -343,6 +353,7 @@ def extract_carbon_tables(pdf_path: str) -> list[dict]:
                         "raw_text": raw,
                     })
             if any(r["page"] == page_num and r["flavor"] == "stream" for r in results):
+                _page_had_any_success = True
                 logger.debug(
                     "Page %d: carbon table(s) found via stream",
                     page_num
@@ -366,6 +377,20 @@ def extract_carbon_tables(pdf_path: str) -> list[dict]:
                     "Stream extraction failed on page %d of %s: %s",
                     page_num, pdf_path_str, str(e),
                 )
+
+        # Track consecutive failures and bail out of this PDF early.
+        if _page_had_any_success:
+            _consecutive_failures = 0
+        else:
+            _consecutive_failures += 1
+            if _consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:
+                logger.warning(
+                    "Aborting table extraction for %s after %d consecutive "
+                    "page failures (likely structural PDF error like NullObject); "
+                    "fitz-extracted text from this PDF is still available.",
+                    pdf_path_str, _consecutive_failures,
+                )
+                break
 
     logger.info(
         "Total carbon tables extracted from %s: %d", original_pdf_path_str, len(results),

@@ -2846,11 +2846,15 @@ class RiskScorer:
             if gap_pct > 30:
                 if extraction_failed:
                     applied_rules.append(
-                        "pathway_gap_pct>30:SUPPRESSED(extraction_failed — underlying Scope data is industry-estimate fallback)"
+                        f"pathway_gap_pct={gap_pct:.1f}:SUPPRESSED(extraction_failed — underlying Scope data is industry-estimate fallback)"
                     )
                 else:
                     total += 20
-                    applied_rules.append("pathway_gap_pct>30:+20")
+                    # Tag with actual gap value so the score-attribution
+                    # display doesn't claim ">30%" when the gap is e.g. 13.0pp
+                    # — the trigger is "gap > 30pp" but the *reported value*
+                    # should reflect what was actually computed.
+                    applied_rules.append(f"pathway_gap_pct={gap_pct:.1f}:+20")
             if status == "physically_impossible":
                 if extraction_failed:
                     applied_rules.append(

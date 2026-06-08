@@ -5461,9 +5461,29 @@ def esg_mismatch_node(state: ESGState) -> ESGState:
     try:
         print(f"?? Analyzing ESG promises vs reality for: {company}")
 
-        # Call the standalone pipeline
-        # Note: the pipeline relies on caching internally.
-        mismatch_results = analyze_company_esg(company)
+        # ── PERF: bypass duplicate report-fetch + duplicate evidence-collection ──
+        # The standalone analyze_company_esg re-runs DuckDuckGo discovery, PDF
+        # download, full text extraction, and parallel external-evidence search
+        # — all of which the main pipeline has already done. We pass the
+        # already-acquired data so esg_mismatch only runs promise extraction
+        # (LLM) and the comparison engine. Saves 2-6 min per run.
+        _parser_outputs = [
+            o for o in state.get("agent_outputs", []) if isinstance(o, dict) and o.get("agent") == "report_parser"
+        ]
+        _state_report_text = ""
+        if _parser_outputs:
+            _chunks = (_parser_outputs[-1].get("output") or {}).get("chunks") or []
+            _state_report_text = "\n\n".join(
+                str(c.get("text") or c.get("content") or "")
+                for c in _chunks if isinstance(c, dict)
+            )[:200_000]  # cap to prevent LLM context blow-up
+        _state_evidence = state.get("evidence") or []
+
+        mismatch_results = analyze_company_esg(
+            company,
+            state_evidence=_state_evidence,
+            state_report_text=_state_report_text or None,
+        )
 
         if isinstance(mismatch_results, dict):
             # Save raw structure to state

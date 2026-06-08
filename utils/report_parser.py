@@ -141,10 +141,17 @@ class ReportParserService:
     # Chunking parameters
     CHUNK_SIZE = 2000
     CHUNK_OVERLAP = 200
+    # Targeted to keywords that actually appear in emissions TABLES
+    # (column headers, unit suffixes, table titles) — not in prose.
+    # Removed broad terms (emissions, ghg, mwh, energy consumption, fuel burn,
+    # metric tons, fleet efficiency) that fire on narrative pages and waste
+    # 30s per Camelot call finding nothing. See _has_table_trigger_keywords
+    # below which also requires a 3+ digit number on the page.
     TABLE_TRIGGER_KEYWORDS = [
-        "tco2e", "co2e", "emissions", "scope 1", "scope 2", "scope 3",
-        "ghg", "greenhouse gas", "mwh", "metric tons", "metric tonnes",
-        "fleet efficiency", "energy consumption", "fuel burn"
+        "scope 1", "scope 2", "scope 3",
+        "scope 1 and 2", "scope 1, 2", "scope 1 & 2",
+        "tco2e", "mtco2e", "ktco2e", "mt co2", "kt co2",
+        "ghg inventory", "emissions inventory", "ghg performance table",
     ]
     
     # ========================================
@@ -265,9 +272,16 @@ class ReportParserService:
             self.camelot_available = False
     
     def _has_table_trigger_keywords(self, text: str) -> bool:
-        """Return True when a page likely contains extractable ESG metrics tables."""
+        """Return True when a page likely contains extractable ESG metrics tables.
+
+        Real emissions tables always carry numeric cell values; the digit
+        guard suppresses Camelot runs on narrative pages that mention scope
+        keywords but contain no actual table.
+        """
         text_lower = (text or "").lower()
-        return any(keyword in text_lower for keyword in self.TABLE_TRIGGER_KEYWORDS)
+        if not any(keyword in text_lower for keyword in self.TABLE_TRIGGER_KEYWORDS):
+            return False
+        return bool(re.search(r"\d{3,}", text_lower))
 
     def _is_esg_relevant_page(self, text: str, page_number: int) -> bool:
         """Lightweight page-level ESG relevance filter for PDF chunking."""
@@ -1175,6 +1189,40 @@ class ReportParserService:
         print(f"Company: {company_name}")
         print(f"Reports to parse: {len(downloaded_reports)}")
 
+        # ── SHA-based content dedup ──────────────────────────────────────
+        # The report-discovery + downloader pipeline can register the same
+        # PDF under multiple filenames (e.g. `microsoft_2025_sustainability.pdf`
+        # and `microsoft_2025_esg.pdf` are byte-identical for some companies).
+        # Hash the first 1 MB to detect duplicates and skip parsing — pure
+        # wall-clock win, no impact on report depth since identical content
+        # produces identical chunks.
+        import hashlib as _hashlib
+        _seen_hashes: set = set()
+        _deduped: List[Dict[str, Any]] = []
+        _skipped_dups = 0
+        for r in downloaded_reports:
+            _lp = r.get("local_path", "")
+            if not _lp or not Path(_lp).exists():
+                _deduped.append(r)  # let the per-report missing-file check log it
+                continue
+            try:
+                with open(_lp, "rb") as _fh:
+                    _sample = _fh.read(1024 * 1024)
+                _h = _hashlib.sha256(_sample).hexdigest()
+            except Exception:
+                _h = ""
+            if _h and _h in _seen_hashes:
+                _skipped_dups += 1
+                print(f"   ↪ Skipping byte-identical duplicate: {Path(_lp).name}")
+                continue
+            if _h:
+                _seen_hashes.add(_h)
+            _deduped.append(r)
+        if _skipped_dups:
+            print(f"   Dedup: skipped {_skipped_dups} duplicate-content report(s); "
+                  f"parsing {len(_deduped)} unique.")
+            downloaded_reports = _deduped
+
         all_chunks: List[Dict[str, Any]] = []
 
         for i, report in enumerate(downloaded_reports, 1):
@@ -1273,7 +1321,7 @@ class ReportParserService:
 
         Safeguards:
           - Per-page progress logging so pipeline never appears stuck
-          - 30-second timeout per Camelot call to prevent indefinite hangs
+          - 12-second timeout per Camelot call (real tables extract in 2-5s)
           - Max 15 pages for table extraction to bound total runtime
         """
         page_records = self._extract_pdf_pages(local_path)
@@ -1285,7 +1333,7 @@ class ReportParserService:
 
         # --- Safeguard: cap Camelot extractions ---
         MAX_TABLE_PAGES = 15
-        CAMELOT_TIMEOUT_SECONDS = 30
+        CAMELOT_TIMEOUT_SECONDS = 12
         table_pages_attempted = 0
         esg_page_count = 0
 
@@ -1408,7 +1456,51 @@ except Exception as e:
         return self._extract_tables_with_pymupdf(local_path, page_number)
 
     def _extract_pdf_pages(self, local_path: str) -> List[Dict[str, Any]]:
-        """Extract page-wise text from the PDF with pdfplumber first and pypdf fallback."""
+        """Extract page-wise text from the PDF.
+
+        Tries PyMuPDF (fitz) first — 5-10× faster than pdfplumber for raw text
+        extraction, with comparable accuracy on standard ESG reports. Falls back
+        to pdfplumber (layout-aware) then pypdf (last resort) if fitz returns
+        no text or fails — those slower extractors handle malformed PDFs where
+        fitz might give thin output.
+        """
+        # ── Primary path: PyMuPDF (fitz) ───────────────────────────────────
+        try:
+            import fitz  # PyMuPDF (already a project dep — used in pdf_table_extractor)
+            doc = fitz.open(local_path)
+            try:
+                total_pages = len(doc)
+                pages_to_process = min(total_pages, self.MAX_PAGES)
+                page_records: List[Dict[str, Any]] = []
+                non_empty_count = 0
+                for page_num in range(pages_to_process):
+                    display_page = page_num + 1
+                    if display_page % self.PAGE_LOG_INTERVAL == 0 or display_page == 1:
+                        print(f"         Processing page {display_page}/{pages_to_process}...")
+                    try:
+                        text = doc[page_num].get_text("text") or ""
+                    except Exception as e:
+                        print(f"         Error on page {display_page}: {e}")
+                        text = ""
+                    if text.strip():
+                        non_empty_count += 1
+                    page_records.append({
+                        "page_number": display_page,
+                        "text": text,
+                    })
+            finally:
+                doc.close()
+
+            # Heuristic safety check: if fitz extracted text from <30% of pages,
+            # the PDF is likely image-heavy / OCR-needed — fall through to
+            # pdfplumber which sometimes recovers more on those files.
+            if pages_to_process > 0 and non_empty_count / pages_to_process >= 0.3:
+                return page_records
+            print(f"         fitz returned text on only {non_empty_count}/{pages_to_process} pages — trying pdfplumber...")
+        except Exception as e:
+            print(f"         fitz extraction failed: {e}, trying pdfplumber...")
+
+        # ── Fallback 1: pdfplumber (slower, layout-aware) ──────────────────
         if self.pdfplumber_available:
             try:
                 import pdfplumber

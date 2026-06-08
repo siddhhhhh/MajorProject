@@ -1,4 +1,10 @@
-"""Core package startup safeguards."""
+"""Process-wide Python startup tweaks for local Windows runs.
+
+Python imports this module automatically when the project root is on
+``sys.path``. Several agents print status glyphs during import; on Windows
+terminals using cp1252 those writes can raise ``UnicodeEncodeError`` before
+the pipeline even starts. Force UTF-8 text streams when possible.
+"""
 
 from __future__ import annotations
 

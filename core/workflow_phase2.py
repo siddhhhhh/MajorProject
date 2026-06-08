@@ -2,6 +2,7 @@
 Phase 2 Workflow - FIXED: Removed self-correction loop to prevent recursion
 Self-correction will be added properly in Phase 3
 """
+import os
 from langgraph.graph import StateGraph, END, START
 from langgraph.checkpoint.memory import MemorySaver
 from core.state_schema import ESGState
@@ -61,6 +62,141 @@ def save_peer_to_database_node(state: ESGState) -> ESGState:
     
     return state
 
+# ============================================================
+# PARALLEL ANALYTICS FANOUT
+# ============================================================
+# Replaces 10 sequential analytical nodes with one node that runs them
+# concurrently in a ThreadPoolExecutor. Proven independent (see dependency
+# matrix in audit notes 2026-06-05): each agent reads
+# evidence/claim/company/parsed-chunks and writes to its own unique state
+# slot. Merging is union-by-agent for agent_outputs and append-new for
+# scoremodifierledger + node_execution_order.
+#
+# EXCLUDED (kept sequential):
+#   - realtime_monitoring_node: writes shared state["confidence"]
+#   - esg_mismatch_node: post-refactor still mutates state["carbon_extraction"]
+#
+# Workers controlled by ESG_FANOUT_WORKERS (default 5). 1 = sequential
+# behaviour (useful for correctness diff against baseline).
+
+def _run_fanout_branch(name: str, fn, state_copy):
+    """Execute a single branch; capture wall-clock duration."""
+    import time as _t
+    t0 = _t.time()
+    out = fn(state_copy)
+    return name, out, _t.time() - t0
+
+
+def parallel_analytics_node(state: ESGState) -> ESGState:
+    """Run 10 proven-independent analytical agents concurrently."""
+    import concurrent.futures, copy as _copy, time as _time
+
+    fanout_funcs = [
+        ("greenwishing",   greenwishing_detection_node),
+        ("regulatory",     regulatory_scanning_node),
+        ("climatebert",    climatebert_analysis_node),
+        ("social",         social_analysis_node),
+        ("governance",     governance_analysis_node),
+        ("contradiction",  contradiction_analysis_node),
+        ("temporal",       temporal_analysis_node),
+        ("peer",           peer_comparison_node),
+        ("sentiment",      sentiment_analysis_node),
+        ("credibility",    credibility_analysis_node),
+    ]
+
+    max_workers = int(os.environ.get("ESG_FANOUT_WORKERS", "5"))
+    if max_workers <= 1:
+        # Sequential fallback — exercises the same code path but no parallelism
+        print(f"\n{'⚡ FANOUT (SEQUENTIAL, workers=1)':=^70}")
+        for name, fn in fanout_funcs:
+            try:
+                fn(state)
+            except Exception as e:
+                print(f"   ✗ {name} failed: {e}")
+        return state
+
+    print(f"\n{'⚡ PARALLEL ANALYTICS FANOUT (' + str(len(fanout_funcs)) + ' agents, workers=' + str(max_workers) + ')':=^70}")
+
+    pre_keys = set(state.keys()) if isinstance(state, dict) else set()
+    pre_agent_outputs = list(state.get("agent_outputs", []) or [])
+    pre_ledger = list(state.get("scoremodifierledger", []) or [])
+    pre_node_order = list(state.get("node_execution_order", []) or [])
+
+    t0 = _time.time()
+    branch_results = []  # (name, branch_state | None, duration, error | None)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(_run_fanout_branch, name, fn, _copy.deepcopy(state)): name
+            for name, fn in fanout_funcs
+        }
+        for future in concurrent.futures.as_completed(futures):
+            name = futures[future]
+            try:
+                bname, branch_state, duration = future.result()
+                branch_results.append((bname, branch_state, duration, None))
+                print(f"   ✓ {bname:15s} done in {duration:6.1f}s")
+            except Exception as e:
+                duration = _time.time() - t0
+                branch_results.append((name, None, duration, e))
+                print(f"   ✗ {name:15s} FAILED: {type(e).__name__}: {e}")
+
+    total_dt = _time.time() - t0
+
+    # ---- Merge branch outputs ----
+    merged_agent_outputs = list(pre_agent_outputs)
+    seen_agent_names = {ao.get("agent") for ao in merged_agent_outputs if isinstance(ao, dict)}
+    merged_ledger = list(pre_ledger)
+    merged_node_order = list(pre_node_order)
+
+    # Known result-slot keys written by these 10 agents — adopt branch writes
+    KNOWN_RESULT_SLOTS = {
+        "greenwishing_analysis", "controversy_risk", "gdelt_events",
+        "litigation_resolved", "regulatory_compliance", "regulatory_cross_ref",
+        "regulatory_results", "climatebert_analysis", "climatebert_results",
+        "social_analysis", "governance_analysis", "contradiction_results",
+        "cross_pillar_contradictions", "historical_results", "peer_results",
+        "sentiment_results", "credibility_results",
+    }
+
+    for name, branch_state, duration, error in branch_results:
+        if branch_state is None or not isinstance(branch_state, dict):
+            continue
+        # agent_outputs: union by agent name
+        for entry in (branch_state.get("agent_outputs") or []):
+            if isinstance(entry, dict):
+                agent_name = entry.get("agent")
+                if agent_name and agent_name not in seen_agent_names:
+                    seen_agent_names.add(agent_name)
+                    merged_agent_outputs.append(entry)
+        # scoremodifierledger: append entries beyond pre snapshot
+        branch_ledger = branch_state.get("scoremodifierledger") or []
+        if len(branch_ledger) > len(pre_ledger):
+            merged_ledger.extend(branch_ledger[len(pre_ledger):])
+        # node_execution_order: append new entries
+        branch_order = branch_state.get("node_execution_order") or []
+        if len(branch_order) > len(pre_node_order):
+            merged_node_order.extend(branch_order[len(pre_node_order):])
+        # New keys + known result slots
+        for k, v in branch_state.items():
+            if k in ("agent_outputs", "scoremodifierledger", "node_execution_order"):
+                continue
+            if k not in pre_keys:
+                state[k] = v
+            elif k in KNOWN_RESULT_SLOTS and v is not None and v != state.get(k):
+                state[k] = v
+
+    state["agent_outputs"] = merged_agent_outputs
+    state["scoremodifierledger"] = merged_ledger
+    state["node_execution_order"] = merged_node_order
+
+    print(f"{'='*70}")
+    print(f"⚡ Fanout complete: {total_dt:.1f}s wallclock")
+    print(f"   agent_outputs: {len(pre_agent_outputs)} → {len(merged_agent_outputs)}")
+    print(f"   ledger: {len(pre_ledger)} → {len(merged_ledger)}")
+    return state
+
+
 def inject_temporal_violations(state: ESGState) -> ESGState:
     agent_outputs = state.get("agent_outputs", [])
     temporal_result = next((o.get("output", {}) for o in agent_outputs if o.get("agent") == "temporal_analysis"), {})
@@ -106,7 +242,43 @@ def build_phase2_graph():
     - NO self-correction (prevents recursion)
     """
     workflow = StateGraph(ESGState)
-    
+
+    # === DIAG: wrap every node — agent_outputs len + wall-clock per node ===
+    if True:  # FORCED ON for this perf-audit session
+        import functools, traceback as _tb, time as _time
+        _PIPELINE_T0 = _time.time()
+        _NODE_TIMINGS = {}  # name → [list of durations]
+        _orig_add_node = workflow.add_node
+        def _diag_add_node(name, fn, **kwargs):
+            @functools.wraps(fn)
+            def _wrapped(state, *a, **kw):
+                ao = state.get("agent_outputs") if isinstance(state, dict) else None
+                ao_in = len(ao) if isinstance(ao, list) else f"type={type(ao).__name__}"
+                _t0 = _time.time()
+                _wallclock = _t0 - _PIPELINE_T0
+                print(f"[DIAG] >>> ENTRY {name:30s} ao_len={ao_in:>4} wallclock={_wallclock:7.1f}s", flush=True)
+                try:
+                    out = fn(state, *a, **kw)
+                    ao2 = out.get("agent_outputs") if isinstance(out, dict) else None
+                    ao_out = len(ao2) if isinstance(ao2, list) else f"type={type(ao2).__name__}"
+                    _dt = _time.time() - _t0
+                    _NODE_TIMINGS.setdefault(name, []).append(_dt)
+                    _wallclock2 = _time.time() - _PIPELINE_T0
+                    print(f"[DIAG] <<< EXIT  {name:30s} ao_len={ao_out:>4} duration={_dt:7.2f}s wallclock={_wallclock2:7.1f}s", flush=True)
+                    return out
+                except Exception as e:
+                    _dt = _time.time() - _t0
+                    print(f"[DIAG] !!! EXC   {name:30s} {type(e).__name__}: {e} (after {_dt:.2f}s)", flush=True)
+                    _tb.print_exc()
+                    raise
+            return _orig_add_node(name, _wrapped, **kwargs)
+        workflow.add_node = _diag_add_node
+        # Make timings dict accessible for later inspection
+        import builtins as _b
+        _b._ESG_NODE_TIMINGS = _NODE_TIMINGS
+        _b._ESG_PIPELINE_T0 = _PIPELINE_T0
+        print(f"[DIAG] node tracing ENABLED (perf-audit mode; T0={_PIPELINE_T0:.0f})", flush=True)
+
     # ============================================================
     # SUPERVISOR & ROUTING
     # ============================================================
@@ -225,30 +397,47 @@ def build_phase2_graph():
     workflow.add_edge("fast_save_peer", "fast_report")
     workflow.add_edge("fast_report", END)  # FIXED: Direct to END
     
-    # Standard track path (linear - no loops)
+    # Standard track path
+    # The path through the 10 analytical agents can be EITHER the original
+    # sequential chain OR a single parallel fanout node. Default is fanout
+    # (production setting); rollback via `ESG_ENABLE_FANOUT=0`.
+    _FANOUT = os.environ.get("ESG_ENABLE_FANOUT", "1").lower() in ("1", "true", "yes")
+
     workflow.add_edge("std_claim", "std_claim_decomposition")
     workflow.add_edge("std_claim_decomposition", "std_evidence")
     workflow.add_edge("std_evidence", "std_adversarial")
-    workflow.add_edge("std_adversarial", "std_report_discovery")  # NEW: Enter report pipeline
-    workflow.add_edge("std_report_discovery", "std_report_downloader")  # NEW: Download reports
-    workflow.add_edge("std_report_downloader", "std_report_parser")  # NEW: Parse reports
-    workflow.add_edge("std_report_parser", "std_report_claim_extractor")  # NEW: Extract claims from reports
-    workflow.add_edge("std_report_claim_extractor", "std_carbon")  # Continue to carbon extraction
-    workflow.add_edge("std_carbon", "std_pathway")  # NEW: Carbon pathway analysis
-    workflow.add_edge("std_pathway", "std_greenwishing")  # NEW: Greenwishing
-    workflow.add_edge("std_greenwishing", "std_regulatory")  # NEW: Regulatory
-    workflow.add_edge("std_regulatory", "std_climatebert")  # NEW: ClimateBERT
-    workflow.add_edge("std_climatebert", "std_temporal")
-    workflow.add_edge("std_temporal", "std_inject_temporal")
-    workflow.add_edge("std_inject_temporal", "std_contradiction")
-    workflow.add_edge("std_contradiction", "std_mismatch")  # NEW: ESG Mismatch
-    workflow.add_edge("std_mismatch", "std_peer")
-    workflow.add_edge("std_peer", "std_credibility")
-    workflow.add_edge("std_credibility", "std_sentiment")
-    workflow.add_edge("std_sentiment", "std_realtime")
-    workflow.add_edge("std_realtime", "std_social")
-    workflow.add_edge("std_social", "std_governance")
-    workflow.add_edge("std_governance", "std_temporal_consistency")  # Temporal analysis after broader evidence context
+    workflow.add_edge("std_adversarial", "std_report_discovery")
+    workflow.add_edge("std_report_discovery", "std_report_downloader")
+    workflow.add_edge("std_report_downloader", "std_report_parser")
+    workflow.add_edge("std_report_parser", "std_report_claim_extractor")
+    workflow.add_edge("std_report_claim_extractor", "std_carbon")
+    workflow.add_edge("std_carbon", "std_pathway")
+
+    if _FANOUT:
+        # ⚡ PARALLEL: 10 independent analytical agents in a single ThreadPool stage
+        workflow.add_node("std_parallel_analytics", parallel_analytics_node)
+        workflow.add_edge("std_pathway", "std_parallel_analytics")
+        workflow.add_edge("std_parallel_analytics", "std_inject_temporal")
+        workflow.add_edge("std_inject_temporal", "std_mismatch")
+        workflow.add_edge("std_mismatch", "std_realtime")
+        workflow.add_edge("std_realtime", "std_temporal_consistency")
+        print(f"[FANOUT] enabled — std_pathway → parallel_analytics → inject_temporal → mismatch → realtime → temporal_consistency", flush=True)
+    else:
+        # Original linear chain
+        workflow.add_edge("std_pathway", "std_greenwishing")
+        workflow.add_edge("std_greenwishing", "std_regulatory")
+        workflow.add_edge("std_regulatory", "std_climatebert")
+        workflow.add_edge("std_climatebert", "std_temporal")
+        workflow.add_edge("std_temporal", "std_inject_temporal")
+        workflow.add_edge("std_inject_temporal", "std_contradiction")
+        workflow.add_edge("std_contradiction", "std_mismatch")
+        workflow.add_edge("std_mismatch", "std_peer")
+        workflow.add_edge("std_peer", "std_credibility")
+        workflow.add_edge("std_credibility", "std_sentiment")
+        workflow.add_edge("std_sentiment", "std_realtime")
+        workflow.add_edge("std_realtime", "std_social")
+        workflow.add_edge("std_social", "std_governance")
+        workflow.add_edge("std_governance", "std_temporal_consistency")
     workflow.add_edge("std_temporal_consistency", "std_commitment_ledger")
     workflow.add_edge("std_commitment_ledger", "std_fact_graph")
     workflow.add_edge("std_fact_graph", "std_risk")

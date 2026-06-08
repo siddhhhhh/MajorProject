@@ -139,24 +139,67 @@ def _find_raw(report_id: str):
 
 
 def _read_companion_artifacts(report_path: Path) -> dict:
-    """Read TXT / brief JSON files produced next to the full report JSON."""
+    """Read TXT / brief JSON files produced next to the full report JSON.
+
+    The pipeline writes JSON under two parallel naming conventions:
+      - `ESG_Report_<Company>_<YYYYMMDD>_<HHMMSS>.json` (display format
+        with `.txt` + `_brief.json` companions)
+      - `<YYYYMMDD>-<HHMMSS>-<TICKER>.json` (internal/legacy format,
+        JSON only, no `.txt` companion)
+    When the user opens the internal-format entry from History, we fall
+    back to the display-format `.txt` for the same company + day so the
+    audit view never says "No TXT artifact".
+    """
     stem = report_path.stem
     txt_path = report_path.with_suffix(".txt")
     brief_path = report_path.with_name(f"{stem}_brief.json")
+
+    # ── Companion-TXT fallback for legacy / internal-format JSONs ────────
+    fallback_txt: Optional[Path] = None
+    if not txt_path.exists():
+        # Try to find a sibling ESG_Report_<Company>_<YYYYMMDD>_*.txt
+        try:
+            data = json.loads(report_path.read_text(encoding="utf-8"))
+            company = str(data.get("company") or "").strip()
+        except Exception:
+            company = ""
+        if company:
+            company_token = company.replace(" ", "_")
+            # Match same-day display-format artifacts only (avoid grabbing
+            # an unrelated company's report).
+            mtime_day = datetime.fromtimestamp(
+                report_path.stat().st_mtime
+            ).strftime("%Y%m%d")
+            for sibling in report_path.parent.glob(
+                f"ESG_Report_{company_token}_{mtime_day}_*.txt"
+            ):
+                fallback_txt = sibling
+                break
+            if fallback_txt is None:
+                # Looser fallback: any same-company TXT in the dir
+                # (handles cross-day lookups when the display run landed
+                # slightly later than the internal record).
+                for sibling in report_path.parent.glob(
+                    f"ESG_Report_{company_token}_*.txt"
+                ):
+                    fallback_txt = sibling
+                    break
+
+    effective_txt = txt_path if txt_path.exists() else fallback_txt
 
     artifacts: dict = {
         "txt": None,
         "brief": None,
         "full_json": None,
         "files": {
-            "txt": txt_path.name if txt_path.exists() else None,
+            "txt": effective_txt.name if effective_txt and effective_txt.exists() else None,
             "brief": brief_path.name if brief_path.exists() else None,
             "json": report_path.name,
         },
     }
 
-    if txt_path.exists():
-        artifacts["txt"] = txt_path.read_text(encoding="utf-8", errors="replace")
+    if effective_txt and effective_txt.exists():
+        artifacts["txt"] = effective_txt.read_text(encoding="utf-8", errors="replace")
 
     if brief_path.exists():
         try:
