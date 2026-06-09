@@ -212,23 +212,51 @@ async def _call_groq(config, prompt, system) -> str:
     return response.choices[0].message.content.strip()
 
 
+# Cerebras serves reasoning-tier models (gpt-oss-120b, zai-glm-4.7) that emit
+# a chain-of-thought trace in `message.reasoning` before producing the actual
+# reply in `message.content`. The reasoning tokens are billed against
+# max_tokens, so a tight budget (e.g. 300) leaves the model no room for the
+# reply and content comes back None. Boost the budget for known reasoning
+# models so the configured max_tokens applies to the *output*, not the trace.
+_CEREBRAS_REASONING_MODELS = {"gpt-oss-120b", "zai-glm-4.7"}
+_CEREBRAS_REASONING_HEADROOM = 1200
+
+
 async def _call_cerebras(config, prompt, system) -> str:
     messages = []
     if system:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
 
+    effective_max_tokens = config.max_tokens
+    if config.model_id in _CEREBRAS_REASONING_MODELS:
+        effective_max_tokens = config.max_tokens + _CEREBRAS_REASONING_HEADROOM
+
     kwargs = dict(
         model=config.model_id,
         messages=messages,
-        max_tokens=config.max_tokens,
+        max_tokens=effective_max_tokens,
         temperature=config.temperature,
     )
     if config.json_mode:
         kwargs["response_format"] = {"type": "json_object"}
 
     response = await cerebras.chat.completions.create(**kwargs)
-    return response.choices[0].message.content.strip()
+    message = response.choices[0].message
+    content = getattr(message, "content", None)
+    if content:
+        return content.strip()
+
+    # Reasoning model ran out of budget before it produced a reply — surface
+    # this as a recoverable error so the chain falls through to the next
+    # provider instead of returning empty string downstream.
+    finish_reason = getattr(response.choices[0], "finish_reason", None)
+    reasoning_preview = (getattr(message, "reasoning", "") or "")[:160]
+    raise RuntimeError(
+        f"Cerebras {config.model_id} returned empty content "
+        f"(finish_reason={finish_reason}, reasoning_preview={reasoning_preview!r}). "
+        f"Likely exhausted max_tokens={effective_max_tokens} on chain-of-thought."
+    )
 
 
 async def _call_openrouter(config, prompt, system) -> str:

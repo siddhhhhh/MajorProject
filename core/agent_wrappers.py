@@ -1188,7 +1188,11 @@ def carbon_pathway_analysis_node(state: ESGState) -> ESGState:
                 target_year=target_year,
                 target_reduction_pct=30.0,
                 production_plan=production_plan,
-                claimed_pathway="1.5C" if "1.5" in str(state.get("claim", "")).lower() else "net-zero-2050",
+                claimed_pathway=(
+                    "1.5C" if "1.5" in str(state.get("claim", "")).lower()
+                    else f"net-zero-{target_year}" if target_year and target_year != 2030
+                    else "net-zero-2050"
+                ),
             )
         except Exception as e:
             print(f"❌ CarbonPathwayModeller error: {e}")
@@ -5291,7 +5295,12 @@ def temporal_consistency_node(state: ESGState) -> ESGState:
             env_trend = result.get("environmental_trend", "unknown")
 
             print(f"✅ Temporal Consistency Analysis Complete:")
-            print(f"   Score: {temporal_score:.0f}/100")
+            # Score may be the sentinel string "NOT_COMPUTED" when historical
+            # data was insufficient — print it raw instead of formatting.
+            if isinstance(temporal_score, (int, float)):
+                print(f"   Score: {temporal_score:.0f}/100")
+            else:
+                print(f"   Score: {temporal_score}")
             print(f"   Risk Level: {risk_level}")
             print(f"   Claim Trend: {claim_trend}")
             print(f"   Environmental Trend: {env_trend}")
@@ -5325,15 +5334,25 @@ def temporal_consistency_node(state: ESGState) -> ESGState:
                 temporal_mode = result.get("temporal_mode", "none")
                 status = result.get("status", "")
 
-                # Data depth threshold: need >= 3 years of consistent history
-                if len(years_analyzed) >= 3 and data_quality in ("high", "medium"):
+                # NOT_COMPUTED sentinel means the agent declined to score
+                # (BUG 9 fix). Always treat as insufficient → T = 0 neutral.
+                raw_score = result.get("temporal_consistency_score", 0.0)
+                numeric_score = (
+                    float(raw_score)
+                    if isinstance(raw_score, (int, float))
+                    else 0.0
+                )
+                if status == "insufficient_data" or raw_score == "NOT_COMPUTED":
+                    data_sufficient = False
+                    T = 0.0
+                elif len(years_analyzed) >= 3 and data_quality in ("high", "medium"):
                     data_sufficient = True
                     # T is the temporal_consistency_score (high = claims escalate faster than performance)
-                    T = float(result.get("temporal_consistency_score", 0.0) or 0.0)
+                    T = numeric_score
                 elif temporal_mode == "trend" and len(years_analyzed) >= 2:
                     # Partial data: use half weight
                     data_sufficient = False
-                    T = float(result.get("temporal_consistency_score", 0.0) or 0.0) * 0.5
+                    T = numeric_score * 0.5
                 else:
                     # Insufficient data: T = 0 (neutral, weight redistributed in GW formula)
                     T = 0.0

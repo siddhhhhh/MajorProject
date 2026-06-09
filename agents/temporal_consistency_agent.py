@@ -111,6 +111,81 @@ class TemporalConsistencyAgent:
 
         years_for_trend = self._clean_years_list([y for y in report_claims_by_year.keys() if y != "unknown"])
         has_multi_year_claims = len(years_for_trend) >= 2
+
+        # ── Temporal data-gap guard (Bug 8) ────────────────────────────────
+        # When the oldest and newest claim years span more than 10 years, the
+        # comparison is anachronistic — 2012 claim language cannot be fairly
+        # contrasted with 2022 performance data since reporting standards,
+        # terminology, and company scope all changed significantly. Filter to
+        # the last 10 years only. If no claims remain after filtering we keep
+        # the full set but tag a LARGE_GAP warning that appears in the
+        # temporal inconsistency evidence.
+        _large_gap_flag = None
+        if years_for_trend and len(years_for_trend) >= 2:
+            _span = years_for_trend[0] - years_for_trend[-1]  # list is newest-first
+            if _span > 10:
+                _large_gap_flag = (
+                    f"Temporal data spans {_span} years (oldest: {years_for_trend[-1]}, "
+                    f"newest: {years_for_trend[0]}). Data older than 10 years filtered; "
+                    f"pre-{years_for_trend[0] - 10} claims excluded from trend analysis."
+                )
+                cutoff = years_for_trend[0] - 10
+                filtered_years = [y for y in years_for_trend if y >= cutoff]
+                if len(filtered_years) >= 1:
+                    years_for_trend = filtered_years
+                    # Also filter the claims dict to avoid confusing downstream
+                    report_claims_by_year = {
+                        y: v for y, v in report_claims_by_year.items()
+                        if y == "unknown" or (isinstance(y, int) and y >= cutoff)
+                    }
+                    has_multi_year_claims = len(years_for_trend) >= 2
+                print(f"   ⚠️ TEMPORAL GAP WARNING: {_large_gap_flag}")
+        # ───────────────────────────────────────────────────────────────────
+
+        # Data sufficiency gate (BUG 9): historically the agent emitted a
+        # hardcoded score (~30/100) when neither multi-year claims nor a
+        # quantitative environmental signal were available. That landed the
+        # same number on JPMorgan/H&M/Microsoft/Volkswagen even though the
+        # underlying evidence differed. Now we explicitly return
+        # NOT_COMPUTED + INSUFFICIENT_DATA so consumers can render an
+        # honest "not enough history" instead of a fake score.
+        has_env_metric = False
+        for output in agent_outputs:
+            if output.get("agent") == "carbon_extraction":
+                data = output.get("output", {})
+                if isinstance(data, dict):
+                    annual = data.get("annual_emissions") or {}
+                    if isinstance(annual, dict) and len(annual) >= 1:
+                        has_env_metric = True
+                        break
+                    scopes = data.get("scope_1") or data.get("scope_2") or data.get("scope_3")
+                    if scopes:
+                        has_env_metric = True
+                        break
+        if not has_multi_year_claims or not has_env_metric:
+            return {
+                "temporal_consistency_score": "NOT_COMPUTED",
+                "temporal_mode": "insufficient_data",
+                "data_quality": "low",
+                "temporal_weight": 0.0,
+                "risk_level": "INSUFFICIENT_DATA",
+                "claim_trend": "insufficient_history" if not has_multi_year_claims else "available",
+                "environmental_trend": "insufficient_data" if not has_env_metric else "available",
+                "temporal_inconsistency_detected": "INSUFFICIENT_DATA",
+                "years_analyzed": years_for_trend,
+                "evidence": [],
+                "explanation": (
+                    "Temporal Consistency Score: NOT_COMPUTED (insufficient historical data). "
+                    f"Require ≥2 years of claim data (have {len(years_for_trend)}) "
+                    f"AND ≥1 environmental performance metric (have {'yes' if has_env_metric else 'no'})."
+                ),
+                "status": "insufficient_data",
+                "timestamp": datetime.now().isoformat(),
+                "component_scores": {
+                    "years_with_claims": len(years_for_trend),
+                    "has_environmental_metric": has_env_metric,
+                },
+            }
         
         # ============================================================
         # STEP 1: ANALYZE CLAIM STRENGTH TRENDS
@@ -274,15 +349,23 @@ class TemporalConsistencyAgent:
         # COMPILE RESULTS
         # ============================================================
         evidence = inconsistencies.copy()
-        
+
+        # Surface the large temporal-gap warning in the evidence list (Bug 8).
+        if _large_gap_flag:
+            evidence.append(_large_gap_flag)
+            # A >10-year gap is itself an inconsistency signal — claims from a
+            # decade ago should not be compared 1:1 with current performance.
+            if not inconsistency_detected:
+                inconsistency_detected = True
+
         if claim_trend == "increasing" and environmental_trend == "worsening":
             evidence.append("Claims escalated while environmental performance worsened")
         if claim_trend == "increasing" and emissions_trend == "worsening":
             evidence.append("Greenwashing flag: claims increasing while emissions are increasing")
-        
+
         if claim_trend == "increasing" and peer_comparison_score > 60:
             evidence.append("Company makes increasingly strong claims despite below-average peer performance")
-        
+
         if claim_trend == "increasing" and financial_alignment_score > 50:
             evidence.append("Sustainability claims intensified but financial investments don't support claims")
         
@@ -547,14 +630,23 @@ class TemporalConsistencyAgent:
     def _detect_inconsistencies(self, claim_trend: str, environmental_trend: str,
                                company_name: str, agent_outputs: List[Dict]) -> List[str]:
         """
-        Detect temporal inconsistencies between claims and performance
+        Detect temporal inconsistencies between claims and performance.
+
+        Escalating claims with no corresponding performance improvement
+        (i.e. environmental_trend is stable OR worsening OR decreasing) is
+        the definition of a temporal inconsistency for greenwashing
+        purposes — a STABLE environment doesn't justify stronger claims.
         """
         inconsistencies = []
-        
-        # Pattern 1: Claims escalating but environment worsening
+
         if claim_trend == "increasing" and environmental_trend == "worsening":
             inconsistencies.append(
                 "ESG claims escalated while environmental metrics deteriorated"
+            )
+        elif claim_trend == "increasing" and environmental_trend in ("stable", "decreasing"):
+            inconsistencies.append(
+                f"ESG claims escalated while environmental performance was {environmental_trend} "
+                f"(claim strength rose without backing performance improvement)"
             )
 
         # Pattern 1b: Claims up and emissions up is explicit greenwashing pattern
@@ -677,19 +769,33 @@ class TemporalConsistencyAgent:
     
     def _generate_explanation(self, claim_trend: str, environmental_trend: str,
                              score: float) -> str:
-        """Generate human-readable explanation of temporal analysis"""
+        """Generate human-readable explanation of temporal analysis.
+
+        The narrative must agree with the boolean inconsistency flag:
+        escalating claims + non-improving performance is always an
+        inconsistency, regardless of overall score band.
+        """
         if claim_trend == "unknown" or environmental_trend == "unknown":
             return "Temporal signal is inconclusive because longitudinal claim/performance coverage is limited."
 
+        escalating_without_backing = (
+            claim_trend == "increasing"
+            and environmental_trend in ("stable", "worsening", "decreasing")
+        )
+
+        if escalating_without_backing:
+            return (
+                f"Temporal inconsistency detected: claims are {claim_trend} while "
+                f"environmental performance is {environmental_trend}. Claim escalation "
+                f"without corresponding performance improvement is a greenwashing pattern."
+            )
+
         if score <= 30:
             return "ESG claims align well with actual environmental performance over time. No significant greenwashing indicators detected."
-        
         elif score <= 60:
             return f"Some misalignment between claims ({claim_trend}) and environmental performance ({environmental_trend}). Moderate inconsistency detected."
-        
         elif score <= 80:
             return f"Significant temporal inconsistency: Claims {claim_trend} while environmental metrics {environmental_trend}. Strong greenwashing indicators."
-        
         else:
             return f"Critical temporal inconsistency: Escalating claims ({claim_trend}) with deteriorating environmental performance ({environmental_trend}). High likelihood of greenwashing."
 

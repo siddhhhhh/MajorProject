@@ -17,6 +17,165 @@ logger = logging.getLogger(__name__)
 BASELINES_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "industry_baselines.json")
 
 # Sector signal keywords (no company names — fully dynamic)
+# Company-name → sector seeds for bellwether companies where the name alone
+# is the most reliable industry signal. Checked BEFORE keyword scoring.
+# Keys must be lowercase substrings of the company name.
+COMPANY_SECTOR_SEEDS: dict = {
+    # Telecommunications
+    "vodafone": "telecommunications",
+    "verizon": "telecommunications",
+    "at&t": "telecommunications",
+    "t-mobile": "telecommunications",
+    "deutsche telekom": "telecommunications",
+    "bt group": "telecommunications",
+    "orange": "telecommunications",
+    "telefonica": "telecommunications",
+    "comcast": "telecommunications",
+    "charter communications": "telecommunications",
+    "reliance jio": "telecommunications",
+    "airtel": "telecommunications",
+    # Oil & Gas
+    "exxon": "oil_and_gas",
+    "chevron": "oil_and_gas",
+    "shell": "oil_and_gas",
+    "bp ": "oil_and_gas",
+    "totalenergies": "oil_and_gas",
+    "conocophillips": "oil_and_gas",
+    "equinor": "oil_and_gas",
+    "eni": "oil_and_gas",
+    "repsol": "oil_and_gas",
+    # Banking / Finance
+    "goldman sachs": "banking",
+    "jp morgan": "banking",
+    "jpmorgan": "banking",
+    "bank of america": "banking",
+    "wells fargo": "banking",
+    "citigroup": "banking",
+    "barclays": "banking",
+    "hsbc": "banking",
+    "ubs": "banking",
+    "credit suisse": "banking",
+    "bnp paribas": "banking",
+    "deutsche bank": "banking",
+    "morgan stanley": "banking",
+    # Automotive / EV
+    "tesla": "automotive",
+    "volkswagen": "automotive",
+    "bmw": "automotive",
+    "mercedes": "automotive",
+    "toyota": "automotive",
+    "ford motor": "automotive",
+    "general motors": "automotive",
+    "stellantis": "automotive",
+    "rivian": "automotive",
+    "lucid": "automotive",
+    "nio": "automotive",
+    # Technology
+    "microsoft": "technology",
+    "apple inc": "technology",
+    "alphabet": "technology",
+    "amazon": "technology",
+    "meta platforms": "technology",
+    "nvidia": "technology",
+    "intel": "technology",
+    "samsung": "technology",
+    "ibm": "technology",
+    "oracle": "technology",
+    "salesforce": "technology",
+    "cisco": "technology",
+    # FMCG / Consumer Goods
+    "unilever": "consumer_goods",
+    "nestle": "consumer_goods",
+    "procter": "consumer_goods",                # Procter & Gamble
+    "colgate": "consumer_goods",
+    "reckitt": "consumer_goods",
+    "henkel": "consumer_goods",
+    "kimberly": "consumer_goods",               # Kimberly-Clark
+    # Fashion / Apparel
+    "h&m": "fast_fashion",
+    "zara": "fast_fashion",
+    "inditex": "fast_fashion",
+    "fast retailing": "fast_fashion",           # Uniqlo parent
+    "burberry": "fast_fashion",
+    "nike": "fast_fashion",
+    "adidas": "fast_fashion",
+    "gap inc": "fast_fashion",
+    "pvh": "fast_fashion",                      # Calvin Klein, Tommy Hilfiger
+    # Pharmaceuticals / Healthcare
+    "astrazeneca": "pharmaceuticals",
+    "pfizer": "pharmaceuticals",
+    "johnson & johnson": "pharmaceuticals",
+    "novartis": "pharmaceuticals",
+    "roche": "pharmaceuticals",
+    "merck": "pharmaceuticals",
+    "abbvie": "pharmaceuticals",
+    "bayer": "pharmaceuticals",
+    "sanofi": "pharmaceuticals",
+    "glaxosmithkline": "pharmaceuticals",
+    "gsk": "pharmaceuticals",
+    "eli lilly": "pharmaceuticals",
+    "novo nordisk": "pharmaceuticals",
+    # Retail / E-commerce
+    "walmart": "retail",
+    "target corp": "retail",
+    "costco": "retail",
+    "kroger": "retail",
+    "carrefour": "retail",
+    "tesco": "retail",
+    "sainsbury": "retail",
+    "marks & spencer": "retail",
+    "ikea": "retail",
+    "home depot": "retail",
+    "alibaba": "retail",
+    # Food & Beverage
+    "coca-cola": "food_beverage",
+    "pepsico": "food_beverage",
+    "kraft heinz": "food_beverage",
+    "danone": "food_beverage",
+    "diageo": "food_beverage",
+    "ab inbev": "food_beverage",
+    "mcdonald": "food_beverage",
+    "starbucks": "food_beverage",
+    "tyson foods": "food_beverage",
+    # Renewable Energy
+    "vestas": "renewable_energy",
+    "siemens gamesa": "renewable_energy",
+    "nextera": "renewable_energy",
+    "brookfield renewable": "renewable_energy",
+    "orsted": "renewable_energy",
+    "enel": "renewable_energy",
+    # Mining
+    "bhp": "mining",
+    "rio tinto": "mining",
+    "glencore": "mining",
+    "vale": "mining",
+    "anglogold": "mining",
+    "barrick": "mining",
+    # Aviation
+    "boeing": "aviation",
+    "airbus": "aviation",
+    "delta air": "aviation",
+    "united airlines": "aviation",
+    "american airlines": "aviation",
+    "emirates": "aviation",
+    "ryanair": "aviation",
+    # Transportation / Logistics
+    "ups": "transportation",
+    "fedex": "transportation",
+    "dhl": "transportation",
+    "maersk": "transportation",
+    "amazon logistics": "transportation",
+    # Real Estate
+    "prologis": "real_estate",
+    "brookfield asset": "real_estate",
+    # Chemicals
+    "basf": "chemicals",
+    "dow chemical": "chemicals",
+    "dupont": "chemicals",
+    "3m": "chemicals",
+    "linde": "chemicals",
+}
+
 SECTOR_SIGNALS = {
     "oil_and_gas": ["petroleum", "crude oil", "natural gas", "drilling", "refinery", "upstream", "downstream", "lng", "pipeline", "fossil fuel"],
     "coal": ["coal mining", "coal power", "thermal coal", "metallurgical coal"],
@@ -33,7 +192,13 @@ SECTOR_SIGNALS = {
     "pharmaceuticals": ["pharmaceutical", "pharma", "drug", "biotech", "clinical trial", "medicine"],
     "chemicals": ["chemical", "petrochemical", "agrochemical", "fertilizer", "polymer"],
     "real_estate": ["real estate", "property", "reit", "construction", "building", "housing"],
-    "telecommunications": ["telecom", "telecommunications", "mobile network", "5g", "broadband", "internet provider"],
+    "telecommunications": [
+        "telecom", "telecommunications", "mobile network", "5g", "broadband",
+        "internet provider", "mobile operator", "wireless operator", "spectrum",
+        "vodafone", "verizon", "at&t", "t-mobile", "deutsche telekom", "bt group",
+        "orange sa", "telefonica", "swisscom", "telstra", "softbank",
+        "ntt docomo", "airtel", "reliance jio", "bsnl", "mtnl",
+    ],
     "renewable_energy": ["solar", "wind energy", "renewable", "clean energy", "green energy", "wind farm", "solar farm"],
     "healthcare_services": ["healthcare", "hospital", "medical", "health services", "clinic"],
     "tobacco": ["tobacco", "cigarette", "nicotine", "vaping"],
@@ -84,6 +249,15 @@ def detect_industry(
         baselines = _load_baselines()
         if normalized in baselines.get("industry_baseline_risk", {}):
             return normalized, 0.95, "pre_classified"
+
+    # Company-name seed lookup: for well-known companies the name alone is the
+    # most reliable signal. This fires BEFORE keyword scoring so Vodafone never
+    # falls through to "unknown" just because the evidence corpus doesn't
+    # happen to contain the word "telecom".
+    company_lc = (company or "").lower().strip()
+    for seed_key, seed_sector in COMPANY_SECTOR_SEEDS.items():
+        if seed_key in company_lc:
+            return seed_sector, 0.98, "company_seed"
 
     # Build text corpus for matching
     corpus = f"{company} {claim} {evidence_text}".lower()

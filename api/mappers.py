@@ -385,11 +385,46 @@ def _map_contradictions(raw: Dict) -> List[Contradiction]:
 
 # ── Evidence mapping ──────────────────────────────────────────────────────────
 
+# Search aggregator domains/names. Aggregators deliver other people's
+# content, so the source type must reflect the aggregator itself, not the
+# fetched page body. A DuckDuckGo result is never a "Company Disclosure"
+# even if the snippet quotes a 10-K — the *source* is DuckDuckGo. (BUG 7)
+_AGGREGATOR_DOMAINS = {
+    "duckduckgo.com", "duck.com",
+    "bing.com", "www.bing.com",
+    "google.com", "www.google.com", "news.google.com",
+    "yahoo.com", "search.yahoo.com",
+}
+_AGGREGATOR_NAMES = {"duckduckgo", "bing", "google search", "yahoo search"}
+
+
 def _classify_source_type(url: str, source_name: str, reliability_tier: str) -> str:
-    """Mirror professional_report_generator's source-type bucketing for the UI."""
+    """Mirror professional_report_generator's source-type bucketing for the UI.
+
+    Pre-classification rules (run BEFORE the heuristic ladder):
+      1. Aggregator blocklist — DDG/Bing/Google/Yahoo always classify as
+         "Web Source" regardless of fetched content. (BUG 7)
+      2. "(Official)" suffix on the source name → "Company Disclosure".
+         Catches "Microsoft (Official)", "Shell (Official)", etc. (BUG 6)
+    """
     u = (url or "").lower()
-    name = (source_name or "").lower()
+    name_raw = (source_name or "").strip()
+    name = name_raw.lower()
     tier = (reliability_tier or "").lower()
+
+    domain = u
+    if "://" in u:
+        domain = u.split("://", 1)[1].split("/", 1)[0]
+    domain = domain.split(":", 1)[0]
+
+    if domain in _AGGREGATOR_DOMAINS or any(domain.endswith(d) for d in _AGGREGATOR_DOMAINS):
+        return "Web Source"
+    if any(a == name or a in name for a in _AGGREGATOR_NAMES):
+        return "Web Source"
+
+    if name_raw.endswith("(Official)") or "(official)" in name:
+        return "Company Disclosure"
+
     if "regulator" in tier or "filing" in tier:
         return "Regulatory Filing"
     if "news" in tier or "media" in tier:

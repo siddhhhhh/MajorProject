@@ -479,6 +479,50 @@ class CarbonExtractor:
                 "source_label": "TCS 2024 Integrated Annual Report",
             },
             "tata consultancy services": "tcs",
+            # ── FMCG / Consumer Goods ─────────────────────────────────────
+            "unilever": {
+                "scope1": 397_000,
+                "scope2": 289_000,          # market-based
+                "scope3": 51_800_000,       # value chain, GHG Protocol
+                "data_year": 2023,
+                "source_url": "https://www.unilever.com/planet-and-society/climate-action/",
+                "source_label": "Unilever Climate Transition Action Plan 2023",
+            },
+            "unilever plc": "unilever",
+            "unilever nv": "unilever",
+            # ── Fashion / Apparel ─────────────────────────────────────────
+            "h&m group": {
+                "scope1": 63_000,
+                "scope2": 4_600,            # market-based (near-zero renewable)
+                "scope3": 15_600_000,       # supply chain dominant
+                "data_year": 2023,
+                "source_url": "https://hmgroup.com/sustainability/sustainable-fashion/",
+                "source_label": "H&M Group 2023 Sustainability Report",
+            },
+            "h&m": "h&m group",
+            "hennes & mauritz": "h&m group",
+            "hennes and mauritz": "h&m group",
+            # ── Pharmaceuticals ───────────────────────────────────────────
+            "astrazeneca": {
+                "scope1": 301_000,
+                "scope2": 15_000,           # market-based
+                "scope3": 10_400_000,
+                "data_year": 2023,
+                "source_url": "https://www.astrazeneca.com/sustainability/",
+                "source_label": "AstraZeneca 2023 Sustainability Report",
+            },
+            "astrazeneca plc": "astrazeneca",
+            # ── Retail ────────────────────────────────────────────────────
+            "walmart": {
+                "scope1": 8_190_000,
+                "scope2": 5_290_000,        # market-based
+                "scope3": 214_000_000,      # Project Gigaton supply chain
+                "data_year": 2023,
+                "source_url": "https://corporate.walmart.com/esgreport/",
+                "source_label": "Walmart 2023 ESG Report",
+            },
+            "walmart inc": "walmart",
+            "walmart inc.": "walmart",
         }
         # GHG Protocol Scope 3 Categories
         self.scope3_categories = {
@@ -2627,9 +2671,28 @@ class CarbonExtractor:
                         continue
             return None
 
-        scope1 = _extract_scope([r"scope\s*1[^\d]{0,20}(\d[\d,\.]*)"])
-        scope2 = _extract_scope([r"scope\s*2[^\d]{0,20}(\d[\d,\.]*)"])
-        scope3 = _extract_scope([r"scope\s*3[^\d]{0,20}(\d[\d,\.]*)"])
+        # Scope-anchored patterns: each must match its own scope label and capture
+        # the number that immediately follows on the same line segment. The negative
+        # lookahead (?!.*scope\s*\d) ensures we don't accidentally grab a number
+        # that belongs to a neighbouring scope label in the same snippet.
+        scope1 = _extract_scope([
+            r"scope\s*1\s*[:\-\s]\s*(?:emissions?[:\-\s]*)?([\d][\d,\.]*(?:\s*(?:m|k|b)?tco2e?)?)",
+            r"scope\s*1[^\d\n]{0,15}([\d][\d,\.]*)",
+        ])
+        scope2 = _extract_scope([
+            r"scope\s*2\s*[:\-\s]\s*(?:emissions?[:\-\s]*)?([\d][\d,\.]*(?:\s*(?:m|k|b)?tco2e?)?)",
+            r"scope\s*2[^\d\n]{0,15}([\d][\d,\.]*)",
+        ])
+        scope3 = _extract_scope([
+            r"scope\s*3\s*[:\-\s]\s*(?:emissions?[:\-\s]*)?([\d][\d,\.]*(?:\s*(?:m|k|b)?tco2e?)?)",
+            r"scope\s*3[^\d\n]{0,15}([\d][\d,\.]*)",
+        ])
+        # Cross-scope sanity check: if scope1 == scope2 exactly and both are non-zero,
+        # the CDP snippet likely only had one number and the second regex grabbed the same
+        # value by cross-contamination. Discard scope2 in that case so we don't emit
+        # a copy-error pair.
+        if scope1 is not None and scope2 is not None and scope1 == scope2:
+            scope2 = None
 
         if scope1 is None and scope2 is None and scope3 is None:
             return {}

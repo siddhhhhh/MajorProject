@@ -77,13 +77,13 @@ ROUTING_TABLE: dict[str, list[ModelConfig]] = {
     ],
 
     "claim_extraction": [
-        Cerebras("llama3.1-8b",          json_mode=True, max_tokens=4096),
+        Cerebras("gpt-oss-120b",         json_mode=True, max_tokens=4096),
         Groq("llama-3.1-8b-instant",     json_mode=True, max_tokens=4096),
         OR("mistralai/mistral-small-3.1-24b-instruct:free", json_mode=True, max_tokens=4096),
     ],
 
     "claim_extractor": [
-        Cerebras("llama3.1-8b",          json_mode=True, max_tokens=4096),
+        Cerebras("gpt-oss-120b",         json_mode=True, max_tokens=4096),
         Groq("llama-3.1-8b-instant",     json_mode=True, max_tokens=4096),
         OR("mistralai/mistral-small-3.1-24b-instruct:free", json_mode=True, max_tokens=4096),
     ],
@@ -99,21 +99,21 @@ ROUTING_TABLE: dict[str, list[ModelConfig]] = {
     "sentiment_analysis": [
         # llama-4-scout is on Groq, not Cerebras — use Groq's version
         Groq("meta-llama/llama-4-scout-17b-16e-instruct", max_tokens=500),
-        Cerebras("llama3.1-8b",          max_tokens=500),
+        Cerebras("gpt-oss-120b",         max_tokens=500),
         OR("meta-llama/llama-4-scout:free", max_tokens=500),
     ],
 
     "credibility_analysis": [
         # Batched: one call covers ~6 sources at ~150 tokens each → 1500 cap
         # leaves headroom for JSON wrapper without truncation mid-array.
-        Cerebras("llama3.1-8b",          json_mode=True, max_tokens=1500),
+        Cerebras("gpt-oss-120b",         json_mode=True, max_tokens=1500),
         Groq("llama-3.1-8b-instant",     json_mode=True, max_tokens=1500),
         OR("mistralai/mistral-small-3.1-24b-instruct:free", json_mode=True, max_tokens=1500),
     ],
 
     "climatebert_analysis": [
         Groq("llama-3.1-8b-instant",     json_mode=True, max_tokens=300),
-        Cerebras("llama3.1-8b",          json_mode=True, max_tokens=300),
+        Cerebras("gpt-oss-120b",         json_mode=True, max_tokens=300),
         OR("microsoft/phi-4-reasoning:free", json_mode=True, max_tokens=300),
     ],
 
@@ -125,13 +125,13 @@ ROUTING_TABLE: dict[str, list[ModelConfig]] = {
 
     "esg_mismatch": [
         Groq("llama-3.3-70b-versatile",     json_mode=True, max_tokens=1500),
-        Cerebras("qwen-3-235b-a22b-instruct-2507", json_mode=True, max_tokens=1500),
+        Cerebras("zai-glm-4.7",          json_mode=True, max_tokens=1500),
         OR("meta-llama/llama-3.3-70b-instruct:free", max_tokens=1500),
     ],
 
     "temporal_analysis": [
-        # Qwen 235B on Cerebras replaces the missing llama3.1-70b
-        Cerebras("qwen-3-235b-a22b-instruct-2507", json_mode=True, max_tokens=800),
+        # GLM-4.7 (reasoning tier) replaces the retired Qwen-235B slot
+        Cerebras("zai-glm-4.7",          json_mode=True, max_tokens=800),
         Groq("llama-3.1-8b-instant",     json_mode=True, max_tokens=800),
         OR("meta-llama/llama-4-maverick:free", json_mode=True, max_tokens=800),
     ],
@@ -139,7 +139,7 @@ ROUTING_TABLE: dict[str, list[ModelConfig]] = {
     "temporal_consistency": [
         # gemma2-9b-it decommissioned — replaced with qwen3-32b on Groq
         Groq("qwen/qwen3-32b",           json_mode=True, max_tokens=600),
-        Cerebras("llama3.1-8b",          json_mode=True, max_tokens=600),
+        Cerebras("gpt-oss-120b",         json_mode=True, max_tokens=600),
         OR("mistralai/mistral-small-3.1-24b-instruct:free", json_mode=True, max_tokens=600),
     ],
 
@@ -159,13 +159,13 @@ ROUTING_TABLE: dict[str, list[ModelConfig]] = {
     ],
 
     "peer_comparison": [
-        Cerebras("qwen-3-235b-a22b-instruct-2507", json_mode=True, max_tokens=1000),
+        Cerebras("zai-glm-4.7",          json_mode=True, max_tokens=1000),
         Groq("llama-3.1-8b-instant",     json_mode=True, max_tokens=1000),
         OR("meta-llama/llama-4-maverick:free", json_mode=True, max_tokens=1000),
     ],
 
     "confidence_scoring": [
-        Cerebras("llama3.1-8b",          json_mode=True, max_tokens=300),
+        Cerebras("gpt-oss-120b",         json_mode=True, max_tokens=300),
         Groq("llama-3.1-8b-instant",     json_mode=True, max_tokens=300),
         OR("mistralai/mistral-small-3.1-24b-instruct:free", json_mode=True, max_tokens=300),
     ],
@@ -181,7 +181,7 @@ ROUTING_TABLE: dict[str, list[ModelConfig]] = {
     "explainability": [
         Groq("llama-3.3-70b-versatile",  max_tokens=600),
         OR("meta-llama/llama-4-maverick:free", max_tokens=600),
-        Cerebras("qwen-3-235b-a22b-instruct-2507", max_tokens=600),
+        Cerebras("zai-glm-4.7",          max_tokens=600),
     ],
 
     "verdict_generation": [
@@ -201,21 +201,21 @@ ROUTING_TABLE: dict[str, list[ModelConfig]] = {
 
     "rewrite": [
         Groq("meta-llama/llama-4-scout-17b-16e-instruct", max_tokens=300),
-        Cerebras("llama3.1-8b",          max_tokens=300),
+        Cerebras("gpt-oss-120b",         max_tokens=300),
         OR("meta-llama/llama-4-maverick:free", max_tokens=300),
     ],
 
     "summarise": [
         # llama-4-scout on Groq has 16e (16 experts) — good for summarisation
         Groq("meta-llama/llama-4-scout-17b-16e-instruct", max_tokens=800),
-        Cerebras("llama3.1-8b",          max_tokens=800),
+        Cerebras("gpt-oss-120b",         max_tokens=800),
         Gemini("gemini-2.0-flash",       max_tokens=800),
     ],
 
     "conflict_resolution": [
         Groq("llama-3.3-70b-versatile",     max_tokens=1000),
         OR("meta-llama/llama-3.3-70b-instruct:free", max_tokens=1000),
-        Cerebras("qwen-3-235b-a22b-instruct-2507", max_tokens=1000),
+        Cerebras("zai-glm-4.7",          max_tokens=1000),
     ],
 
     "financial_analysis": [
@@ -226,14 +226,14 @@ ROUTING_TABLE: dict[str, list[ModelConfig]] = {
 
     "debate_orchestrator": [
         Groq("meta-llama/llama-4-scout-17b-16e-instruct", max_tokens=800),
-        Cerebras("llama3.1-8b",          max_tokens=800),
+        Cerebras("gpt-oss-120b",         max_tokens=800),
         OR("mistralai/mistral-small-3.1-24b-instruct:free", max_tokens=800),
     ],
 
     "promise_extraction": [
         Groq("llama-3.3-70b-versatile",     json_mode=True, max_tokens=1500),
         OR("meta-llama/llama-3.3-70b-instruct:free", max_tokens=1500),
-        Cerebras("qwen-3-235b-a22b-instruct-2507", json_mode=True, max_tokens=1500),
+        Cerebras("zai-glm-4.7",          json_mode=True, max_tokens=1500),
     ],
 
     "kg_extraction": [
@@ -256,8 +256,14 @@ NO_LLM_AGENTS = {
     "realtime_monitoring",
 }
 
+# Provider/model pairs that consistently return 404 ("not found") for the
+# active API key. The Cerebras plan exposes only a subset of models at any
+# given time; when an ID drops out of the catalog we list it here so the
+# router skips it instead of paying the 404 latency on every fallback.
+# Override with ESG_ALLOW_RETIRED_MODELS=1 for compatibility probes.
 _RETIRED_MODELS = {
     (Provider.CEREBRAS, "llama3.1-8b"),
+    (Provider.CEREBRAS, "qwen-3-235b-a22b-instruct-2507"),
 }
 
 

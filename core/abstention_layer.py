@@ -43,28 +43,50 @@ def _tokenise(text: str) -> set[str]:
     }
 
 
+def _jaccard_relevance(claim_text: str, evidence_text: str) -> float:
+    """Symmetric token-overlap fallback used when embeddings are unavailable.
+
+    The original asymmetric `inter / len(claim)` form returned 0.0 for any
+    paraphrase whose tokens didn't overlap with the claim — which is exactly
+    why every sub-claim showed best_relevance=0.0 on Windows runs where
+    sentence_transformers is disabled. The symmetric Jaccard + small lexical
+    boost keeps the score positive whenever there's *any* shared vocabulary.
+    """
+    c = _tokenise(claim_text)
+    e = _tokenise(evidence_text)
+    if not c or not e:
+        return 0.0
+    inter = len(c & e)
+    if inter == 0:
+        return 0.0
+    union = len(c | e)
+    jaccard = inter / union if union else 0.0
+    # Boost slightly toward the claim side so a paragraph that fully covers
+    # the claim vocabulary scores closer to a real semantic match.
+    coverage = inter / len(c)
+    return min(1.0, 0.5 * jaccard + 0.5 * coverage)
+
+
 def _relevance(claim_text: str, evidence_text: str) -> float:
     """Semantic similarity between claim and evidence.
 
-    Uses F2 embedding cache when available; falls back to Jaccard token
-    overlap. The Jaccard fallback existed in v1 and tended to over-abstain
-    (0.0 score on paraphrases); embeddings are far more forgiving.
+    Strategy:
+      1. Try the F2 embedding cache (bge-small cosine).
+      2. If the embedding pipeline is degraded (model not loaded → zero
+         vectors → cosine ≈ 0.0), fall back to the symmetric Jaccard
+         relevance so abstention isn't triggered for every sub-claim.
     """
     try:
         from core.embed_cache import similarity as _emb_sim
-        score = _emb_sim(claim_text, evidence_text)
-        # Map bge-small cosine [-1, 1] to a useful range. Empirically:
-        # < 0.30 = unrelated, 0.30-0.50 = weakly related, > 0.50 = related.
-        # We pass the raw cosine through; thresholds below are tuned for it.
-        return max(0.0, float(score))
+        score = float(_emb_sim(claim_text, evidence_text))
     except Exception:
-        # Jaccard fallback — safe even when embeddings model is unavailable
-        c = _tokenise(claim_text)
-        e = _tokenise(evidence_text)
-        if not c or not e:
-            return 0.0
-        inter = len(c & e)
-        return inter / max(1, len(c))
+        score = 0.0
+    # bge-small on real text rarely returns exactly 0.0 — that value almost
+    # always means encode() returned a zero vector (model unavailable). Use
+    # the lexical fallback so the abstention layer keeps working.
+    if score <= 0.0:
+        return _jaccard_relevance(claim_text, evidence_text)
+    return min(1.0, max(0.0, score))
 
 
 def _evidence_text(ev: Dict[str, Any]) -> str:
@@ -118,8 +140,12 @@ def evaluate_claim(
     if not isinstance(evidence, list):
         evidence = []
 
-    # Tier counts
+    # Tier counts — keyed by tier AND by unique domain so tier12 can never
+    # exceed independent_sources (the bug that surfaced as
+    # `sources=18 tier12=33` in the JPMorgan report came from counting raw
+    # evidence rows instead of distinct Tier-1/2 domains).
     tier_counts = {1: 0, 2: 0, 3: 0, 4: 0}
+    tier_domains: Dict[int, set[str]] = {1: set(), 2: set(), 3: set(), 4: set()}
     domains: set[str] = set()
     best_relevance = 0.0
     relevance_per_ev: List[float] = []
@@ -132,12 +158,18 @@ def evaluate_claim(
         d = _domain(ev)
         if d:
             domains.add(d)
+            tier_domains.setdefault(t, set()).add(d)
         r = _relevance(claim_text, _evidence_text(ev))
         relevance_per_ev.append(r)
         best_relevance = max(best_relevance, r)
 
     independent_sources = len(domains)
-    tier12 = tier_counts[1] + tier_counts[2]
+    tier12 = len(tier_domains[1] | tier_domains[2])
+    if tier12 > independent_sources:
+        raise ValueError(
+            f"tier12 ({tier12}) exceeded independent_sources ({independent_sources}) "
+            f"for claim {claim_text[:60]!r} — invariant violated"
+        )
     is_quant = (claim_type or "").lower() in (
         "quantitative_target", "quantitative", "alignment_claim"
     )

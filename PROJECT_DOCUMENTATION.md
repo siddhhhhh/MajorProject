@@ -1,881 +1,442 @@
-# ESGLens Project Documentation
-
-## 1. Project Purpose
-
-ESGLens is an ESG intelligence and greenwashing detection platform built around two connected layers:
-
-1. A Python backend that runs a LangGraph-driven multi-agent analysis workflow.
-2. A Next.js frontend that lets users submit analysis jobs, stream progress logs, inspect results, and run a separate ESG mismatch detector.
-
-The system is designed to answer one core question:
-
-**"Does a company's public sustainability claim match the evidence available across reports, external sources, financial context, and historical behavior?"**
-
-This project is not just a single scoring script. It is a coordinated pipeline that:
-
-- receives a company name, claim, and industry,
-- decides how much analysis depth is needed,
-- runs a sequence of specialized agents,
-- synthesizes their outputs into a final verdict,
-- generates a detailed report,
-- stores the report on disk,
-- and exposes the result to a browser dashboard.
+# ESGLens — Project Documentation
+*Last updated from codebase: June 2026 | Version 4.0*
 
 ---
 
-## 2. High-Level Architecture
+## Project Summary
 
-The repository is split into the following major areas:
+**ESGLens** is an AI-powered ESG (Environmental, Social, Governance) Greenwashing Detection Engine. It is not a traditional rating platform — it is an audit engine that combines 36 specialized AI agents, 28+ live external data sources, and a calibrated multi-factor scoring formula to produce research-grade, fully traceable greenwashing risk assessments in ~15 minutes per company.
 
-### Backend
-
-- `main_langgraph.py`
-  Main CLI/programmatic entry point for ESG claim analysis.
-
-- `core/`
-  Workflow graph, state schema, supervisor routing, LLM routing, report generation, and shared orchestration logic.
-
-- `agents/`
-  Specialized analysis agents such as claim extraction, contradiction analysis, credibility analysis, sentiment analysis, regulatory scanning, and more.
-
-- `features/esg_mismatch_detector/`
-  A second feature pipeline focused on promise-vs-actual mismatch analysis for a company.
-
-- `ml_models/`
-  Trained model wrappers and stored artifacts used for scoring, anomaly detection, prediction, explainability, and NLP enrichment.
-
-- `utils/`
-  Helpers for data fetching, web search, report discovery, report parsing, source tracking, and external data handling.
-
-### Frontend
-
-- `frontend/src/app/`
-  Next.js app-router pages and API routes.
-
-- `frontend/src/components/`
-  Shared UI building blocks, layout, and the live analysis state provider.
-
-- `frontend/src/lib/server/report-utils.ts`
-  The bridge layer that finds generated backend reports, parses them, and derives display-ready values for the frontend.
-
-### Data / Outputs
-
-- `reports/`
-  Generated analysis report artifacts.
-
-- `cache/`
-  Cached ESG mismatch detector outputs and related temporary artifacts.
-
-- `data/`
-  Static reference datasets and mismatch output history.
+**Core thesis**: ESG agency ratings have a 0.54 correlation (MIT Sloan study, Berg et al.) versus 0.92 for credit ratings. ESGLens fixes this with a glass-box, source-attributed, deterministic scoring system backed by live evidence retrieval.
 
 ---
 
-## 3. Main Functional Areas
+## System Architecture
 
-The project currently provides these main user-facing capabilities:
+### Workflow Engine
+- Built on **LangGraph** (directed acyclic graph state machine)
+- Central state schema: `ESGState` (typed TypedDict) — passed between all nodes
+- Three analysis tracks:
+  - **Fast Track**: Supervisor → Claim Extraction → Risk Scoring → Verdict (3 agents, ~3 min)
+  - **Standard Track**: Full 30+ agent pipeline with parallel fanout (~15 min)
+  - **Deep Analysis Track**: Standard + Multi-Agent Debate Mechanism (~20 min)
+- Supervisor Agent scores claim complexity 0–100 to route automatically
+- Configurable `ESG_WORKFLOW_TIMEOUT` env var (default: 30 minutes)
+- Graceful partial-result fallback on timeout or agent failure
 
-1. Landing page and product presentation site.
-2. File-backed signup and login.
-3. Auth-gated dashboard shell.
-4. Main ESG claim analysis flow with live progress streaming.
-5. Results view with parsed report summary and agent details.
-6. Mismatch detector for company promise-vs-actual comparison.
-7. Browser-local run history.
-8. Browser-local settings/preferences.
-9. Downloadable generated reports.
+### Execution Model
+- The pipeline runs as an **isolated subprocess** launched by `api/analysis.py`
+- FastAPI server (`server.py`) manages subprocess lifecycle, captures stdout/stderr
+- Live pipeline logs streamed to frontend via WebSocket
+- State is not shared across processes — final state is persisted to disk (`.json`)
 
-Some areas are fully functional end-to-end, while others are demo-level or partially scaffolded. That distinction is documented below.
-
----
-
-## 4. Backend Main Analysis Flow
-
-## 4.1 Entry Points
-
-The main backend execution starts in `main_langgraph.py`.
-
-There are three ways it is used:
-
-1. Interactive CLI mode:
-   `python main_langgraph.py`
-
-2. Argument-based CLI mode:
-   `python main_langgraph.py --company "Tesla" --claim "..." --industry "Automotive"`
-
-3. Programmatic mode:
-   `run_esg_analysis(company, claim, industry)`
-
-When a run starts, the backend:
-
-- loads environment variables,
-- initializes the peer database,
-- builds the LangGraph workflow,
-- creates the initial analysis state,
-- invokes the graph with a timeout,
-- generates reports,
-- saves artifacts into `reports/`,
-- and returns a structured result.
-
-## 4.2 State Object
-
-The workflow passes a shared `ESGState` object between nodes. This state contains:
-
-- user input: `company`, `claim`, `industry`
-- routing metadata: `complexity_score`, `workflow_path`
-- collected evidence
-- confidence and risk outputs
-- ML outputs
-- enriched data such as:
-  - `indian_financials`
-  - `company_reports`
-  - `carbon_extraction`
-  - `greenwishing_analysis`
-  - `regulatory_compliance`
-  - `climatebert_analysis`
-  - `esg_mismatch_analysis`
-  - `explainability_report`
-- `agent_outputs`
-- `final_verdict`
-- `report`
-
-The `agent_outputs` field uses a custom reducer that keeps only the latest output per agent. This is important because it prevents unbounded list growth across LangGraph merges.
-
-## 4.3 Supervisor and Routing
-
-The first node is the supervisor.
-
-Its job is to inspect the incoming claim and assign a `complexity_score` between `0.0` and `1.0`. It considers things like:
-
-- whether the claim is vague or specific,
-- whether it contains numeric targets,
-- whether there is a timeframe,
-- whether it is publicly verifiable,
-- and whether it likely needs a full evidence pipeline.
-
-Based on that, the workflow chooses one of three paths:
-
-### Fast Track
-
-Used only for genuinely simple, non-quantitative claims.
-
-Execution order:
-
-1. Claim extraction
-2. Risk scoring
-3. Confidence scoring
-4. Verdict generation
-5. Save peer data
-6. Report generation
-
-### Standard Track
-
-Used for most practical claims.
-
-Execution order:
-
-1. Claim extraction
-2. Evidence retrieval
-3. Report discovery
-4. Report download
-5. Report parsing
-6. Report claim extraction
-7. Carbon extraction
-8. Greenwishing detection
-9. Regulatory scanning
-10. ClimateBERT analysis
-11. Temporal analysis
-12. Temporal evidence injection
-13. Contradiction analysis
-14. ESG mismatch analysis
-15. Peer comparison
-16. Credibility analysis
-17. Sentiment analysis
-18. Realtime monitoring
-19. Temporal consistency analysis
-20. Risk scoring
-21. Explainability generation
-22. Confidence scoring
-23. Verdict generation
-24. Save peer data
-25. Report generation
-
-### Deep Analysis
-
-This is the standard flow plus a debate stage before final report generation.
-
-Execution order is the same as the standard path, with:
-
-24. Verdict generation
-25. Debate orchestrator
-26. Save peer data
-27. Report generation
-
-This path is intended for the most ambiguous or high-risk claims.
+### Parallel Analytics Fanout
+- 10 agents run concurrently inside `parallel_analytics_node` using `ThreadPoolExecutor`
+- Agents: GreenwishingDetector, RegulatoryScanner, ClimateBERT, SocialAgent, GovernanceAgent, ContradictionAnalyzer, TemporalConsistencyAgent, PeerComparison, SentimentAnalyzer, CredibilityAnalyst
 
 ---
 
-## 5. What Each Main Backend Feature Does
-
-## 5.1 Claim Extraction
-
-Purpose:
-Break a company claim into analyzable sub-claims.
-
-Why it matters:
-A broad marketing statement is too vague for direct scoring. The extractor converts it into smaller statements that later agents can verify.
-
-Output examples:
-
-- extracted claims
-- claim structure
-- temporal hints
-- claim fragments from official reports
-
-## 5.2 Evidence Retrieval
-
-Purpose:
-Collect supporting and contradictory evidence from external sources.
-
-Why it matters:
-The system should not score a claim based only on the company's own statement. It needs outside evidence.
-
-Typical evidence channels include:
-
-- web/news sources,
-- legal/regulatory sources,
-- report-derived content,
-- financial context,
-- cached or structured ESG enrichment.
-
-## 5.3 Report Discovery, Download, and Parsing
-
-Purpose:
-Locate the company's official ESG/sustainability reports, download them, parse them, and extract metrics and claims.
-
-Why it matters:
-Official reports are one of the strongest primary sources for self-reported metrics.
-
-This sub-flow is critical because it converts unstructured PDFs into structured report signals such as:
-
-- emissions values,
-- renewable energy percentages,
-- water metrics,
-- workforce metrics,
-- governance ratios,
-- net-zero target years,
-- internal claim language.
-
-## 5.4 Carbon Extraction
-
-Purpose:
-Identify and standardize carbon-related disclosures such as Scope 1, Scope 2, Scope 3, and total emissions.
-
-Why it matters:
-Many ESG claims are emissions-related, so carbon extraction is one of the most important factual grounding steps.
-
-## 5.5 Greenwishing Detection
-
-Purpose:
-Detect aspirational sustainability language that lacks real execution backing.
-
-Why it matters:
-The project distinguishes between:
-
-- greenwashing: misleading or contradictory environmental claims
-- greenwishing: ambitious but weakly supported promises
-- greenhushing/selective disclosure: material sustainability information that is omitted or softened
-
-This helps the platform avoid treating all problematic ESG language as the same type of issue.
-
-## 5.6 Regulatory Scanning
-
-Purpose:
-Compare the company context and claims against regulatory/compliance expectations.
-
-Why it matters:
-A claim may appear positive in isolation but be weak relative to mandatory or emerging requirements.
-
-## 5.7 ClimateBERT Analysis
-
-Purpose:
-Apply climate-focused NLP interpretation to the claim and related evidence.
-
-Why it matters:
-This adds language-pattern analysis on top of factual retrieval. It is useful for identifying rhetoric, framing, and greenwashing-style wording.
-
-## 5.8 Temporal Analysis and Temporal Consistency
-
-Purpose:
-Check whether the claim aligns with historical records, past violations, and realistic timelines.
-
-Why it matters:
-A target may sound strong but be inconsistent with:
-
-- previous disclosures,
-- missed targets,
-- known incidents,
-- or an unrealistic transition timeline.
-
-The workflow also injects relevant past temporal violations back into the evidence pool so downstream reasoning uses them.
-
-## 5.9 Contradiction Analysis
-
-Purpose:
-Compare extracted claims against available evidence to find mismatches.
-
-Why it matters:
-This is one of the core greenwashing detection steps. It looks for cases where public messaging and observed reality diverge.
-
-## 5.10 ESG Mismatch Analysis
-
-Purpose:
-Run a dedicated promise-vs-performance consistency check inside the main pipeline.
-
-Why it matters:
-This complements contradiction analysis with a more explicit mismatch framing.
-
-## 5.11 Peer Comparison
-
-Purpose:
-Compare the company to industry peers and benchmarks.
-
-Why it matters:
-A company's ESG posture should not be judged in a vacuum. Industry-relative performance matters.
-
-The workflow also saves completed company scoring back into a peer database, allowing the comparison layer to improve over time.
-
-## 5.12 Credibility Analysis
-
-Purpose:
-Estimate how trustworthy the retrieved sources and signals are.
-
-Why it matters:
-Evidence quality affects how much weight later scoring should assign to any finding.
-
-## 5.13 Sentiment Analysis
-
-Purpose:
-Measure sentiment-related patterns around the company and claim context.
-
-Why it matters:
-This adds another directional signal to the overall risk picture, especially when negative external discourse clusters around ESG controversies.
-
-## 5.14 Realtime Monitoring
-
-Purpose:
-Look for recent signals that may materially affect the interpretation of the claim.
-
-Why it matters:
-A claim can become outdated if a recent event changes the risk profile.
-
-## 5.15 Risk Scoring
-
-Purpose:
-Produce the main risk assessment for the run.
-
-Why it matters:
-This is where the system synthesizes upstream outputs into a final greenwashing risk posture.
-
-The scoring layer can use:
-
-- rule-based logic,
-- calibrated pillar scoring,
-- ML models,
-- industry baselines,
-- and enriched external data.
-
-## 5.16 Explainability
-
-Purpose:
-Generate human-readable reasoning for ML-assisted outputs.
-
-Why it matters:
-The result should be inspectable and explainable, not just a black-box score.
-
-## 5.17 Confidence Scoring
-
-Purpose:
-Score how reliable the final run is based on evidence sufficiency and output quality.
-
-Why it matters:
-A confident low-risk result and a low-confidence low-risk result are not operationally the same.
-
-## 5.18 Verdict Generation
-
-Purpose:
-Create the final verdict block that summarizes the run outcome.
-
-Why it matters:
-This becomes the main result consumed by reports and frontend display.
-
-## 5.19 Debate Orchestration
-
-Purpose:
-Run an additional resolution phase in deep-analysis mode when the run is complex enough to justify it.
-
-Why it matters:
-It gives the system a place to reconcile conflicting agent views before the report is finalized.
-
-## 5.20 Professional Report Generation
-
-Purpose:
-Turn the full state into:
-
-- a readable text report,
-- a structured JSON export,
-- metadata and quality warnings.
-
-Why it matters:
-This is the packaging layer that makes the analysis usable by humans and the frontend.
-
-The report generator also performs quality checks such as:
-
-- evidence coverage,
-- agent success consistency,
-- peer quality,
-- score traceability,
-- confidence labeling.
+## Agent System (36 Agents)
+
+### Stage 1: Intake
+| Agent | Class / Module | Key Output |
+|-------|----------------|-----------|
+| Supervisor | `core/workflow_phase2.py` | Complexity score; track selection |
+| ClaimExtractor | `agents/claim_extractor.py` | Structured sub-claims with intensity/scope/timeframe/pillar |
+| ClaimDecomposer | `core/claim_decomposer.py` | Atomic sub-claims; internal claim tensions |
+
+### Stage 2: Evidence Collection
+| Agent | Class / Module | Key Output |
+|-------|----------------|-----------|
+| EvidenceRetriever | `agents/evidence_retriever.py` | 28+ source evidence items with credibility weights |
+| AdversarialValidator | `core/adversarial_validator.py` | Triangulated evidence; company-doc-only rejection |
+| ReportDiscovery | `core/report_discoverer.py` | Company report URLs |
+| ReportDownloader | `core/report_downloader.py` | Raw PDF bytes |
+| ReportParser | `core/report_parser.py` | Text chunks + tables from PDF |
+| ReportClaimExtractor | `core/report_claim_extractor.py` | Structured claims from PDF text |
+
+### Stage 3: Carbon & Climate
+| Agent | Class / Module | Key Output |
+|-------|----------------|-----------|
+| CarbonExtractor | `agents/carbon_extractor.py` | Scope 1/2/3 (tCO2e), Scope 3 category audit, boundary classification |
+| CarbonPathwayModeller | `core/carbon_pathway_modeller.py` | Pathway gap %, alignment status, carbon budget years remaining |
+| EmissionsVerifier | `core/emissions_verifier.py` | Climate TRACE cross-check result |
+| SubsidiaryWalker | `core/subsidiary_footprint.py` | GLEIF subsidiary tree; coverage score; structural penalty |
+| FinancedEmissions | `core/financed_emissions_calculator.py` | PCAF-aligned financed/portfolio emissions |
+
+### Stage 4: Parallel Analytics
+| Agent | Class / Module | Key Output |
+|-------|----------------|-----------|
+| GreenwishingDetector | `agents/greenwishing_detector.py` | Deception risk score; pattern flags (GW/GWish/GH) |
+| RegulatoryHorizonScanner | `agents/regulatory_scanner.py` | Per-framework compliance status; active enforcement |
+| ClimateBERTAnalyzer | `core/climatebert_analyzer.py` | Climate relevance; promotional vs. factual divergence |
+| SocialAgent | `agents/social_agent.py` | Social pillar factors scored; WBA integration |
+| GovernanceAgent | `agents/governance_agent.py` | Governance pillar factors scored; DEF 14A extraction |
+| ContradictionAnalyzer | `agents/contradiction_analyzer.py` | Tier-1/2/3 contradictions with source + confidence |
+| TemporalConsistencyAgent | `core/temporal_consistency_agent.py` | YoY goalpost changes; weakening commitments |
+| PeerComparison | `agents/financial_analyst.py` | Industry peer percentiles; sector sigma (σ) |
+| SentimentAnalyzer | `agents/sentiment_analyzer.py` | Sentiment score; GSI (Greenwashing Sentiment Index) |
+| CredibilityAnalyst | `agents/credibility_analyst.py` | Per-source credibility tier and weight |
+
+### Stage 5: Post-Processing
+| Agent | Class / Module | Key Output |
+|-------|----------------|-----------|
+| RealTimeMonitor | `agents/realtime_monitor.py` | Top 5 ESG news articles |
+| ESGMismatchDetector | `features/esg_mismatch_detector/` | Future pledges; past implementation gaps |
+| CommitmentLedger | `commitment_tracker/` | Longitudinal pledge + revision ledger |
+| HistoricalAnalyst | `agents/historical_analyst.py` | Historical violation patterns |
+| FactGraphBuilder | `core/company_knowledge_graph.py` | Evidence-claim KG; pillar coverage skew |
+
+### Stage 6: Scoring & Output
+| Agent | Class / Module | Key Output |
+|-------|----------------|-----------|
+| RiskScorer | `agents/risk_scorer.py` | GW score (0–100); ESG score; score modifier ledger |
+| ExplainabilityEngine | `core/explainability_engine.py` | SHAP/LIME feature attribution |
+| AdversarialAudit | `core/adversarial_validator.py` | Final quality audit of all findings |
+| ConfidenceScorer | `agents/confidence_scorer.py` | Calibrated confidence band |
+| VerdictGenerator | `core/verdict_generator.py` | Final plain-English verdict + key findings |
+| DebateOrchestrator | `agents/conflict_resolver.py` | Multi-agent debate result (Deep Track only) |
+| ProfessionalReportGenerator | `core/professional_report_generator.py` | 30-section text report; JSON export; investor brief |
 
 ---
 
-## 6. Reports and Artifacts
+## Scoring System
 
-After a successful main analysis, the backend writes outputs into `reports/`.
+### Greenwashing Risk Formula
+```
+GW = α · max(0, (C - P) / σ) · 100   [Formula Gap bucket]
+   + β · R                             [Historical Trust / Controversy bucket]
+   + γ · (1 - D/100) · 100            [Disclosure Quality bucket]
+   + δ · T                             [Current Contradictions bucket]
+   + Σ (Structural Penalties)
+   → Post-calibration adjustment
+```
 
-Typical generated files:
+**Inputs:**
+- **C (Claim Intensity, 0–100)**: Scored by ClaimExtractor. Net-zero floor = 60. Carbon-neutral = 40.
+- **P (Performance Score, 0–100)**: Weighted ESG pillar score, adjusted by WBA/WRI external benchmarks
+- **σ (Industry Sigma)**: Standard deviation from peer-group; cross-sector fallback (n=87) when peer count < 5
+- **R (Controversy Risk, 0–100)**: From HistoricalAnalyst; uses known-cases registry + OpenSanctions
+- **D (Disclosure Completeness, 0–100)**: Composite of CDP, GRI, TCFD, GHG Protocol, SBTi signals
+- **T (Temporal Escalation)**: From TemporalConsistencyAgent; 0 if no goalpost changes
+- **Weights**: α=0.35, β=0.40, γ=0.10, δ=0.15
 
-- `ESG_Report_<Company>_<Timestamp>.txt`
-- `ESG_Report_<Company>_<Timestamp>.json`
+**Structural Penalties:**
+- Subsidiary poor coverage: +2.0 GW points
+- Carbon pathway gap > 30%: +20.0 GW points
+- Others configurable per run
 
-Optionally, if enabled by environment variable:
+**Rating Scale (ESG Score → Rating):**
+| ESG Score | Rating |
+|-----------|--------|
+| ≥ 90 | AAA |
+| ≥ 85 | AA |
+| ≥ 75 | A |
+| ≥ 60 | BBB |
+| ≥ 50 | BB |
+| ≥ 35 | B |
+| < 35 | CCC |
 
-- `ESG_Report_<Company>_<Timestamp>_FULL.json`
+**Risk Bands (GW Score):**
+- ≥ 60: HIGH
+- 40–59: MODERATE
+- < 40: LOW
 
-### TXT Report
+### ESG Pillar Scoring
+- SASB-inspired industry-specific materiality weighting
+- Industry profiles defined in `config/materiality_profiles.json`
+- Per-factor scoring with explicit source attribution
+- Coverage-adjusted scores: missing indicators → "Limited Disclosure" (not zero)
+- External benchmark integration: WBA scores blend in via weighted average
 
-The TXT report is the human-readable executive report.
-
-### JSON Report
-
-The JSON report is the machine-readable version used by the frontend for:
-
-- agent tables,
-- contribution breakdown,
-- parsed summary fields,
-- structured deep-dive views.
-
-### Full JSON Report
-
-This is a larger debug/state export, only saved when full result export is explicitly enabled.
-
----
-
-## 7. Frontend Application Flow
-
-The frontend is a Next.js application in `frontend/`.
-
-It is composed of a public marketing site plus an authenticated dashboard shell.
-
-## 7.1 Landing Page
-
-Route:
-`/`
-
-Purpose:
-Present the product, architecture, agent summary, and platform narrative.
-
-Behavior:
-
-- uses animated marketing sections,
-- explains the product vision,
-- routes users toward login/signup,
-- does not run backend analysis itself.
-
-## 7.2 Signup Flow
-
-Route:
-`/signup`
-
-API:
-`/api/auth/signup`
-
-Behavior:
-
-- user enters name, email, password, and role,
-- backend reads `frontend/src/data.json`,
-- creates a new user if the email does not already exist,
-- writes the user back to the JSON file,
-- returns the created user without the password,
-- frontend stores the returned user in `localStorage`,
-- user is redirected to `/dashboard`.
-
-Important note:
-This is a simple file-backed authentication flow, not a production auth system. Passwords are stored in plain form in the JSON file.
-
-## 7.3 Login Flow
-
-Route:
-`/login`
-
-API:
-`/api/auth/login`
-
-Behavior:
-
-- user submits email and password,
-- backend reads `frontend/src/data.json`,
-- credentials are matched directly,
-- on success the frontend stores user data in `localStorage`,
-- user is redirected to `/dashboard`.
-
-## 7.4 Dashboard Shell
-
-Routes under:
-`/dashboard/*`
-
-Behavior:
-
-- wrapped in `AnalysisRunProvider`,
-- uses a sidebar and top bar,
-- checks for `localStorage.user`,
-- redirects to `/login` if no local user is found.
-
-Important note:
-This is client-side session gating only. There is no server-side auth/session enforcement yet.
+### Calibration
+- Post-hoc calibration using industry-peer calibration samples
+- Sample size labels: PROVISIONAL (n<10), LIMITED (n<30), STANDARD (n≥30)
+- LLM Variance Band: 8-probe inter-provider diagnostic; half-width = worst-case GW shift
+- Industry sigma falls back to cross-sector (n=87) when peer count < 5
 
 ---
 
-## 8. Main Analysis Page Flow
+## Data Source Integrations
 
-Route:
-`/dashboard/analyze`
-
-This is the primary operational page for the main backend pipeline.
-
-## 8.1 User Input
-
-The page collects:
-
-- company name
-- industry
-- ESG claim
-
-When the user clicks "Run Main Pipeline", the page calls:
-
-`POST /api/analyze-company`
-
-## 8.2 API Route Behavior
-
-The `analyze-company` API route does the following:
-
-1. Loads backend environment variables.
-2. Validates that `company_name` and `claim` are present.
-3. Verifies required runtime credentials exist.
-4. Resolves the Python executable.
-5. Resolves the backend script path.
-6. Spawns the Python process:
-   `python main_langgraph.py --company ... --claim ... --industry ...`
-7. Streams progress back to the browser using Server-Sent Events (SSE).
-
-The route emits events of type:
-
-- `status`
-- `log`
-- `result`
-- `error`
-- `end`
-
-## 8.3 Live Log Streaming
-
-While the Python process is running:
-
-- stdout and stderr are buffered,
-- important log lines are classified,
-- the frontend receives them in near real time,
-- a heartbeat status is emitted every few seconds.
-
-This is what powers the "Live Backend Dashboard" panel in the UI.
-
-## 8.4 Result Resolution
-
-When the Python process exits successfully:
-
-- the API locates the latest generated report in `reports/`,
-- reads the TXT and JSON report files,
-- derives display-ready values,
-- parses the main report into structured fields,
-- sends a final `result` event to the frontend.
-
-If the process does not produce a fresh report, the route attempts to serve the latest available matching report as a fallback.
-
-## 8.5 Frontend State Management
-
-The analysis page uses `AnalysisRunProvider`.
-
-This provider is responsible for:
-
-- storing live logs,
-- tracking current run state,
-- storing the latest result,
-- deduplicating repeated log lines,
-- persisting compact live run state to `localStorage`,
-- storing a compact history of completed runs.
-
-The provider exposes three app states:
-
-- `input`
-- `processing`
-- `results`
-
-## 8.6 Results Display
-
-Once a run completes, the page renders:
-
-1. Executive summary
-2. Main ESG scoring report cards
-3. Parsed report table
-4. Narrative paragraphs
-5. Run metadata
-6. Agent contribution breakdown
-7. Claim extraction trace
-8. Agent deep-dive cards
-
-This page is one of the most complete end-to-end parts of the application.
+### `core/esg_data_apis.py`
+Primary integration module for external ESG data APIs:
+- **WBA (World Benchmarking Alliance)**: SDG2000 company API; 65+ indicators per company; natural_capital, human_rights, carbon_emissions, governance scores
+- **WRI Aqueduct 4.0**: Physical, regulatory, and reputational water risk; 13 indicator dimensions
+- **WRI CAIT**: CO2 country-level emissions (historical context)
+- **SEC EDGAR**: XBRL financial data, DEF 14A proxy statements, Form SD filings
+- **SBTi**: 14,900+ company registry (full download and scan)
+- **CDP**: Public scores and A-list
+- **UN Global Compact**: Participants directory
+- **GRI Database**: Reporting standards compliance
+- **InfluenceMap**: Climate lobbying records
+- **OpenSanctions**: Corruption and sanctions
+- **GLEIF**: Legal Entity Identifier registry
+- **Climate TRACE**: Satellite-verified asset-level emissions
+- **CourtListener**: US court dockets
+- **Indian Kanoon**: Indian court cases
+- **EPA ECHO**: US environmental violations
+- **EU ESEF**: XBRL filing API (194+ entities sampled)
+- **GDELT**: Global news events
+- **NewsAPI / Reuters / Google News**: Real-time news
 
 ---
 
-## 9. Mismatch Detector Flow
+## LLM Infrastructure
 
-Route:
-`/dashboard/mismatch`
+### Multi-Provider Routing (`core/llm_router.py`)
+- Providers: Google Gemini, Groq, Cerebras, OpenRouter
+- Per-agent routing table: primary → fallback_1 → fallback_2
+- Automatic failover on rate limit or error
+- Temperature=0.0 default (reproducibility over diversity)
+- JSON mode enforced where structured output is required
+- Retired model registry: known-dead endpoints skipped automatically
 
-API:
-`POST /api/mismatch-detect`
+### LLM Call Layer (`core/llm_call.py`)
+- Rate limiting, retry with exponential backoff
+- LLM audit log: every call records provider, model, latency
+- `use_cache=False` option for real-time evidence analysis
 
-This feature is separate from the main LangGraph run. It uses a dedicated Python pipeline under:
-
-`features/esg_mismatch_detector/pipeline.py`
-
-## 9.1 Execution Steps
-
-When the user enters a company and submits:
-
-1. The frontend calls `/api/mismatch-detect`.
-2. The API route spawns:
-   `python -m features.esg_mismatch_detector.pipeline "<company>"`
-3. The Python pipeline runs:
-   - company resolution
-   - ESG report fetch
-   - promise extraction
-   - external evidence collection
-   - promise-vs-actual comparison
-   - mismatch formatting
-   - cache save
-
-## 9.2 Caching
-
-Mismatch results are cached in:
-
-- `cache/esg_analysis/<company>.json`
-
-Cache characteristics:
-
-- 24-hour TTL
-- schema-version checking
-- fallback-to-cache when live execution fails
-
-## 9.3 Output Shape
-
-The detector produces a user-friendly result with sections such as:
-
-- company analyzed
-- report availability
-- overall greenwashing risk
-- executive summary
-- data coverage
-- confidence score
-- future commitments and progress
-- past promise-implementation gaps
-
-## 9.4 Frontend Display
-
-The mismatch page renders:
-
-- summary cards,
-- a future commitments table,
-- a past mismatches table,
-- fallback notes when only partial data is available.
-
-This flow is functional and independent of the main LangGraph dashboard run.
+### LangChain Integration
+- `RoutedLangChainChatModel`: Custom BaseChatModel adapter that uses the routing table
+- Used by KG-RAG and other LangChain-native components
 
 ---
 
-## 10. History and Settings
+## Caching & Storage
 
-## 10.1 History Page
-
-Route:
-`/dashboard/history`
-
-Behavior:
-
-- reads `esg-analysis-history` from browser `localStorage`,
-- displays recent run summaries,
-- shows company, claim, industry, risk, confidence, and timestamp.
-
-This feature is client-side only. It reflects runs launched from the same browser.
-
-## 10.2 Settings Page
-
-Route:
-`/dashboard/settings`
-
-Behavior:
-
-- stores default industry in `localStorage`,
-- stores a workflow timeout value in `localStorage`,
-- displays a simple saved confirmation.
-
-Important note:
-The timeout stored here is not currently wired into the backend environment automatically. It behaves as a demo/user-preference store, not a fully connected runtime control.
+| Component | Implementation | Purpose |
+|-----------|---------------|---------|
+| `EvidenceCache` | File-based JSON | Cache evidence by company/claim hash |
+| `EmbedCache` | Pickle/file | Cache vector embeddings for evidence chunks |
+| `DeadURLCache` | File-based JSON | Skip permanently-dead URLs |
+| `LLMCache` | SQLite | Cache LLM responses for identical prompts |
+| `VectorStore` | ChromaDB | Semantic search over evidence and report chunks |
+| `CompanyKnowledgeGraph` | JSON/graph file | Persistent KPI history across runs |
+| `LitigationCache` | File | Cache court docket results |
 
 ---
 
-## 11. Current Data and Storage Behavior
+## API Surface
 
-The project uses multiple storage patterns:
+### REST Endpoints (`server.py` + `api/`)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/analyse` | Start ESG analysis; returns `analysis_id` |
+| GET | `/api/analysis/{id}` | Poll status; retrieve results when complete |
+| WebSocket | `/ws/pipeline/{id}` | Stream live pipeline logs |
+| GET | `/health` | Health check |
+| POST | `/api/reports/` | Report management |
+| POST | `/api/chatbot/` | ESG Analyst Copilot chatbot |
+| POST | `/api/upload/` | Upload PDF for analysis |
 
-### Disk files
+### Analysis Request Schema
+```json
+{
+  "company": "Shell",
+  "claim": "Net zero emissions by 2050",
+  "industry": "oil_and_gas",
+  "ticker": "SHEL",
+  "deep_analysis": false
+}
+```
 
-- reports in `reports/`
-- user records in `frontend/src/data.json`
-- mismatch caches in `cache/esg_analysis/`
-- static datasets in `data/`
-
-### Local browser storage
-
-- logged-in user
-- live analysis state
-- compact analysis history
-- default settings/preferences
-
-### Runtime memory
-
-- LangGraph state
-- analysis provider in-memory logs/results
-- temporary evidence and report generation structures
-
----
-
-## 12. LLM and Model Layer
-
-The system includes several backend components for model usage:
-
-- centralized LLM calling and routing
-- multiple provider support
-- disk-backed and session-aware caching
-- ML models for risk, anomaly detection, trend prediction, sentiment, calibration, and explainability
-
-At runtime, the analysis can combine:
-
-- LLM-based reasoning,
-- deterministic scoring logic,
-- structured external data,
-- stored model artifacts.
-
-This hybrid design is important because the project is not purely prompt-based. It mixes retrieval, symbolic logic, and trained model inference.
+### Analysis Response Schema
+```json
+{
+  "analysis_id": "20260608-101047-SHEL",
+  "status": "completed",
+  "greenwashing_score": 86.9,
+  "esg_score": 40.1,
+  "risk_band": "HIGH",
+  "confidence": 65.0,
+  "report_path": "reports/ESG_Report_Shell_20260608_101047.txt",
+  "json_path": "reports/ESG_Report_Shell_20260608_101047.json"
+}
+```
 
 ---
 
-## 13. What Is Fully Working vs. What Is Partial
+## ESG Analyst Copilot (Chatbot)
 
-### Functioning End-to-End
+**Module**: `chatbot_backend/service.py`
 
-- main Python LangGraph analysis trigger
-- report generation and report saving
-- frontend analysis submission
-- SSE log streaming
-- result retrieval from saved reports
-- mismatch detector pipeline and cache fallback
-- signup and login using file-backed user storage
-- client-side session gating
-- history and settings pages at browser-storage level
+The conversational interface for querying generated reports.
 
-### Present but Demo-Level / Partial / Incomplete
+### Capabilities
+- Intent detection: score lookup, score explanation, contradiction queries, regulatory queries, section extraction
+- Session memory: conversation history maintained per-session
+- Dual LLM routing: Gemini primary → Groq fallback
+- ESG scope guard: blocks non-ESG questions
+- **Deterministic fast path**: Direct score/section lookups (no LLM required)
+- **LLM fallback path**: Complex/open-ended questions with citation-backed answers
 
-- dashboard overview widgets use static demo data
-- sidebar includes `/dashboard/reports`, but that page is not present in the current codebase
-- settings values are not fully wired back into backend runtime behavior
-- authentication is not production-safe
-- some agent capabilities depend on environment keys and available external sources
-
-This distinction matters for anyone extending the project. The core analysis engine is the strongest implemented area; some surrounding product features are still scaffolding or demo-grade.
+### Example Queries
+- "Why is the governance score low?"
+- "Which evidence is government-sourced?"
+- "What were the three main contradictions?"
+- "What's the Scope 3 coverage?"
+- "What happens to the score if the carbon pathway gap closes?"
 
 ---
 
-## 14. End-to-End User Journey
+## Output Files
 
-A typical user journey through the current product looks like this:
+### Text Report (`ESG_Report_<company>_<ts>.txt`)
+- ~60KB plain text
+- 30+ named sections (see FEATURES.md for full section list)
+- Human-readable, publication-style
+- Max 500KB cap; truncated with `[TRUNCATED AT 500KB]` marker if exceeded
 
-1. User opens the landing page and navigates to signup or login.
-2. User creates an account or logs in.
-3. User reaches the dashboard.
-4. User opens "Analyze Company".
-5. User submits a company, claim, and industry.
-6. The frontend calls the analysis API.
-7. The API spawns the Python backend process.
-8. The backend runs the LangGraph workflow.
-9. Logs are streamed back to the frontend.
-10. The backend writes report files into `reports/`.
-11. The API reads the latest matching report.
-12. The frontend renders the report summary, tables, narrative, and agent details.
-13. The result is stored into browser history.
-14. User can also run the separate mismatch detector for company-level promise-vs-actual analysis.
+### JSON Export (`ESG_Report_<company>_<ts>.json`)
+- ~1MB structured JSON
+- Full state dump: all agent outputs, evidence, scores, calibration, quality warnings
+- Machine-readable for API/dashboard integration
+- Validated against `core/report_schema.py` (Pydantic models)
+- Consistency check: `core/report_consistency_validator.py` — ESG rating, risk band, score range cross-validated
+
+### Investor Brief (`ESG_Report_<company>_<ts>_brief.json`)
+- ~5KB compact JSON
+- Contents: headline scores, LLM variance bands, top 3 risks, enforcement status, carbon snapshot, 3 due-diligence questions, abstention summary, counterfactual scenarios, score attribution, emissions verification
+- Designed for portfolio/diligence use cases
 
 ---
 
-## 15. How to Run the Project
+## Quality Assurance
 
-## 15.1 Backend
+### Report Quality Checker (`core/professional_report_generator.py: ReportQualityChecker`)
+Before rendering, checks:
+- Evidence coverage and verifiability (min 3 verified sources for MEDIUM confidence)
+- Traceability of ESG pillar scores to factor rows
+- Synthetic peer data usage flags
+- Agent success flags vs. actual findings
+- Carbon scope completeness (warns if Scope 2 or Scope 3 missing on net-zero claims)
+- External benchmark mismatch detection
+- Calibration sample size warnings (n<10 = PROVISIONAL, n<30 = LIMITED)
 
-Install dependencies:
+### Report Consistency Validator (`core/report_consistency_validator.py`)
+Cross-validates:
+- ESG score → rating consistency (canonical bin table)
+- GW score → risk band consistency
+- Score range validity (0–100)
 
+### SURE-RAG Abstention Layer
+Per-sub-claim verification gate:
+- Minimum 2 independent sources
+- Minimum 1 Tier-1 or Tier-2 source
+- Semantic relevance > 0.3 threshold
+- Returns `INSUFFICIENT_EVIDENCE` (abstains) rather than guessing when thresholds not met
+
+---
+
+## Known Data Limitations
+
+| Limitation | Impact | Mitigated By |
+|-----------|--------|-------------|
+| Calibration sample small (n<10) for some sectors | Score labeled PROVISIONAL | Cross-sector sigma fallback |
+| GRI database can time out | GRI check = UNCERTAIN | Multi-source evidence |
+| SBTi registry legal name mismatch | Company may appear not found | Known-alias lookup |
+| Climate TRACE: limited non-US/EU coverage | Ground-truth verification not available | Flagged in report |
+| Scope 3 boundary: FULL vs. PARTIAL ambiguous | Boundary treated as PARTIAL_INFERRED | Per-category audit |
+| CDP A-list is top 61 only | Non-disclosure ≠ bad score | Explained in report |
+| TCFD: FSB registry frozen post Oct 2023 | Self-attestation fallback | Noted in footnote |
+
+---
+
+## Development & Testing
+
+### Running Locally
 ```bash
+# Install dependencies
 pip install -r requirements.txt
+
+# Set API keys in .env (see .env.example)
+cp .env.example .env
+
+# Run single company analysis
+python main_langgraph.py --company "Shell" --claim "Net zero emissions by 2050"
+
+# Start API server
+uvicorn server:app --reload --port 8000
+
+# Run tests
+pytest tests/ -v
 ```
 
-Run interactive backend:
-
-```bash
-python main_langgraph.py
+### Environment Variables
+```
+GOOGLE_API_KEY=          # Gemini API key
+GROQ_API_KEY=            # Groq API key
+CEREBRAS_API_KEY=        # Cerebras API key
+OPENROUTER_API_KEY=      # OpenRouter API key
+ESG_WORKFLOW_TIMEOUT=    # Seconds (default: 1800)
+ESG_ALLOW_RETIRED_MODELS=# 0 (default) or 1 to enable
 ```
 
-Run direct backend analysis:
-
-```bash
-python main_langgraph.py --company "Unilever" --claim "Unilever aims to achieve net-zero emissions across its value chain by 2039." --industry "Consumer Goods"
-```
-
-## 15.2 Frontend
-
-From `frontend/`:
-
-```bash
-npm install
-npm run dev
-```
-
-The frontend expects access to the backend project root because it spawns `main_langgraph.py` and reads the `reports/` directory from there.
+### Demo Logs
+Pre-generated demo logs for key companies:
+- `_jpmc_demo_dryrun_20260605.log` — JPMorgan Chase
+- `exxonmobil_demo.log` — ExxonMobil
+- `microsoft_demo.log` — Microsoft
+- Report: `reports/ESG_Report_Shell_20260608_154049.txt`
 
 ---
 
-## 16. Summary
+## File Structure
 
-ESGLens is a multi-layer ESG analysis platform centered on a LangGraph-based orchestration engine. Its most important working capability is the full claim-analysis pipeline: claim intake, supervisor routing, multi-agent analysis, report generation, report persistence, and browser-based live result display.
+```
+ESGLens/
+├── main_langgraph.py          # CLI entry point; full pipeline
+├── server.py                  # FastAPI server definition
+├── api/
+│   └── analysis.py            # Subprocess management + log capture
+├── agents/                    # All 36 agent classes
+│   ├── claim_extractor.py
+│   ├── evidence_retriever.py
+│   ├── carbon_extractor.py
+│   ├── greenwishing_detector.py
+│   ├── regulatory_scanner.py
+│   ├── social_agent.py
+│   ├── governance_agent.py
+│   ├── contradiction_analyzer.py
+│   ├── risk_scorer.py
+│   └── ...
+├── core/
+│   ├── workflow_phase2.py     # LangGraph graph definition
+│   ├── state_schema.py        # ESGState TypedDict
+│   ├── llm_router.py          # Per-agent LLM routing table
+│   ├── llm_call.py            # LLM call layer (rate limit, retry, cache)
+│   ├── esg_data_apis.py       # External data integrations (WBA, SEC, etc.)
+│   ├── carbon_pathway_modeller.py
+│   ├── professional_report_generator.py
+│   ├── report_schema.py       # Pydantic schema for report validation
+│   ├── company_knowledge_graph.py
+│   ├── adversarial_validator.py
+│   ├── climatebert_analyzer.py
+│   └── ...
+├── chatbot_backend/
+│   └── service.py             # ESG Analyst Copilot service
+├── features/
+│   └── esg_mismatch_detector/ # ESG mismatch detection feature
+├── data/
+│   ├── known_cases.py         # Curated enforcement history
+│   └── materiality_profiles/  # Industry ESG weight profiles
+├── config/                    # Configuration files
+├── ml_models/                 # ML model definitions and weights
+├── reports/                   # Generated reports (gitignored)
+├── cache/                     # Evidence/LLM cache (gitignored)
+├── logs/                      # Pipeline logs
+├── chroma_db/                 # ChromaDB vector store
+└── tests/                     # Pytest test suite
+```
 
-The frontend is not just a static UI. It actively launches backend runs, streams execution logs, retrieves saved report artifacts, parses them, and presents them in a structured analyst-friendly view.
+---
 
-The mismatch detector is a second, separate feature that focuses on promise-versus-actual behavior and includes its own cache-backed execution model.
+## Roadmap (Next 12 Months)
 
-Overall, the project already contains a meaningful and functioning ESG intelligence workflow, with a few product-level pieces still at demo or scaffold stage.
+| Timeline | Feature |
+|----------|---------|
+| Q3 2026 | **Litigation Database**: Sabin Center for Climate Change Law (700+ cases); grows calibration from 51 → 250 companies per sector |
+| Q3 2026 | **Continuous Portfolio Monitoring Dashboard**: Nightly delta reports; daily ESG alerts for portfolio companies |
+| Q4 2026 | **Carbon Credit Quality Scoring**: Verra and Gold Standard offset registry; removal vs. avoidance classification |
+| Q1 2027 | **Multi-Language Parser Stack**: Japanese, German, Portuguese, French, Korean, Hindi; covers BRSR mandate (India's top 1,000 listed companies) |

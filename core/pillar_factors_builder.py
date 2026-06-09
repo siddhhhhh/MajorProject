@@ -860,7 +860,8 @@ def _extract_best_metric_value(
     # match text includes one of these, the value is NOT representative
     # of the company's group-wide figure.
     narrowing_qualifiers = (
-        "european", " eu ", "europe-wide", "europe wide",
+        "european", " eu ", "europe-wide", "europe wide", "europe only",
+        " europe", "in europe",                       # ← bare "europe" variants
         "regional", "region-specific", "north america", "north-america",
         "uk only", "uk-only", "us only", "us-only",
         "production sites only", "manufacturing only", "operations only",

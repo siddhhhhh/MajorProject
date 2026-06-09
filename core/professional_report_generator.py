@@ -33,6 +33,32 @@ TICKER_SYMBOL_MAP = {
     "Unilever": "UL",
     "TotalEnergies": "TTE",
     "Nestle": "NESN",
+    # Telecoms
+    "Vodafone": "VOD",
+    "Vodafone Group": "VOD",
+    "Verizon": "VZ",
+    "AT&T": "T",
+    "T-Mobile": "TMUS",
+    "Deutsche Telekom": "DTE.DE",
+    "BT Group": "BT.A",
+    "Orange": "ORA.PA",
+    "Telefonica": "TEF",
+    "Comcast": "CMCSA",
+    # Tech
+    "Amazon": "AMZN",
+    "Alphabet": "GOOGL",
+    "Apple": "AAPL",
+    "Nvidia": "NVDA",
+    "Meta": "META",
+    "Meta Platforms": "META",
+    # Energy
+    "Chevron": "CVX",
+    # India
+    "Reliance Industries": "RELIANCE.NS",
+    "Infosys": "INFY",
+    "Tata Consultancy Services": "TCS.NS",
+    "TCS": "TCS.NS",
+    "Tata Steel": "TATASTEEL.NS",
 }
 
 AGENT_DISPLAY_NAMES = {
@@ -357,21 +383,129 @@ class ProfessionalReportGenerator:
         company = str(state.get("company") or "Unknown").strip() or "Unknown"
         industry = str(state.get("industry") or "Unknown").strip() or "Unknown"
         ticker = str(state.get("ticker") or state.get("symbol") or "N/A").strip() or "N/A"
-        if ticker == "N/A":
+        if ticker in ("N/A", ""):
             company_l = company.lower()
-            ticker_map = {
-                "tesla": "TSLA",
-                "shell": "SHEL",
-                "microsoft": "MSFT",
-                "bp": "BP",
-                "totalenergies": "TTE",
-                "exxonmobil": "XOM",
-            }
-            for key, value in ticker_map.items():
-                if key in company_l.replace(" ", ""):
+            company_compact = company_l.replace(" ", "").replace("-", "").replace(".", "")
+            # Static fallback table — primary exchange ticker for each
+            # company. Includes non-US listings with the correct suffix so
+            # downstream price/market-cap lookups resolve. (BUG 8)
+            #
+            # Match by SUBSTRING against the compacted company name to
+            # tolerate variants like "Pfizer Inc.", "Volkswagen AG",
+            # "H & M Hennes & Mauritz AB", etc.
+            ticker_map = [
+                ("tesla", "TSLA"),
+                ("microsoft", "MSFT"),
+                ("totalenergies", "TTE"),
+                ("exxonmobil", "XOM"),
+                ("exxon", "XOM"),
+                ("pfizer", "PFE"),
+                ("volkswagen", "VOW3.DE"),
+                ("vwagy", "VWAGY"),
+                ("hennes", "HMB.ST"),       # H&M legal name "Hennes & Mauritz"
+                ("h&m", "HMB.ST"),
+                ("hmgroup", "HMB.ST"),
+                ("jpmorgan", "JPM"),
+                ("jpmorganchase", "JPM"),
+                ("shell", "SHEL"),
+                ("bp", "BP"),
+                # Telecoms
+                ("vodafone", "VOD"),
+                ("verizon", "VZ"),
+                ("att", "T"),
+                ("tmobile", "TMUS"),
+                ("deutschetelekom", "DTE.DE"),
+                ("btgroup", "BT.A"),
+                ("orangesa", "ORA.PA"),
+                ("telefonica", "TEF"),
+                ("comcast", "CMCSA"),
+                # Tech
+                ("amazon", "AMZN"),
+                ("alphabet", "GOOGL"),
+                ("apple", "AAPL"),
+                ("nvidia", "NVDA"),
+                ("meta", "META"),
+                # FMCG / Consumer Goods
+                ("unilever", "UL"),
+                ("nestle", "NESN"),
+                ("pgrg", "PG"),
+                ("procterandgamble", "PG"),
+                # Pharma
+                ("astrazeneca", "AZN"),
+                ("novartis", "NVS"),
+                ("roche", "ROG.SW"),
+                ("merck", "MRK"),
+                ("abbvie", "ABBV"),
+                ("johnsonandjohnson", "JNJ"),
+                ("jnj", "JNJ"),
+                ("sanofi", "SNY"),
+                ("gsk", "GSK"),
+                ("glaxosmithkline", "GSK"),
+                ("elililly", "LLY"),
+                ("novonordisk", "NVO"),
+                # Retail / FMCG
+                ("walmart", "WMT"),
+                ("target", "TGT"),
+                ("costco", "COST"),
+                ("kroger", "KR"),
+                ("carrefour", "CA.PA"),
+                ("tesco", "TSCO.L"),
+                ("homedepot", "HD"),
+                # Food & Bev
+                ("cocacola", "KO"),
+                ("pepsico", "PEP"),
+                ("kraftheinz", "KHC"),
+                ("danone", "BN.PA"),
+                ("diageo", "DEO"),
+                ("mcdonalds", "MCD"),
+                ("starbucks", "SBUX"),
+                # Automotive
+                ("toyota", "TM"),
+                ("ford", "F"),
+                ("generalmotors", "GM"),
+                ("stellantis", "STLA"),
+                ("bmw", "BMW.DE"),
+                # Oil & Gas
+                ("chevron", "CVX"),
+                ("equinor", "EQNR"),
+                ("eni", "E"),
+                ("repsol", "REP.MC"),
+                # Mining
+                ("bhp", "BHP"),
+                ("riotinto", "RIO"),
+                ("glencore", "GLEN.L"),
+                # Aviation
+                ("boeing", "BA"),
+                ("airbus", "AIR.PA"),
+                ("deltaair", "DAL"),
+                ("unitedairlines", "UAL"),
+                ("americanairlines", "AAL"),
+                # India
+                ("reliance", "RELIANCE.NS"),
+                ("infosys", "INFY"),
+                ("tcs", "TCS.NS"),
+                ("tatasteel", "TATASTEEL.NS"),
+                # Chemicals
+                ("basf", "BAS.DE"),
+                ("dow", "DOW"),
+                ("dupont", "DD"),
+                ("linde", "LIN"),
+            ]
+            for key, value in ticker_map:
+                if key in company_compact:
                     ticker = value
                     state["ticker"] = value
                     break
+            if ticker in ("N/A", ""):
+                # Visible sentinel + log warning so the monitoring layer can
+                # surface the gap (per BUG 8 spec). N/A used to swallow the
+                # signal silently.
+                import logging as _logging
+                _logging.getLogger(__name__).warning(
+                    "ticker lookup miss for company=%r — returning NOT_FOUND", company
+                )
+                ticker = "NOT_FOUND"
+                state["ticker"] = "NOT_FOUND"
 
         try:
             stages_completed.append("structured_build")
@@ -3596,6 +3730,37 @@ class ProfessionalReportGenerator:
         section12: List[str] = []
         if mc_block and mc_block.get("status") == "ACTIVE_EVENTS_PRESENT":
             section12 = [major, "SECTION 12B: MACRO CONTEXT DURING ANALYSIS", major]
+
+            # BUG 10: when no live signal provider is configured, the
+            # industry exposure values shown below are editorial estimates
+            # — not computed from a live data feed. Make this loud and
+            # unmissable at the section head so reviewers do not mistake
+            # the curated weights for live-derived metrics.
+            _calibration_for_banner = mc_block.get("live_signal_calibration") or []
+            _provider_configured = bool(os.environ.get("ESG_MACRO_SIGNAL_PROVIDER"))
+            _live_signal_active = bool(
+                _calibration_for_banner
+                and isinstance(_calibration_for_banner, list)
+                and any(
+                    isinstance(c, dict) and c.get("status") not in (None, "", "not_configured")
+                    for c in _calibration_for_banner
+                )
+            )
+            if not (_provider_configured and _live_signal_active):
+                section12.append(
+                    "  ⚠ LIVE SIGNAL NOT CONFIGURED — industry exposure "
+                    "values below are editorial estimates only, not "
+                    "computed from live data."
+                )
+                section12.append(
+                    "    Set ESG_MACRO_SIGNAL_PROVIDER + the documented "
+                    "API contract in README to enable live calibration. "
+                    "Until then this section is display-only and applies "
+                    "ZERO effect to any numeric output (effective "
+                    "multiplier = 1.0)."
+                )
+                section12.append("")
+
             section12.append(
                 "Exogenous events (wars, energy shocks, supply disruption) "
                 "that materially affect scope-3 emissions, energy mix, or "
@@ -4974,6 +5139,23 @@ class ProfessionalReportGenerator:
                 "VERDICT",
                 major,
                 "",
+                # SYSTEMIC: low-confidence banner. Must appear FIRST inside
+                # the verdict block so a skimming finance reader sees it
+                # before any score. <70% = below the system's own
+                # high-trust threshold.
+                *([
+                    "  ⚠ LOW CONFIDENCE REPORT — Overall confidence is "
+                    f"{v['confidence_pct']:.1f}%.",
+                    "  This report does NOT meet the 70% threshold for "
+                    "high-trust decisions. All scores are directional",
+                    "  only and should not be used for investment or "
+                    "compliance decisions without additional",
+                    "  verification.",
+                    "",
+                ] if (
+                    isinstance(v.get('confidence_pct'), (int, float))
+                    and float(v['confidence_pct']) < 70.0
+                ) else []),
                 # Top-of-verdict tier banner so the reader sees the
                 # decision-grade gate before they look at any number.
                 # ABSTAIN_RECOMMENDED → numbers suppressed elsewhere;
@@ -5067,16 +5249,35 @@ class ProfessionalReportGenerator:
             "end": "\n".join([major, "END OF REPORT", major, f"Report ID: {report_id}   Generated: {date_line}   ESGLens v4.0", major]),
         }
 
-        # Logical reading flow: 3 → 3B → 4 → 5A → 5 → 5C → 6 → 7 → 7B → 7C
-        # → 8 → 8B → 9 → 9B → 10 → 10B → 11 → 11B → 12 → appendices
+        # SYSTEMIC ordering rule: every subsection (3B, 3C, 5A, 5C, 5E, ...)
+        # must appear AFTER its numbered parent. Variable names in this file
+        # do NOT match the printed section numbers (e.g. `section3` is
+        # printed as "SECTION 5", `section2` as "SECTION 4"). The mapping
+        # used to render the comment-promised flow is:
+        #
+        #   section1            → printed Section 1
+        #   section_anatomy     → 3B (subsection of verdict/3)
+        #   section3c           → 3C
+        #   section3            → 5   ← parent of materiality_profile
+        #   materiality_profile → 5A  ← MUST follow section3, not precede it
+        #   component_breakdown → 5C
+        #   section_5c          → 5C (contributors)
+        #   section_5e          → 5E
+        #   section2            → 4
+        #   section6            → 6
+        #   section4            → 7
+        #   section5            → 8
+        #   section5b           → 8B
+        #   section7            → 9
         ordered_keys = [
             "cover", "verdict", "section1", "section_anatomy",
-            "section3c",  # Abstention follows claim breakdown
-            "section2",
-            "materiality_profile", "section3",
-            "component_breakdown",
-            "section_5c",  # Score Contributors (WHY) sits with the score blocks
-            "section_5e",  # Counterfactual scenarios sit right after the why
+            "section3c",
+            "section2",                # printed Section 4 (Evidence Citations)
+            "section3",                # printed Section 5 (Score Derivation) — parent
+            "materiality_profile",     # 5A — now AFTER its parent
+            "component_breakdown",     # 5C
+            "section_5c",              # 5C contributors
+            "section_5e",              # 5E counterfactual
             "section6", "section4", "compliance_full", "enforcement_history",
             "section7d", "section7e",
             "section5", "section5b", "section8c", "section8d", "section8e", "section7", "recent_news",
@@ -7064,9 +7265,33 @@ class ProfessionalReportGenerator:
             return f"url:{normalized_url}"
         return f"source:{source_name.strip().lower()}"
 
+    # Aggregator domains/names — must always classify as Web Source
+    # regardless of fetched content. (BUG 7)
+    _AGGREGATOR_DOMAINS = {
+        "duckduckgo.com", "duck.com",
+        "bing.com", "google.com", "news.google.com", "yahoo.com",
+        "search.yahoo.com",
+    }
+    _AGGREGATOR_NAMES = {"duckduckgo", "bing", "google search", "yahoo search"}
+
     def _business_source_type(self, citation: Dict[str, Any], is_first_party: bool = False) -> str:
         tier = str(citation.get("reliability_tier") or "").lower()
-        source = str(citation.get("source_name") or citation.get("title") or citation.get("url") or "").lower()
+        source_raw = str(citation.get("source_name") or citation.get("title") or citation.get("url") or "")
+        source = source_raw.lower()
+        url = str(citation.get("url") or "").lower()
+        domain = url.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0] if url else ""
+
+        # Pre-classification (BUG 6/7): aggregator + (Official) routing must
+        # run BEFORE the keyword ladder, otherwise an "(Official)" company
+        # page or a DuckDuckGo result page gets misclassified.
+        if domain and (domain in self._AGGREGATOR_DOMAINS
+                       or any(domain.endswith(d) for d in self._AGGREGATOR_DOMAINS)):
+            return "Web Source"
+        if any(a in source for a in self._AGGREGATOR_NAMES):
+            return "Web Source"
+        if source_raw.strip().endswith("(Official)") or "(official)" in source:
+            return "Company Disclosure"
+
         combined = f"{tier} {source}"
         if "regulatory filing" in combined or "regulator" in combined or ".gov" in combined:
             return "Regulatory Filing"
@@ -7122,13 +7347,47 @@ class ProfessionalReportGenerator:
         contradicting_count: int,
         total_sources: int,
     ) -> Tuple[str, str]:
+        """Derive Evidence Strength directly from supporting source counts.
+
+        Thresholds (BUG 3/4 spec — finance-audience consistent):
+          supporting 0       → Limited
+          supporting 1–3     → Weak
+          supporting 4–6     → Moderate
+          supporting 7+      → Strong
+
+        Contradicting sources override the count-based label downward so a
+        "Strong" with overwhelming opposition can't slip past. The label
+        is derived from the counts shown in the report — never from an LLM
+        or an opaque triangulation_score alone.
+        """
+        if total_sources <= 0 or supporting_count <= 0:
+            return "Limited", "no supporting evidence sources"
+
+        if supporting_count >= 7:
+            base, reason = "Strong", f"{supporting_count} supporting sources"
+        elif supporting_count >= 4:
+            base, reason = "Moderate", f"{supporting_count} supporting sources"
+        else:
+            base, reason = "Weak", f"only {supporting_count} supporting source(s)"
+
+        if contradicting_count > supporting_count:
+            return "Limited", (
+                f"{contradicting_count} contradicting outweigh {supporting_count} supporting"
+            )
+        if contradicting_count >= 3 and base == "Strong":
+            return "Moderate", f"{reason} but {contradicting_count} contradicting"
+        return base, reason
+
+    def _evidence_strength_label_legacy_unused(
+        self,
+        tri_score: Any,
+        supporting_count: int,
+        contradicting_count: int,
+        total_sources: int,
+    ) -> Tuple[str, str]:
         score = self._safe_float(tri_score, -1.0)
         if total_sources <= 0:
             return "Limited", "no evidence sources available"
-        # Hard guards on stance composition. Without these, an upstream
-        # triangulation_score of 80 caused us to emit "Strong (broad
-        # agreement…)" for a 0-supporting + 1-contradicting evidence pool —
-        # which is the opposite of agreement.
         if supporting_count == 0 and contradicting_count > 0:
             return "Limited", f"no supporting sources; {contradicting_count} contradicting"
         if supporting_count == 0:
@@ -7149,12 +7408,22 @@ class ProfessionalReportGenerator:
         supporting_count: int,
         contradicting_count: int,
     ) -> Tuple[str, str]:
-        ratio = self._safe_float(adversarial_ratio, 0.0)
-        if contradicting_count <= 0 and ratio < 0.2:
+        """Derive Contradiction Level directly from contradicting count.
+
+        Thresholds (BUG 3 spec):
+          0           → Low
+          1–2         → Moderate
+          3+          → High
+
+        The adversarial_ratio is ignored — counts shown in the report are
+        the source of truth. A "5 supporting and no contradicting"
+        narrative must NEVER produce "Moderate" contradiction.
+        """
+        if contradicting_count <= 0:
             return "Low", "no opposing evidence found"
-        if ratio >= 0.5 or contradicting_count > supporting_count:
-            return "High", "opposing evidence is material"
-        return "Moderate", "some opposing evidence found"
+        if contradicting_count >= 3:
+            return "High", f"{contradicting_count} contradicting sources"
+        return "Moderate", f"{contradicting_count} contradicting source(s)"
 
     def _evidence_summary_sentence(
         self,
@@ -7789,7 +8058,9 @@ class ProfessionalReportGenerator:
         if agent_name == "temporal_consistency":
             score = o.get("temporal_consistency_score", "?")
             risk = o.get("risk_level", "?")
-            return f"Score: {score}/100 - {risk}"
+            if isinstance(score, (int, float)):
+                return f"Score: {score:.0f}/100 - {risk}"
+            return f"Score: {score} - {risk}"
 
         if agent_name == "evidence_retrieval":
             evidence_count = len(o.get("evidence", []) or o.get("citations", []) or [])
@@ -10794,18 +11065,33 @@ TEMPORAL ESG CONSISTENCY ANALYSIS
         claim_trend = temporal_result.get("claim_trend", "unknown")
         env_trend = temporal_result.get("environmental_trend", "unknown")
         inconsistency_detected = temporal_result.get("temporal_inconsistency_detected", False)
-        
+
         evidence = temporal_result.get("evidence", [])
         explanation = temporal_result.get("explanation", "")
-        
-        # 5. FIX APPENDIX B INTERNAL INCONSISTENCY
-        if not inconsistency_detected:
-            risk_level = "LOW"
-            if "moderate inconsistency" in explanation.lower():
-                explanation = re.sub(r'(?i)moderate inconsistency', 'no material inconsistency', explanation)
+
+        # NOT_COMPUTED sentinel (BUG 9 fix): render the score line as a
+        # qualitative status instead of a fake number.
+        score_is_computed = isinstance(temporal_score, (int, float))
+        if not score_is_computed:
+            score_line = "NOT_COMPUTED (insufficient historical data)"
+            inconsistency_line = "INSUFFICIENT_DATA — score not derivable"
+            risk_level = "INSUFFICIENT_DATA"
         else:
-            if risk_level.upper() in ["LOW", "NONE"]:
-                risk_level = "MODERATE" 
+            score_line = f"{temporal_score:.0f}/100"
+            if not inconsistency_detected:
+                risk_level = "LOW"
+                if "moderate inconsistency" in explanation.lower():
+                    explanation = re.sub(r'(?i)moderate inconsistency', 'no material inconsistency', explanation)
+            else:
+                if str(risk_level).upper() in ["LOW", "NONE"]:
+                    risk_level = "MODERATE"
+            if inconsistency_detected is True:
+                inconsistency_line = "YES - Claims and performance are misaligned"
+            elif claim_trend != 'unknown' and env_trend != 'unknown':
+                inconsistency_line = "NO - Claims align with performance"
+            else:
+                inconsistency_line = "INCONCLUSIVE - trend data is limited"
+
         years_analyzed = temporal_result.get("years_analyzed", [])
 
         section = f"""
@@ -10817,9 +11103,9 @@ Overview:
   against actual environmental performance metrics. Greenwashing typically manifests
   as claim escalation without corresponding performance improvement.
 
-Temporal Consistency Score:  {temporal_score:.0f}/100
+Temporal Consistency Score:  {score_line}
     Risk Level: {risk_level}
-    Inconsistency Detected: {"YES - Claims and performance are misaligned" if inconsistency_detected else "NO - Claims align with performance" if claim_trend != 'unknown' and env_trend != 'unknown' else "INCONCLUSIVE - trend data is limited"}
+    Inconsistency Detected: {inconsistency_line}
 
 Claims Analysis:
   Temporal Trend: {claim_trend.upper() if claim_trend else "UNKNOWN"}
