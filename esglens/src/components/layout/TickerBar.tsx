@@ -18,7 +18,7 @@ export function TickerBar() {
     >
       <div className="flex gap-8 whitespace-nowrap font-mono text-[11px] animate-[ticker_60s_linear_infinite] pl-4">
         {items.map((i, idx) => {
-          const arrow = i.dir === "up" ? "↑" : i.dir === "down" ? "↓" : "·";
+          const arrow = i.dir === "up" ? "up" : i.dir === "down" ? "down" : "|";
           const arrowColor =
             i.dir === "up" ? "text-[#FF7B72]" : i.dir === "down" ? "text-[#6EE7A8]" : "text-white/40";
           const gwColor =
@@ -26,9 +26,9 @@ export function TickerBar() {
           return (
             <span key={idx} className="flex items-center gap-2">
               <span className="text-white font-medium">{i.t}</span>
-              <span className="text-white/30">·</span>
+              <span className="text-white/30">|</span>
               <span className="text-[#FFB84D]">{i.r}</span>
-              <span className="text-white/30">·</span>
+              <span className="text-white/30">|</span>
               <span className="text-white/40">GW</span>
               <span className={gwColor}>{i.gw.toFixed(1)}%</span>
               <span className={arrowColor}>{arrow}</span>

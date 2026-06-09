@@ -1,7 +1,7 @@
 /**
  * stores/historyStore.ts
  * -----------------------
- * Zustand store for the History page — fetches all completed analyses
+ * Zustand store for the History page - fetches all completed analyses
  * from the backend API.
  */
 import { create } from "zustand";

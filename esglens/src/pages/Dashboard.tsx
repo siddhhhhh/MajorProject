@@ -105,7 +105,7 @@ export default function Dashboard() {
               <div className="absolute left-[60px] pointer-events-none text-sm">
                 <TypewriterPlaceholder />
               </div>
-              <span className="hidden md:inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-mono bg-amber-bright/15 text-amber-bright border border-amber-bright/30">UK · FCA</span>
+              <span className="hidden md:inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-mono bg-amber-bright/15 text-amber-bright border border-amber-bright/30">UK | FCA</span>
               <button type="button" onClick={(e) => { e.preventDefault(); openFile(); }} className="h-9 w-9 rounded-lg text-text-secondary hover:text-teal-bright hover:bg-teal-bright/10 flex items-center justify-center transition" aria-label="Attach files">
                 <Paperclip className="h-4 w-4" />
               </button>
@@ -116,7 +116,7 @@ export default function Dashboard() {
           </motion.form>
 
           <div className="flex flex-wrap gap-2 justify-center mt-5">
-            {["Shell · net zero 2050", "Barclays · sustainable finance", "Tesco · carbon neutral 2035"].map((s) => (
+            {["Shell | net zero 2050", "Barclays | sustainable finance", "Tesco | carbon neutral 2035"].map((s) => (
               <button key={s} onClick={() => nav("/pipeline")} className="text-xs px-3 py-1.5 rounded-full border border-bg-border text-text-secondary hover:text-teal-bright hover:border-teal-dim transition font-mono">
                 {s}
               </button>
@@ -131,7 +131,7 @@ export default function Dashboard() {
           {[
             { v: 1847, label: "Companies Analysed" },
             { v: 94.2, label: "Pipeline Success", suffix: "%" },
-            { v: 2.3, label: "AUM Using ESGLens", prefix: "£", suffix: "T" },
+            { v: 2.3, label: "AUM Using ESGLens", prefix: "GBP", suffix: "T" },
             { v: 36, label: "Agents Per Analysis" },
           ].map((s) => (
             <div key={s.label} className="text-center">
@@ -192,7 +192,7 @@ export default function Dashboard() {
                     { l: "G", v: c.g, color: "risk-low" },
                   ].map((p) => (
                     <span key={p.l} className="text-[11px] font-mono px-2 py-1 rounded-md bg-bg-elevated border border-bg-border">
-                      <span className="text-text-secondary">{p.l} · </span><span className="text-text-primary">{p.v}</span>
+                      <span className="text-text-secondary">{p.l} | </span><span className="text-text-primary">{p.v}</span>
                     </span>
                   ))}
                 </div>
@@ -216,7 +216,7 @@ export default function Dashboard() {
             </div>
             <div className="font-mono text-[11px] space-y-1.5 max-h-[420px] overflow-y-auto scrollbar-thin">
               {AGENTS.slice(0, 18).map((a, i) => {
-                const status = i < 12 ? "✓" : i < 14 ? "●" : "⏳";
+                const status = i < 12 ? "OK" : i < 14 ? "RUN" : "WAIT";
                 const color = i < 12 ? "text-risk-minimal" : i < 14 ? "text-amber-bright" : "text-text-muted";
                 return (
                   <div key={a.id} className="flex items-center gap-2">

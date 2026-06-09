@@ -63,7 +63,7 @@ export const useAnalysisStore = create<AnalysisStore>((set, get) => ({
   connectToStream: (analysisId) => {
     const ws = api.connectPipelineStream(
       analysisId,
-      // onLog — real pipeline log line
+      // onLog - real pipeline log line
       (log) =>
         set((state) => ({
           logs: [...state.logs, log],

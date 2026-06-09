@@ -28,16 +28,16 @@ export default function LivePipeline() {
   // Navigate to report when complete
   useEffect(() => {
     if (currentReport && !isRunning) {
-      const t = setTimeout(() => nav(`/report?id=${currentReport.id}`), 4000);
+      const t = setTimeout(() => nav(`/report?id=${encodeURIComponent(currentReport.id)}`), 4000);
       return () => clearTimeout(t);
     }
   }, [currentReport, isRunning, nav]);
 
   const done = !!currentReport && !isRunning;
 
-  // Count agents from logs (lines containing ✓ or [OK])
+  // Count agents from logs (lines containing OK or [OK])
   const agentsDone = logs.filter(
-    (l) => l.kind === "ok" && (l.msg.includes("✓") || l.msg.includes("[OK]") || l.msg.includes("completed"))
+    (l) => l.kind === "ok" && (l.msg.includes("OK") || l.msg.includes("[OK]") || l.msg.includes("completed"))
   ).length;
 
   // Format elapsed time
@@ -55,14 +55,14 @@ export default function LivePipeline() {
           </div>
           <div>
             <div className="font-display text-xl">
-              {currentReport ? currentReport.company : "Running analysis…"}
+              {currentReport ? currentReport.company : "Running analysis..."}
               {currentReport && (
-                <span className="text-text-secondary text-sm font-sans"> · {currentReport.ticker}</span>
+                <span className="text-text-secondary text-sm font-sans"> | {currentReport.ticker}</span>
               )}
             </div>
             <div className="font-mono text-[10px] text-text-secondary">
               {currentAnalysisId
-                ? `ANALYSIS · ${currentAnalysisId.slice(0, 8).toUpperCase()}`
+                ? `ANALYSIS | ${currentAnalysisId.slice(0, 8).toUpperCase()}`
                 : "WAITING FOR PIPELINE"}
             </div>
           </div>
@@ -86,12 +86,12 @@ export default function LivePipeline() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-px bg-bg-border min-h-[calc(100vh-90px)]">
-        {/* Log terminal — full width, real pipeline output */}
+        {/* Log terminal - full width, real pipeline output */}
         <div data-force-dark className="bg-[hsl(215_60%_8%)] p-6 text-text-primary">
           <div className="label-eyebrow mb-3">LIVE LOG STREAM</div>
           {error && (
             <div className="mb-3 text-risk-high text-xs font-mono bg-risk-high/10 border border-risk-high/20 rounded p-2">
-              ⚠ Error: {error}
+              Warning: Error: {error}
             </div>
           )}
           <div
@@ -99,13 +99,13 @@ export default function LivePipeline() {
             className="font-mono text-xs space-y-0.5 max-h-[calc(100vh-200px)] overflow-y-auto scrollbar-thin"
           >
             {logs.length === 0 && isRunning && (
-              <div className="text-text-muted animate-pulse">Waiting for pipeline output…</div>
+              <div className="text-text-muted animate-pulse">Waiting for pipeline output...</div>
             )}
             {logs.length === 0 && !isRunning && !done && (
               <div className="text-text-muted">
                 No analysis running.{" "}
                 <button onClick={() => nav("/analyse")} className="text-teal-bright hover:underline">
-                  Start one →
+                  Start one
                 </button>
               </div>
             )}
@@ -130,7 +130,7 @@ export default function LivePipeline() {
             {done && (
               <div className="flex gap-3 mt-2 pt-2 border-t border-bg-border">
                 <span className="text-text-muted w-14 text-right">[done]</span>
-                <span className="text-teal-bright">✓ Pipeline complete — report ready</span>
+                <span className="text-teal-bright">OK Pipeline complete - report ready</span>
               </div>
             )}
           </div>
@@ -193,13 +193,13 @@ export default function LivePipeline() {
                 className="text-center pt-4 border-t border-bg-border"
               >
                 <div className="font-display text-2xl text-teal-bright mb-2">Analysis Complete</div>
-                <div className="text-xs text-text-secondary mb-3">Routing to report in 4s…</div>
+                <div className="text-xs text-text-secondary mb-3">Routing to report in 4s...</div>
                 <button
                   id="view-report-btn"
-                  onClick={() => nav(`/report?id=${currentReport.id}`)}
+                  onClick={() => nav(`/report?id=${encodeURIComponent(currentReport.id)}`)}
                   className="px-4 py-2 rounded-md bg-teal-bright text-bg-void text-sm font-medium glow-teal"
                 >
-                  View Full Report →
+                  View Full Report
                 </button>
               </motion.div>
             </>
@@ -220,7 +220,7 @@ export default function LivePipeline() {
                 <div className="font-display text-2xl text-text-primary">{logs.length}</div>
               </div>
               <div className="text-center text-[10px] font-mono text-text-muted animate-pulse">
-                Pipeline running — streaming real-time output…
+                Pipeline running - streaming real-time output...
               </div>
             </div>
           )}
@@ -230,7 +230,7 @@ export default function LivePipeline() {
               No analysis running.
               <br />
               <button onClick={() => nav("/analyse")} className="text-teal-bright mt-1 hover:underline">
-                Start a new analysis →
+                Start a new analysis
               </button>
             </div>
           )}

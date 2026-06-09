@@ -50,7 +50,7 @@ export function FileDropZone() {
         </motion.div>
         <div className="mt-3 font-medium text-text-primary">Drop ESG reports, filings, or evidence here</div>
         <div className="font-mono text-[11px] text-text-secondary mt-1">
-          PDF · TXT · CSV · DOCX · up to 25MB each · multiple files supported
+          PDF | TXT | CSV | DOCX | up to 25MB each | multiple files supported
         </div>
       </div>
 

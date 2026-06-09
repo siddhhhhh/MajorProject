@@ -6,7 +6,7 @@
 
 @layer base {
   :root {
-    /* ── ESGLens V3 — Light, professional ESG identity ── */
+    /* -- ESGLens V3 - Light, professional ESG identity -- */
     /* Backgrounds */
     --bg-void: 0 0% 100%;            /* pure white */
     --bg-deep: 130 18% 97%;          /* #F7F9F7 */
@@ -15,7 +15,7 @@
     --bg-border: 130 18% 91%;        /* #E2EBE4 */
     --bg-subtle: 128 25% 94%;        /* #EBF3EC */
 
-    /* Primary — Forest Green (mapped onto teal tokens for compat) */
+    /* Primary - Forest Green (mapped onto teal tokens for compat) */
     --teal-bright: 150 65% 30%;      /* #1A7A4A */
     --teal-mid: 148 56% 39%;         /* #2D9B61 */
     --teal-dim: 138 38% 75%;         /* #A8D4B8 */
@@ -25,12 +25,12 @@
     --green-light: 138 45% 93%;      /* #E8F5ED */
     --green-dim: 138 38% 75%;
 
-    /* Secondary — Deep Navy */
+    /* Secondary - Deep Navy */
     --navy-deep: 215 60% 10%;        /* #0A1628 */
     --navy-mid: 213 51% 24%;         /* #1E3A5F */
     --navy-light: 217 48% 94%;       /* #E8EEF6 */
 
-    /* Tertiary — Sky Blue */
+    /* Tertiary - Sky Blue */
     --blue-bright: 209 75% 43%;      /* #1B6FBF */
     --blue-mid: 209 71% 55%;
     --blue-light: 209 75% 94%;
@@ -86,7 +86,7 @@
     --sidebar-ring: 150 65% 30%;
   }
 
-  /* Dark mode — preserved as power-user option */
+  /* Dark mode - preserved as power-user option */
   [data-theme="dark"] {
     --bg-void: 225 56% 3%;
     --bg-deep: 224 43% 6%;

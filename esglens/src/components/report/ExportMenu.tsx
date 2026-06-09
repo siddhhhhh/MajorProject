@@ -23,15 +23,15 @@ function downloadBlob(content: string, filename: string, type: string) {
   function buildReportText() {
     if (R.auditText) return R.auditText;
     return [
-      `ESGLENS REPORT — ${R.company} (${R.ticker})`,
-      `Sector: ${R.sector} · Jurisdiction: ${R.jurisdiction}`,
+      `ESGLENS REPORT - ${R.company} (${R.ticker})`,
+      `Sector: ${R.sector} | Jurisdiction: ${R.jurisdiction}`,
       `Generated: ${new Date().toISOString()}`,
       "",
       `ESG SCORE: ${R.esgScore} / 100`,
-      `Rating: ${R.rating} · Risk: ${R.riskLevel} · Confidence: ${R.confidence}%`,
+      `Rating: ${R.rating} | Risk: ${R.riskLevel} | Confidence: ${R.confidence}%`,
       `Greenwashing risk: ${R.greenwashing} / 100`,
       "",
-      `Pillars: E ${R.pillars.e} · S ${R.pillars.s} · G ${R.pillars.g}`,
+      `Pillars: E ${R.pillars.e} | S ${R.pillars.s} | G ${R.pillars.g}`,
       "",
       `CLAIM`,
       `"${R.claim}"`,
@@ -46,13 +46,13 @@ function downloadBlob(content: string, filename: string, type: string) {
       `Scope 3: ${(R.scope3 / 1e9).toFixed(2)}B tCO2e`,
       "",
       `CONTRADICTIONS`,
-      ...R.contradictions.map((c, i) => `${i + 1}. [${c.severity}] ${c.claim}\n   ↳ ${c.evidence}\n   Source: ${c.source}`),
+      ...R.contradictions.map((c, i) => `${i + 1}. [${c.severity}] ${c.claim}\n   -> ${c.evidence}\n   Source: ${c.source}`),
       "",
       `REGULATORY (${R.regulatoryOverall}/100 overall)`,
-      ...R.regulatory.map((r) => `· ${r.framework} — ${r.score}/100 ${r.status} — ${r.gap}`),
+      ...R.regulatory.map((r) => `| ${r.framework} - ${r.score}/100 ${r.status} - ${r.gap}`),
       "",
       `EVIDENCE (${R.evidence.length} sources)`,
-      ...R.evidence.map((e) => `· [${e.stance}] ${e.domain} (${e.year}) cred ${(e.credibility * 100).toFixed(0)}% — ${e.excerpt}`),
+      ...R.evidence.map((e) => `| [${e.stance}] ${e.domain} (${e.year}) cred ${(e.credibility * 100).toFixed(0)}% - ${e.excerpt}`),
     ].join("\n");
   }
 

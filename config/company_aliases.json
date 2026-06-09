@@ -7,5 +7,17 @@
       "BP p.l.c.",
       "BP"
     ]
+  },
+  "H&M": {
+    "ticker": "HM-B.ST",
+    "full_name": "H & M Hennes & Mauritz AB",
+    "aliases": [
+      "H&M",
+      "H and M",
+      "Hennes & Mauritz",
+      "Hennes and Mauritz",
+      "H&M Group",
+      "HM Group"
+    ]
   }
 }

@@ -98,6 +98,13 @@ STATIC_PEER_BASELINES = {
         {"name": "Reckitt", "ticker": "RKT", "esg_score": 55.0, "greenwashing_risk_score": 48.0, "environmental_score": 52.0, "social_score": 57.0, "governance_score": 56.0, "rating": "BB", "source": "baseline"},
         {"name": "Colgate-Palmolive", "ticker": "CL", "esg_score": 60.0, "greenwashing_risk_score": 40.0, "environmental_score": 58.0, "social_score": 62.0, "governance_score": 60.0, "rating": "BBB", "source": "baseline"},
     ],
+    "fast fashion": [
+        {"name": "Inditex", "ticker": "ITX.MC", "esg_score": 61.0, "greenwashing_risk_score": 43.0, "environmental_score": 58.0, "social_score": 61.0, "governance_score": 64.0, "rating": "BBB", "source": "baseline"},
+        {"name": "Nike", "ticker": "NKE", "esg_score": 58.0, "greenwashing_risk_score": 46.0, "environmental_score": 55.0, "social_score": 59.0, "governance_score": 60.0, "rating": "BBB", "source": "baseline"},
+        {"name": "Adidas", "ticker": "ADS.DE", "esg_score": 60.0, "greenwashing_risk_score": 44.0, "environmental_score": 57.0, "social_score": 61.0, "governance_score": 62.0, "rating": "BBB", "source": "baseline"},
+        {"name": "Gap", "ticker": "GPS", "esg_score": 52.0, "greenwashing_risk_score": 52.0, "environmental_score": 49.0, "social_score": 53.0, "governance_score": 55.0, "rating": "BB", "source": "baseline"},
+        {"name": "Primark", "ticker": "ABF.L", "esg_score": 50.0, "greenwashing_risk_score": 55.0, "environmental_score": 47.0, "social_score": 51.0, "governance_score": 53.0, "rating": "BB", "source": "baseline"},
+    ],
     "technology": [
         {"name": "Microsoft", "ticker": "MSFT", "esg_score": 75.0, "greenwashing_risk_score": 28.0, "environmental_score": 80.0, "social_score": 72.0, "governance_score": 73.0, "rating": "AA", "source": "baseline"},
         {"name": "Apple", "ticker": "AAPL", "esg_score": 70.0, "greenwashing_risk_score": 33.0, "environmental_score": 75.0, "social_score": 68.0, "governance_score": 67.0, "rating": "A", "source": "baseline"},
@@ -110,6 +117,7 @@ STATIC_PEER_BASELINES = {
 
 WBA_PEER_SEEDS = {
     "consumer goods": ["Procter & Gamble", "Nestle", "Reckitt", "Colgate-Palmolive"],
+    "fast fashion": ["Inditex", "Nike", "Adidas", "Gap", "Primark"],
     "banking": ["HSBC", "Barclays", "Citigroup", "Bank of America"],
     "technology": ["Microsoft", "Apple", "Alphabet"],
     "oil & gas": ["BP", "TotalEnergies", "ExxonMobil", "Chevron"],

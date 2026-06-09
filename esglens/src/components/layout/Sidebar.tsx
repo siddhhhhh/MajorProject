@@ -81,7 +81,7 @@ export function Sidebar() {
         </button>
         {expanded ? (
           <div className="font-mono text-[10px] text-text-muted leading-relaxed">
-            FCA ALIGNED · TCFD<br />GRI · ISSB
+            FCA ALIGNED | TCFD<br />GRI | ISSB
           </div>
         ) : (
           <div className="text-teal-bright text-[10px] font-mono text-center">UK</div>

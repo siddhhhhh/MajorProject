@@ -63,7 +63,7 @@ export default function NewAnalysis() {
 
           <div className="space-y-8">
             <div>
-              <label className="label-eyebrow block mb-2">01 · COMPANY</label>
+              <label className="label-eyebrow block mb-2">01 | COMPANY</label>
               <input
                 ref={companyRef}
                 id="company-input"
@@ -73,22 +73,22 @@ export default function NewAnalysis() {
               />
             </div>
             <div>
-              <label className="label-eyebrow block mb-2">02 · INDUSTRY</label>
+              <label className="label-eyebrow block mb-2">02 | INDUSTRY</label>
               <input
                 ref={industryRef}
                 id="industry-input"
                 defaultValue=""
-                placeholder="e.g. Energy, Financial Services, Automotive…"
+                placeholder="e.g. Energy, Financial Services, Automotive..."
                 className="w-full h-12 px-4 rounded-lg bg-bg-elevated border border-bg-border focus:border-teal-bright focus:shadow-[0_0_0_3px_hsl(var(--teal-bright)/0.15)] outline-none transition"
               />
             </div>
             <div>
-              <label className="label-eyebrow block mb-2">03 · CLAIM</label>
+              <label className="label-eyebrow block mb-2">03 | CLAIM</label>
               <textarea
                 ref={claimRef}
                 id="claim-input"
                 defaultValue=""
-                placeholder="Enter the ESG claim to verify…"
+                placeholder="Enter the ESG claim to verify..."
                 rows={3}
                 className="w-full p-4 rounded-lg bg-bg-elevated border border-bg-border focus:border-teal-bright focus:shadow-[0_0_0_3px_hsl(var(--teal-bright)/0.15)] outline-none transition resize-none"
               />
@@ -96,7 +96,7 @@ export default function NewAnalysis() {
 
             {submitError && (
               <div className="text-risk-high text-sm font-mono bg-risk-high/10 border border-risk-high/20 rounded-lg px-4 py-2">
-                ⚠ {submitError}
+                Warning: {submitError}
               </div>
             )}
 
@@ -108,7 +108,7 @@ export default function NewAnalysis() {
             >
               {isSubmitting ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Submitting…
+                  <Loader2 className="h-4 w-4 animate-spin" /> Submitting...
                 </>
               ) : (
                 <>
@@ -118,12 +118,12 @@ export default function NewAnalysis() {
             </button>
 
             <div className="font-mono text-[11px] text-text-muted pt-4 border-t border-bg-border">
-              <span className="text-teal-bright">⌘K</span> Global search · <span className="text-teal-bright">⌘N</span> New analysis · <span className="text-teal-bright">⌘R</span> Latest report · <span className="text-teal-bright">⌘E</span> Export · <span className="text-teal-bright">?</span> All shortcuts
+              <span className="text-teal-bright">Cmd+K</span> Global search | <span className="text-teal-bright">Cmd+N</span> New analysis | <span className="text-teal-bright">Cmd+R</span> Latest report | <span className="text-teal-bright">Cmd+E</span> Export | <span className="text-teal-bright">?</span> All shortcuts
             </div>
           </div>
         </div>
 
-        {/* RIGHT — topology */}
+        {/* RIGHT - topology */}
         <div className="relative border-l border-bg-border p-10 overflow-hidden bg-bg-deep/50">
           <div className="label-eyebrow text-teal-bright mb-2">PIPELINE TOPOLOGY</div>
           <h2 className="font-display text-3xl mb-8">36-agent system</h2>
@@ -133,7 +133,7 @@ export default function NewAnalysis() {
 
               return (
                 <div key={layer}>
-                  <div className="label-eyebrow mb-2">{layer.toUpperCase()} LAYER · {agents.length}</div>
+                  <div className="label-eyebrow mb-2">{layer.toUpperCase()} LAYER | {agents.length}</div>
                   <div className="flex flex-wrap gap-1.5">
                     {agents.map((agent, index) => (
                       <motion.span

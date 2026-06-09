@@ -52,9 +52,9 @@ function borderColor(level: string) {
   return "border-l-risk-low";
 }
 function findingIcon(kind: string) {
-  if (kind === "red") return "🔴";
-  if (kind === "amber") return "🟡";
-  return "🟢";
+  if (kind === "red") return "RED";
+  if (kind === "amber") return "AMBER";
+  return "GREEN";
 }
 
 function CompareTable({ a, b }: { a: ReportData; b: ReportData }) {
@@ -64,7 +64,7 @@ function CompareTable({ a, b }: { a: ReportData; b: ReportData }) {
     { label: "Environmental", va: String(a.pillars.e), vb: String(b.pillars.e), higherIsBetter: true, better: a.pillars.e > b.pillars.e ? "a" : "b" },
     { label: "Social", va: String(a.pillars.s), vb: String(b.pillars.s), higherIsBetter: true, better: a.pillars.s > b.pillars.s ? "a" : "b" },
     { label: "Governance", va: String(a.pillars.g), vb: String(b.pillars.g), higherIsBetter: true, better: a.pillars.g > b.pillars.g ? "a" : "b" },
-    { label: "Scope 3 Emissions", va: a.scope3 >= 1e9 ? `${(a.scope3 / 1e9).toFixed(2)}B tCO₂e` : `${(a.scope3 / 1e6).toFixed(0)}M tCO₂e`, vb: b.scope3 >= 1e9 ? `${(b.scope3 / 1e9).toFixed(2)}B tCO₂e` : `${(b.scope3 / 1e6).toFixed(0)}M tCO₂e`, higherIsBetter: false, better: a.scope3 < b.scope3 ? "a" : "b" },
+    { label: "Scope 3 Emissions", va: a.scope3 >= 1e9 ? `${(a.scope3 / 1e9).toFixed(2)}B tCO2e` : `${(a.scope3 / 1e6).toFixed(0)}M tCO2e`, vb: b.scope3 >= 1e9 ? `${(b.scope3 / 1e9).toFixed(2)}B tCO2e` : `${(b.scope3 / 1e6).toFixed(0)}M tCO2e`, higherIsBetter: false, better: a.scope3 < b.scope3 ? "a" : "b" },
     { label: "Contradictions", va: `${a.contradictions.length} HIGH`, vb: `${b.contradictions.length} HIGH`, higherIsBetter: false, better: null },
     { label: "Regulatory Score", va: `${a.regulatoryOverall}/100`, vb: `${b.regulatoryOverall}/100`, higherIsBetter: true, better: a.regulatoryOverall > b.regulatoryOverall ? "a" : "b" },
     { label: "Confidence", va: `${a.confidence}%`, vb: `${b.confidence}%`, higherIsBetter: true, better: a.confidence > b.confidence ? "a" : "b" },
@@ -141,7 +141,7 @@ function HistoryCard({ r, others, onCompare, comparingWith, onCloseCompare }: {
               <div className="font-display text-lg text-text-primary leading-tight">{r.company}</div>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="font-mono text-[10px] text-text-secondary">{r.ticker}</span>
-                <span className="text-text-muted">·</span>
+                <span className="text-text-muted">|</span>
                 <span className="text-[10px] uppercase tracking-wider text-text-secondary">{r.sector}</span>
               </div>
             </div>
@@ -192,7 +192,7 @@ function HistoryCard({ r, others, onCompare, comparingWith, onCloseCompare }: {
                     </ul>
                   </div>
                   <div className="font-mono text-[11px] text-text-muted pt-2 border-t border-bg-border">
-                    {r.agentsRun} AGENTS · {r.duration} · CONFIDENCE {r.confidence}%
+                    {r.agentsRun} AGENTS | {r.duration} | CONFIDENCE {r.confidence}%
                   </div>
                 </div>
 
@@ -241,7 +241,7 @@ function HistoryCard({ r, others, onCompare, comparingWith, onCloseCompare }: {
 
               {/* Footer */}
               <div className="flex flex-wrap items-center gap-2 px-6 pb-5">
-                <button onClick={() => nav(`/report?id=${r.id.split("-")[0]}`)} className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-green-bright text-white text-sm font-medium hover:bg-green-mid transition">
+                <button onClick={() => nav(`/report?id=${encodeURIComponent(r.id)}`)} className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-green-bright text-white text-sm font-medium hover:bg-green-mid transition">
                   View Full Report <ArrowRight className="h-3.5 w-3.5" />
                 </button>
                 <button onClick={() => nav("/pipeline")} className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-green-dim text-green-bright text-sm hover:bg-green-light transition">
@@ -252,7 +252,7 @@ function HistoryCard({ r, others, onCompare, comparingWith, onCloseCompare }: {
                 </button>
                 <div className="relative ml-auto">
                   <button onClick={() => setShowMenu((s) => !s)} className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-bg-border text-text-secondary text-sm hover:border-border-strong transition">
-                    <GitCompare className="h-3.5 w-3.5" /> Compare with… <ChevronDown className="h-3 w-3" />
+                    <GitCompare className="h-3.5 w-3.5" /> Compare with... <ChevronDown className="h-3 w-3" />
                   </button>
                   {showMenu && (
                     <div className="absolute right-0 mt-1 w-56 rounded-lg bg-bg-surface border border-bg-border shadow-card-lg z-10 overflow-hidden">
@@ -283,7 +283,7 @@ function HistoryCard({ r, others, onCompare, comparingWith, onCloseCompare }: {
         {comparingWith && (
           <div className="relative">
             <CompareTable a={r} b={comparingWith} />
-            <button onClick={onCloseCompare} className="absolute top-2 right-2 text-xs text-text-muted hover:text-text-primary">Close ✕</button>
+            <button onClick={onCloseCompare} className="absolute top-2 right-2 text-xs text-text-muted hover:text-text-primary">Close x</button>
           </div>
         )}
       </AnimatePresence>
@@ -341,7 +341,7 @@ export default function History() {
         <div className="mb-10">
           <div className="label-eyebrow text-green-bright mb-3">ANALYSIS HISTORY</div>
           <h1 className="font-display text-5xl text-navy-deep leading-tight">Analysis History</h1>
-          <p className="text-text-secondary mt-3 max-w-xl">All previous pipeline runs — click any entry to view the full report.</p>
+          <p className="text-text-secondary mt-3 max-w-xl">All previous pipeline runs - click any entry to view the full report.</p>
         </div>
 
         {error && (
@@ -351,7 +351,7 @@ export default function History() {
         )}
 
         {loading && (
-          <div className="mb-8 text-sm font-mono text-text-secondary">Loading history from backend…</div>
+          <div className="mb-8 text-sm font-mono text-text-secondary">Loading history from backend...</div>
         )}
 
         {/* Stats */}
@@ -393,9 +393,9 @@ export default function History() {
         {/* Empty state */}
         {filtered.length === 0 && (
           <div className="rounded-xl border border-dashed border-bg-border p-16 text-center">
-            <div className="text-5xl mb-3">⏳</div>
+            <div className="text-5xl mb-3">WAIT</div>
             <p className="text-text-secondary mb-4">No analyses match your filters.</p>
-            <button onClick={() => nav("/analyse")} className="px-4 py-2 rounded-md bg-green-bright text-white font-medium">Start New Analysis →</button>
+            <button onClick={() => nav("/analyse")} className="px-4 py-2 rounded-md bg-green-bright text-white font-medium">Start New Analysis</button>
           </div>
         )}
 
@@ -424,13 +424,13 @@ export default function History() {
             {filtered.map((r) => (
               <button
                 key={r.id}
-                onClick={() => nav(`/report?id=${r.id}`)}
+                onClick={() => nav(`/report?id=${encodeURIComponent(r.id)}`)}
                 className={`text-left rounded-xl bg-bg-surface border border-bg-border border-l-4 ${borderColor(r.riskLevel)} shadow-card hover:shadow-card-hover p-5 transition`}
               >
                 <div className="flex items-start justify-between mb-3">
                   <div>
                     <div className="font-display text-lg">{r.company}</div>
-                    <div className="font-mono text-[10px] text-text-secondary">{r.ticker} · {r.date}</div>
+                    <div className="font-mono text-[10px] text-text-secondary">{r.ticker} | {r.date}</div>
                   </div>
                   <RiskBadge level={r.riskLevel as any} />
                 </div>

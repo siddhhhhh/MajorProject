@@ -77,6 +77,16 @@ class ReportDiscoveryService:
             "https://www.tesla.com/ns_videos/2023-tesla-impact-report.pdf",
             "https://www.tesla.com/impact",
         ],
+        "h&m": [
+            "https://hmgroup.com/investors/annual-and-sustainability-report/",
+            "https://hmgroup.com/sustainability/sustainability-reporting/",
+            "https://hmgroup.com/investors/",
+        ],
+        "h & m hennes & mauritz ab": [
+            "https://hmgroup.com/investors/annual-and-sustainability-report/",
+            "https://hmgroup.com/sustainability/sustainability-reporting/",
+            "https://hmgroup.com/investors/",
+        ],
     }
     
     def __init__(self):
@@ -255,6 +265,43 @@ class ReportDiscoveryService:
                 pass
         return company_name
 
+    def _company_match_terms(self, company_name: str) -> List[str]:
+        raw_terms = {company_name}
+        aliases_path = Path("config/company_aliases.json")
+        if aliases_path.exists():
+            try:
+                with open(aliases_path, "r", encoding="utf-8") as f:
+                    aliases = json.load(f)
+                entry = aliases.get(company_name) or aliases.get(company_name.upper()) or aliases.get(company_name.title())
+                if isinstance(entry, dict):
+                    raw_terms.add(str(entry.get("full_name") or ""))
+                    raw_terms.update(str(a) for a in (entry.get("aliases") or []))
+            except Exception:
+                pass
+
+        terms = set()
+        for term in raw_terms:
+            compact = re.sub(r"[^a-z0-9]+", "", str(term).lower())
+            spaced = " ".join(re.split(r"[^a-z0-9]+", str(term).lower())).strip()
+            if len(compact) >= 2:
+                terms.add(compact)
+            if len(spaced) >= 2:
+                terms.add(spaced)
+        return sorted(terms, key=len, reverse=True)
+
+    def _matches_company(self, company_name: str, result: Dict[str, Any]) -> bool:
+        text = f"{result.get('title', '')} {result.get('snippet', '')} {result.get('url', '')}".lower()
+        compact_text = re.sub(r"[^a-z0-9]+", "", text)
+        spaced_text = " ".join(re.split(r"[^a-z0-9]+", text)).strip()
+
+        # H&M is especially collision-prone: "HMT" / HM Treasury is not H&M.
+        if company_name.strip().lower() in {"h&m", "h and m", "hennes & mauritz"}:
+            if "hmgroup" in compact_text or "hennesmauritz" in compact_text:
+                return True
+            return bool(re.search(r"\bh\s*(?:&|and)\s*m\b", text))
+
+        return any(term in compact_text or term in spaced_text for term in self._company_match_terms(company_name))
+
     def _is_competitor_contaminated(self, company_name: str, result: Dict[str, Any]) -> bool:
         text = f"{result.get('title', '')} {result.get('snippet', '')} {result.get('url', '')}".lower()
         company_lower = company_name.lower()
@@ -277,8 +324,12 @@ class ReportDiscoveryService:
         else:
             company_key = ""
 
+        if company_name.strip().lower() in {"h&m", "h and m", "hennes & mauritz"}:
+            contaminants = ["hm treasury", "hmt", "zf.com", "wabco", "bseindia", "nseindia", "sebi"]
+            return (not self._matches_company(company_name, result)) or any(name in text for name in contaminants)
+
         if not company_key:
-            return False
+            return not self._matches_company(company_name, result)
 
         return any(name in text for name in competitors.get(company_key, []))
     
@@ -340,8 +391,6 @@ class ReportDiscoveryService:
         title = str(result.get("title", "")).lower()
         snippet = str(result.get("snippet", "")).lower()
         combined = f"{url} {title} {snippet}"
-        company_tokens = [tok for tok in re.split(r"[^a-z0-9]+", company_name.lower()) if len(tok) > 2]
-
         report_terms = [
             "annual report", "sustainability", "esg", "climate", "csr",
             "investor", "investor relations", "reporting", "disclosures",
@@ -353,7 +402,7 @@ class ReportDiscoveryService:
         ]
         bad_filetypes = (".jpg", ".jpeg", ".png", ".gif", ".mp4", ".zip")
 
-        has_company_match = any(tok in combined for tok in company_tokens) if company_tokens else False
+        has_company_match = self._matches_company(company_name, result)
         has_report_signal = any(term in combined for term in report_terms)
         has_host_signal = any(term in url for term in host_terms)
         is_bad_file = any(url.endswith(ext) for ext in bad_filetypes)
@@ -453,9 +502,9 @@ class ReportDiscoveryService:
         
         # Domain trust score
         url_lower = url.lower()
-        company_lower = company_name.lower().replace(" ", "")
+        match_result = {"url": url, "title": title, "snippet": snippet}
         
-        if company_lower in url_lower:
+        if self._matches_company(company_name, match_result):
             confidence += 0.25  # Official company domain
         
         if any(domain in url_lower for domain in ["investor", "ir.", "esg.", "sustainability."]):

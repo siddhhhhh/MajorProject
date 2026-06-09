@@ -185,7 +185,7 @@ export default function Chatbot() {
                 </select>
 
                 <div className="font-display text-xl mb-1">
-                  {selectedReport?.company} {selectedReport?.ticker ? `· ${selectedReport.ticker}` : ""}
+                  {selectedReport?.company} {selectedReport?.ticker ? `| ${selectedReport.ticker}` : ""}
                 </div>
                 <div className="text-xs text-text-secondary mb-6 line-clamp-2">{selectedReport?.claim}</div>
 

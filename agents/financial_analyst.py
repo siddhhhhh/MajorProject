@@ -57,6 +57,11 @@ class FinancialAnalyst:
             "gm": "GM",
             "unilever": "UL",
             "nestle": "NSRGY",
+            "h&m": "HM-B.ST",
+            "h and m": "HM-B.ST",
+            "hennes & mauritz": "HM-B.ST",
+            "hennes and mauritz": "HM-B.ST",
+            "h&m group": "HM-B.ST",
             "nike": "NKE",
             "adidas": "ADDYY",
             "starbucks": "SBUX",
@@ -213,6 +218,9 @@ class FinancialAnalyst:
             "bp": "BP",
             "totalenergies": "TTE",
             "exxonmobil": "XOM",
+            "h&m": "HM-B.ST",
+            "handm": "HM-B.ST",
+            "hennesmauritz": "HM-B.ST",
         }
         normalized = company_lower.replace(" ", "")
         for key, ticker in common_ticker_map.items():

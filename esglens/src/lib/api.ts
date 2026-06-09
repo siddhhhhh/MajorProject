@@ -2,7 +2,7 @@
  * api.ts
  * -------
  * Unified API client for the ESGLens frontend.
- * All URLs come from import.meta.env — no hardcoded localhost:PORT in components.
+ * All URLs come from import.meta.env - no hardcoded localhost:PORT in components.
  *
  * Backend API is served through the app's proxy or configured origin.
  * Chatbot uses the same proxy pattern.
@@ -12,7 +12,7 @@ const BASE_URL = "/api"; // proxied by the app to the backend API
 const CHATBOT_URL = "/chatbot"; // proxied by the app to the chatbot API
 const WS_BASE = import.meta.env.VITE_WS_URL ?? "";
 
-// ── Analysis ─────────────────────────────────────────────────────────────────
+// -- Analysis -----------------------------------------------------------------
 
 export async function startAnalysis(payload: {
   company: string;
@@ -36,7 +36,7 @@ export async function getAnalysisStatus(id: string) {
   return res.json();
 }
 
-// ── Reports ───────────────────────────────────────────────────────────────────
+// -- Reports -------------------------------------------------------------------
 
 export async function getAllReports(): Promise<HistoryEntry[]> {
   const res = await fetch(`${BASE_URL}/reports`);
@@ -56,7 +56,7 @@ export async function getReportArtifacts(id: string): Promise<ReportArtifacts> {
   return res.json();
 }
 
-// ── File Upload ───────────────────────────────────────────────────────────────
+// -- File Upload ---------------------------------------------------------------
 
 export async function uploadFile(file: File): Promise<{
   file_id: string;
@@ -71,7 +71,7 @@ export async function uploadFile(file: File): Promise<{
   return res.json();
 }
 
-// ── WebSocket Pipeline Stream ──────────────────────────────────────────────────
+// -- WebSocket Pipeline Stream --------------------------------------------------
 
 export interface LogEntry {
   t: string;
@@ -105,7 +105,7 @@ export function connectPipelineStream(
   return ws;
 }
 
-// ── Chatbot ───────────────────────────────────────────────────────────────────
+// -- Chatbot -------------------------------------------------------------------
 
 export async function sendChatMessage(payload: {
   session_id: string;
@@ -137,7 +137,7 @@ export async function sendChatStream(payload: {
   });
 }
 
-// ── TypeScript Types ──────────────────────────────────────────────────────────
+// -- TypeScript Types ----------------------------------------------------------
 
 export interface AgentUpdate {
   type: "agent_update";
@@ -254,7 +254,7 @@ export interface ESGReport {
   rating_grade: string;
   risk_level: string;
   confidence: number;
-  // LLM-variance confidence bands [low, high] — empty array when no
+  // LLM-variance confidence bands [low, high] - empty array when no
   // variance harness has been run.
   esg_score_band?: number[];
   greenwashing_band?: number[];
@@ -283,12 +283,12 @@ export interface ESGReport {
   contradiction_flag?: boolean;
   validation_notes?: string[];
 
-  // ── New fields surfaced from the v4 pipeline ─────────────────────────
+  // -- New fields surfaced from the v4 pipeline -------------------------
   // Honest quality warnings (calibration limitations, missing scope data, etc.).
   quality_warnings?: string[];
   // Per-agent model provenance, e.g. {"agent.supervisor": "groq:llama-3.3-70b-versatile"}.
   model_versions?: Record<string, unknown>;
-  // Calibration block — includes pipeline_spearman_r (null until benchmarked)
+  // Calibration block - includes pipeline_spearman_r (null until benchmarked)
   // and linguistic_stub_spearman_r (the actual measured correlation).
   calibration?: {
     spearman_r?: number;
@@ -323,7 +323,7 @@ export interface ESGReport {
     graph_density?: number;
     is_decision_ready?: boolean;
   };
-  // Per-retriever yield tally — names silent-failure retrievers.
+  // Per-retriever yield tally - names silent-failure retrievers.
   retriever_tally?: Record<string, number>;
 }
 

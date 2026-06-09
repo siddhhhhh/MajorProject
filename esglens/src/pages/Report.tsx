@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Gavel, AlertTriangle, Shield, ExternalLink, AlertCircle, Flag, Loader2 } from "lucide-react";
 import { PageWrapper } from "@/components/layout/PageWrapper";
@@ -20,7 +20,7 @@ import {
 const TABS = ["Overview", "Audit Report", "Carbon", "Greenwashing", "Contradictions", "Regulatory", "Peers", "Explainability", "Evidence", "Raw Data"];
 
 // Empty fallbacks so charts render an empty state when backend data is
-// missing — never fabricated demo values that would mislead a viewer.
+// missing - never fabricated demo values that would mislead a viewer.
 const PATHWAY: Array<{ year: number; required: number; actual: number; gap: number }> = [];
 const SHAP: Array<{ f: string; v: number }> = [];
 const DECEPTION: Array<{ axis: string; v: number }> = [];
@@ -33,7 +33,7 @@ function parseAuditSections(text?: string | null): { title: string; body: string
 
   const isRule = (line: string) => {
     const trimmed = line.trim();
-    return trimmed.length >= 20 && /^[=\-─]+$/.test(trimmed);
+    return trimmed.length >= 20 && /^[=-]+$/.test(trimmed);
   };
 
   for (const line of lines) {
@@ -102,7 +102,7 @@ function apiToReportData(api: ESGReport): ReportData {
     summary: api.executive_summary || api.ai_verdict,
     topFindings: api.top_risk_drivers.slice(0, 3).map((d) => ({
       kind: (d.direction === "increases_risk" ? "red" : "green") as "red" | "amber" | "green",
-      text: d.name + (d.impact ? ` — ${d.impact}` : ""),
+      text: d.name + (d.impact ? ` - ${d.impact}` : ""),
     })),
     contradictions: api.contradictions.map((c) => ({
       severity: c.severity,
@@ -120,7 +120,7 @@ function apiToReportData(api: ESGReport): ReportData {
     })),
     regulatoryOverall: api.regulatory.length > 0 ? Math.round(api.regulatory.reduce((s, r) => s + r.compliance_score, 0) / api.regulatory.length) : 0,
     // Real peer rows from peer_comparison agent (mapper). marketCap is no
-    // longer fabricated — frontend now hides that column.
+    // longer fabricated - frontend now hides that column.
     peers: (api.peers && api.peers.length > 0)
       ? api.peers.map((p) => ({
           name: p.name,
@@ -206,7 +206,7 @@ export default function Report() {
         <div className="flex items-center justify-center h-screen">
           <div className="text-center">
             <Loader2 className="h-10 w-10 text-teal-bright animate-spin mx-auto mb-4" />
-            <div className="text-text-secondary font-mono text-sm">Loading report…</div>
+            <div className="text-text-secondary font-mono text-sm">Loading report...</div>
           </div>
         </div>
       </PageWrapper>
@@ -286,12 +286,18 @@ export default function Report() {
               <Flag className="h-3 w-3" /> {flaggedCount} flagged
             </span>
           )}
+          <Link
+            to={`/executive/${R.id}`}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-bg-border bg-bg-surface text-text-primary hover:border-teal-dim hover:text-teal-bright transition text-sm"
+          >
+            Executive View
+          </Link>
           <ExportMenu report={R} reportId={id ?? undefined} />
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px_1fr] gap-8 items-center">
           <div>
             <div className="flex items-center gap-3 mb-3">
-              <span className="label-eyebrow text-teal-bright">{R.sector?.toUpperCase() || "GENERAL"} · {R.jurisdiction?.toUpperCase() || "GLOBAL"}</span>
+              <span className="label-eyebrow text-teal-bright">{R.sector?.toUpperCase() || "GENERAL"} | {R.jurisdiction?.toUpperCase() || "GLOBAL"}</span>
               <RiskBadge level={R.riskLevel} />
             </div>
             <h1 className="font-display text-6xl leading-none">{R.company}</h1>
@@ -299,7 +305,7 @@ export default function Report() {
             <p className="mt-6 text-text-secondary max-w-md italic font-display text-lg">"{R.claim}"</p>
             <div className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-risk-high/10 border border-risk-high/30">
               <AlertTriangle className="h-4 w-4 text-risk-high" />
-              <span className="text-risk-high text-sm font-medium">VERDICT · {R.verdict}</span>
+              <span className="text-risk-high text-sm font-medium">VERDICT | {R.verdict}</span>
             </div>
           </div>
           <div className="text-center">
@@ -425,9 +431,9 @@ export default function Report() {
           <>
             <div className="grid grid-cols-3 gap-5">
               {[
-                { l: "SCOPE 1 · DIRECT", v: R.scope1 ? (R.scope1 / 1e6).toFixed(1) : 0, unit: "M tCO2e" },
-                { l: "SCOPE 2 · ENERGY", v: R.scope2 ? (R.scope2 / 1e6).toFixed(1) : 0, unit: "M tCO2e" },
-                { l: "SCOPE 3 · VALUE CHAIN", v: R.scope3 ? (R.scope3 / 1e6).toFixed(1) : 0, unit: "M tCO2e", big: true },
+                { l: "SCOPE 1 | DIRECT", v: R.scope1 ? (R.scope1 / 1e6).toFixed(1) : 0, unit: "M tCO2e" },
+                { l: "SCOPE 2 | ENERGY", v: R.scope2 ? (R.scope2 / 1e6).toFixed(1) : 0, unit: "M tCO2e" },
+                { l: "SCOPE 3 | VALUE CHAIN", v: R.scope3 ? (R.scope3 / 1e6).toFixed(1) : 0, unit: "M tCO2e", big: true },
               ].map((s) => (
                 <div key={s.l} className="rounded-xl bg-bg-surface border border-bg-border p-6">
                   <div className="label-eyebrow mb-3">{s.l}</div>
@@ -438,7 +444,7 @@ export default function Report() {
             </div>
             <div className="rounded-xl bg-bg-surface border border-bg-border p-8">
               <div className="label-eyebrow mb-2">IEA NZE ALIGNMENT</div>
-              <h3 className="font-display text-2xl mb-6">2020 → 2050 emissions trajectory</h3>
+              <h3 className="font-display text-2xl mb-6">2020 to 2050 emissions trajectory</h3>
               <div className="h-72">
                 {activePathway.length > 0 ? (
                   <ResponsiveContainer>
@@ -462,7 +468,7 @@ export default function Report() {
                   <>
                     Company implied <span className="text-amber-bright font-mono">{impliedRate.toFixed(1)}%/yr</span> vs IEA NZE required <span className="text-teal-bright font-mono">{requiredRate.toFixed(1)}%/yr</span>
                     {typeof R.ieaGapPct === "number" ? (
-                      <> · gap <span className="text-amber-bright font-mono">{R.ieaGapPct >= 0 ? "+" : ""}{R.ieaGapPct.toFixed(1)}%/yr</span></>
+                      <> | gap <span className="text-amber-bright font-mono">{R.ieaGapPct >= 0 ? "+" : ""}{R.ieaGapPct.toFixed(1)}%/yr</span></>
                     ) : null}
                     .
                   </>
@@ -480,7 +486,7 @@ export default function Report() {
                 </>
               ) : (
                 <>
-                  <div className="font-display text-5xl text-text-secondary">—</div>
+                  <div className="font-display text-5xl text-text-secondary">-</div>
                   <div className="text-text-secondary mt-3">Budget remaining not computed (insufficient pathway data)</div>
                 </>
               )}
@@ -520,7 +526,7 @@ export default function Report() {
               </div>
               <div className="rounded-xl bg-gradient-to-br from-teal-bright/10 to-bg-surface border border-teal-dim/40 p-6">
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="h-10 w-10 rounded-lg bg-teal-bright/15 flex items-center justify-center text-teal-bright text-xl">🧠</div>
+                  <div className="h-10 w-10 rounded-lg bg-teal-bright/15 flex items-center justify-center text-teal-bright text-xl">AI</div>
                   <div>
                     <div className="label-eyebrow text-teal-bright">CLIMATEBERT NLP</div>
                     <div className="font-display text-xl">Transformer analysis</div>
@@ -557,7 +563,7 @@ export default function Report() {
                   </div>
                   <div className="hidden md:flex flex-col items-center text-risk-critical">
                     <div className="h-16 w-px bg-risk-critical/40" />
-                    <span className="text-2xl my-1">⚡</span>
+                    <span className="text-2xl my-1">vs</span>
                     <div className="h-16 w-px bg-risk-critical/40" />
                   </div>
                   <div>
@@ -613,7 +619,7 @@ export default function Report() {
                   </ResponsiveContainer>
                 ) : (
                   <div className="flex items-center justify-center h-full text-xs font-mono text-text-secondary">
-                    Sector peer comparators not yet populated by the backend — only the analysed company is shown.
+                    Sector peer comparators not yet populated by the backend - only the analysed company is shown.
                   </div>
                 )}
               </div>
@@ -635,11 +641,11 @@ export default function Report() {
                   {R.peers.map((p) => (
                     <tr key={`${p.name}-${p.ticker}`} className={`border-t border-bg-border ${p.isFocus ? "bg-teal-bright/5 border-l-2 border-l-teal-bright" : ""}`}>
                       <td className="px-4 py-3 font-medium">{p.name}{p.isFocus ? <span className="ml-2 text-[10px] font-mono text-teal-bright">FOCUS</span> : null}</td>
-                      <td className="px-4 py-3 font-mono text-text-secondary">{p.ticker || "—"}</td>
-                      <td className="px-4 py-3 font-mono text-teal-bright">{p.esg ? p.esg.toFixed(1) : "—"}</td>
-                      {/* GW score is only computed for the analysed company; peers show "—". */}
-                      <td className="px-4 py-3 font-mono text-risk-high">{p.isFocus && p.gw > 0 ? p.gw.toFixed(1) : "—"}</td>
-                      <td className="px-4 py-3 font-display text-amber-bright">{p.rating || "—"}</td>
+                      <td className="px-4 py-3 font-mono text-text-secondary">{p.ticker || "-"}</td>
+                      <td className="px-4 py-3 font-mono text-teal-bright">{p.esg ? p.esg.toFixed(1) : "-"}</td>
+                      {/* GW score is only computed for the analysed company; peers show "-". */}
+                      <td className="px-4 py-3 font-mono text-risk-high">{p.isFocus && p.gw > 0 ? p.gw.toFixed(1) : "-"}</td>
+                      <td className="px-4 py-3 font-display text-amber-bright">{p.rating || "-"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -713,12 +719,12 @@ export default function Report() {
                       }`}>{e.stance}</span>
                     </div>
                     <div className="flex items-center gap-2 mb-1">
-                      <span className={`h-2 w-2 rounded-full ${credColor}`} title={`Credibility: ${e.credibility.toFixed(2)} / 1.0 — ${credLabel}`} />
-                      <span className="font-mono text-xs text-teal-bright">{e.domain} · {e.year}</span>
+                      <span className={`h-2 w-2 rounded-full ${credColor}`} title={`Credibility: ${e.credibility.toFixed(2)} / 1.0 - ${credLabel}`} />
+                      <span className="font-mono text-xs text-teal-bright">{e.domain} | {e.year}</span>
                     </div>
                     <p className="text-sm text-text-primary leading-relaxed mb-4">{e.excerpt}</p>
                     <div className="flex items-center justify-between text-xs">
-                      <span className="font-mono text-text-secondary">CRED · {(e.credibility * 100).toFixed(0)}%</span>
+                      <span className="font-mono text-text-secondary">CRED | {(e.credibility * 100).toFixed(0)}%</span>
                       <div className="flex items-center gap-3">
                         <button
                           onClick={() => setFlagged((p) => ({ ...p, [i]: !p[i] }))}

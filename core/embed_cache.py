@@ -57,6 +57,7 @@ _MAX_VECTORS_PER_KIND = 100_000
 _MODEL = None
 _MODEL_LOCK = threading.Lock()
 _INDEX_LOCKS: dict[str, threading.Lock] = {}
+_ENCODE_WARNING_EMITTED = False
 
 
 def _get_lock(kind: str) -> threading.Lock:
@@ -220,16 +221,30 @@ def _get_index(kind: str) -> _KindIndex:
 def encode(text: str):
     """Return a 384-dim L2-normalised np.ndarray, or zero-vector on failure."""
     import numpy as np
+    global _ENCODE_WARNING_EMITTED
     if not text:
         return np.zeros(_DIM, dtype=np.float32)
     model = _get_model()
     if model is None:
         return np.zeros(_DIM, dtype=np.float32)
     try:
-        vec = model.encode(text, convert_to_numpy=True, normalize_embeddings=True)
+        try:
+            vec = model.encode(text, convert_to_numpy=True, normalize_embeddings=True)
+        except TypeError:
+            # Some lightweight/fallback encoders expose a simpler encode(text)
+            # signature. Keep the cache usable instead of spamming warnings.
+            vec = model.encode(text)
+        vec = np.asarray(vec, dtype=np.float32)
+        if vec.size != _DIM:
+            raise ValueError(f"expected {_DIM} dimensions, got {vec.size}")
+        norm = np.linalg.norm(vec)
+        if norm > 0:
+            vec = vec / norm
         return vec.astype(np.float32)
     except Exception as e:
-        logger.warning("encode failed (text len=%d): %s", len(text), e)
+        if not _ENCODE_WARNING_EMITTED:
+            logger.warning("encode failed; embedding cache disabled for this run: %s", e)
+            _ENCODE_WARNING_EMITTED = True
         return np.zeros(_DIM, dtype=np.float32)
 
 

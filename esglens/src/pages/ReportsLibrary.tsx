@@ -71,7 +71,7 @@ export default function ReportsLibrary() {
         )}
 
         {loading && (
-          <div className="mb-8 text-sm font-mono text-text-secondary">Loading reports from backend…</div>
+          <div className="mb-8 text-sm font-mono text-text-secondary">Loading reports from backend...</div>
         )}
 
         <div className="flex flex-wrap gap-2 mb-8">
@@ -92,14 +92,17 @@ export default function ReportsLibrary() {
               <div className="flex items-start justify-between mb-3">
                 <div>
                   <div className="font-medium">{c.name}</div>
-                  <div className="font-mono text-[10px] text-text-secondary">{c.ticker} · {c.date || `2025-04-${(i % 28) + 1}`}</div>
+                  <div className="font-mono text-[10px] text-text-secondary">{c.ticker} | {c.date || `2025-04-${(i % 28) + 1}`}</div>
                 </div>
                 <RiskBadge level={c.risk as any} />
               </div>
               <div className="flex justify-center my-3"><ArcGauge value={c.esg} size={120} /></div>
               <p className="text-xs text-text-secondary line-clamp-2 mb-4">{c.summary}</p>
               <div className="flex items-center justify-between">
-                <button onClick={() => nav(`/report?id=${c.id}`)} className="text-xs text-teal-bright hover:underline">View →</button>
+                <div className="flex items-center gap-3">
+                  <button onClick={() => nav(`/report?id=${encodeURIComponent(c.id)}`)} className="text-xs text-teal-bright hover:underline">View</button>
+                  <button onClick={() => nav(`/executive/${encodeURIComponent(c.id)}`)} className="text-xs text-amber-bright hover:underline">Executive</button>
+                </div>
                 <div className="flex gap-1.5">
                   {[Download, Share2, RotateCw].map((Icon, j) => (
                     <button key={j} onClick={() => j === 0 ? window.print() : null} className="h-7 w-7 rounded-md bg-bg-elevated hover:bg-teal-bright/10 flex items-center justify-center transition">

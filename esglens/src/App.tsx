@@ -12,6 +12,7 @@ import Report from "./pages/Report";
 import Chatbot from "./pages/Chatbot";
 import ReportsLibrary from "./pages/ReportsLibrary";
 import History from "./pages/History";
+import ExecutiveKiosk from "./pages/ExecutiveKiosk";
 import NotFound from "./pages/NotFound";
 import { TickerBar } from "@/components/layout/TickerBar";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
@@ -30,6 +31,7 @@ function AnimatedRoutes() {
         <Route path="/history" element={<History />} />
         <Route path="/chat" element={<Chatbot />} />
         <Route path="/reports" element={<ReportsLibrary />} />
+        <Route path="/executive/:reportId" element={<ExecutiveKiosk />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AnimatePresence>
